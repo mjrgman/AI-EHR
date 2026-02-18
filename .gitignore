@@ -1,4 +1,10 @@
 node_modules/
 dist/
+data/
+archive/
 *.tar.gz
+*.zip
 .env
+*.db
+*.db-shm
+*.db-wal
