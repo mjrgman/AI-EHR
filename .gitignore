@@ -1,6 +1,56 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Archives
 archive/
 *.tar.gz
 *.zip
+
+# Environment & secrets
 .env
+.env.*
+!.env.example
+
+# Database files (contain patient data — NEVER commit)
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
+*.sqlite
+*.sqlite3
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Runtime
+pids/
+*.pid
+*.seed
+
+# Coverage
+coverage/
+.nyc_output/
+
+# API keys or credential files that might be created
+credentials.json
+service-account.json
+*.pem
+*.key
+*.cert

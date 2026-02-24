@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 const db = require('./database');
 const aiClient = require('./ai-client');
 const workflow = require('./workflow-engine');
@@ -14,11 +17,136 @@ const agentOrchestrator = require('./agent-orchestrator');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'CHANGE_ME_BEFORE_PRODUCTION';
+const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
 
-// Middleware
+// ==========================================
+// SECURITY MIDDLEWARE
+// ==========================================
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", "ws:", "wss:"]
+    }
+  },
+  crossOriginEmbedderPolicy: false
+}));
+
+// Rate limiting — general API
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+app.use('/api/', apiLimiter);
+
+// Stricter rate limit for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many authentication attempts, please try again later.' }
+});
+
+// Core middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../dist')));
+
+// ==========================================
+// JWT AUTHENTICATION
+// ==========================================
+
+function generateToken(user) {
+  return jwt.sign(
+    { id: user.id, username: user.username, role: user.role },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRY }
+  );
+}
+
+function authenticateToken(req, res, next) {
+  // Skip auth in development when JWT_SECRET is default
+  if (process.env.NODE_ENV !== 'production' && JWT_SECRET === 'CHANGE_ME_BEFORE_PRODUCTION') {
+    req.user = { id: 1, username: 'dev', role: 'provider' };
+    return next();
+  }
+
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
+}
+
+// Auth endpoints (public)
+app.post('/api/auth/login', authLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
+    }
+
+    // Demo mode: accept any credentials with matching username/password
+    // In production, validate against a users table with bcrypt-hashed passwords
+    if (process.env.NODE_ENV !== 'production') {
+      const token = generateToken({ id: 1, username, role: 'provider' });
+      return res.json({ token, user: { id: 1, username, role: 'provider' } });
+    }
+
+    return res.status(401).json({ error: 'Invalid credentials' });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+});
+
+app.post('/api/auth/refresh', authenticateToken, (req, res) => {
+  const token = generateToken(req.user);
+  res.json({ token });
+});
+
+app.get('/api/auth/me', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// Apply auth to all API routes below (except health, auth, and static)
+app.use('/api/patients', authenticateToken);
+app.use('/api/encounters', authenticateToken);
+app.use('/api/prescriptions', authenticateToken);
+app.use('/api/lab-orders', authenticateToken);
+app.use('/api/imaging-orders', authenticateToken);
+app.use('/api/referrals', authenticateToken);
+app.use('/api/vitals', authenticateToken);
+app.use('/api/workflow', authenticateToken);
+app.use('/api/workflows', authenticateToken);
+app.use('/api/cds', authenticateToken);
+app.use('/api/ai', authenticateToken);
+app.use('/api/llm-cds', authenticateToken);
+app.use('/api/voice', authenticateToken);
+app.use('/api/communications', authenticateToken);
+app.use('/api/billing', authenticateToken);
+app.use('/api/agents', authenticateToken);
+app.use('/api/provider', authenticateToken);
+app.use('/api/dashboard', authenticateToken);
 
 // ==========================================
 // VALIDATION HELPERS
@@ -2096,8 +2224,13 @@ async function startServer() {
   AI Mode: ${aiClient.getMode()}
   Claude API: ${aiClient.isClaudeEnabled() ? 'Enabled' : 'Disabled (using pattern matching)'}
 
+  Security:
+    JWT Auth:            ${JWT_SECRET === 'CHANGE_ME_BEFORE_PRODUCTION' ? 'Dev mode (auth bypassed)' : 'Enabled'}
+    Security Headers:    Helmet active
+    Rate Limiting:       200 req/15min (API), 10 req/15min (auth)
+
   Core Modules:
-    Database:            Connected (SQLite3 WAL mode)
+    Database:            Connected (better-sqlite3, WAL mode)
     CDS Engine:          25 clinical rules active
     Workflow Engine:     9-state machine ready
     Provider Learning:   Preference tracking enabled
