@@ -288,10 +288,58 @@ function initializeDatabase() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
         FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE SET NULL
-      )`, (err) => {
+      )`);
+
+      // ==========================================
+      // AUDIT & COMPLIANCE TABLES
+      // ==========================================
+
+      db.run(`CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        user_identity TEXT NOT NULL,
+        user_role TEXT,
+        action TEXT NOT NULL,
+        resource_type TEXT NOT NULL,
+        resource_id INTEGER,
+        description TEXT,
+        request_method TEXT,
+        request_path TEXT,
+        request_body_summary TEXT,
+        response_status INTEGER,
+        phi_accessed BOOLEAN DEFAULT 0,
+        phi_fields_accessed TEXT,
+        patient_id INTEGER,
+        ip_address TEXT,
+        user_agent TEXT,
+        timestamp DATETIME DEFAULT (datetime('now')),
+        duration_ms INTEGER,
+        error_message TEXT
+      )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS audit_sessions (
+        id TEXT PRIMARY KEY,
+        user_identity TEXT NOT NULL,
+        user_role TEXT,
+        ip_address TEXT,
+        user_agent TEXT,
+        started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+        request_count INTEGER DEFAULT 0,
+        is_active BOOLEAN DEFAULT 1
+      )`);
+
+      // Audit indexes for query performance
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_identity)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_patient ON audit_log(patient_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_log(resource_type, resource_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_phi ON audit_log(phi_accessed, timestamp)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)`, (err) => {
         if (err) reject(err);
         else {
-          console.log('Database schema initialized (15 tables)');
+          console.log('Database schema initialized (17 tables + audit indexes)');
           resolve();
         }
       });
@@ -974,6 +1022,13 @@ const db_helpers = {
   // --- Allergies ---
   getPatientAllergies: (patientId) => dbAll('SELECT * FROM allergies WHERE patient_id = ?', [patientId]),
 
+  addAllergy: (data) => {
+    const { patient_id, allergen, reaction, severity, onset_date, verified, notes } = data;
+    return dbRun('INSERT INTO allergies (patient_id,allergen,reaction,severity,onset_date,verified,notes) VALUES (?,?,?,?,?,?,?)',
+      [patient_id, allergen, reaction, severity || 'moderate', onset_date || null, verified !== undefined ? verified : 1, notes || null])
+      .then(r => ({ id: r.lastID }));
+  },
+
   // --- Encounters ---
   createEncounter: (data) => {
     const { patient_id, encounter_date, encounter_type, chief_complaint, provider } = data;
@@ -1010,6 +1065,13 @@ const db_helpers = {
 
   // --- Labs ---
   getPatientLabs: (patientId) => dbAll('SELECT * FROM labs WHERE patient_id = ? ORDER BY result_date DESC', [patientId]),
+
+  addLab: (data) => {
+    const { patient_id, test_name, result_value, reference_range, units, result_date, status, abnormal_flag, notes } = data;
+    return dbRun('INSERT INTO labs (patient_id,test_name,result_value,reference_range,units,result_date,status,abnormal_flag,notes) VALUES (?,?,?,?,?,?,?,?,?)',
+      [patient_id, test_name, result_value, reference_range, units, result_date || new Date().toISOString().split('T')[0], status || 'final', abnormal_flag || null, notes || null])
+      .then(r => ({ id: r.lastID }));
+  },
 
   // --- Prescriptions ---
   createPrescription: (data) => {

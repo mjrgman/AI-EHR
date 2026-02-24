@@ -149,6 +149,13 @@ export default function AppShell({ children }) {
                 <span>🏠</span>
                 <span>Dashboard</span>
               </button>
+              <button onClick={() => { navigate('/audit'); setSidebarOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
+                  location.pathname === '/audit' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                }`}>
+                <span>📋</span>
+                <span>Audit Log</span>
+              </button>
             </nav>
             {/* Queue summary */}
             {Object.entries(queueCounts).some(([k, v]) => v > 0 && k !== 'checked-out') && (

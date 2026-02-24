@@ -1,0 +1,592 @@
+{
+  "version": "1.0.0",
+  "description": "MJR-EHR Clinical Scenario Database — Real patient presentations for end-to-end testing",
+  "scenarios": [
+    {
+      "id": "DM-UNCONTROLLED-001",
+      "name": "Uncontrolled Type 2 Diabetes",
+      "category": "endocrine",
+      "severity": "moderate",
+      "patient": {
+        "first_name": "Maria",
+        "middle_name": "Elena",
+        "last_name": "Gonzalez",
+        "dob": "1967-03-14",
+        "sex": "F",
+        "phone": "478-555-0234",
+        "email": "maria.gonzalez@email.com",
+        "address_line1": "412 Magnolia Drive",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31204",
+        "insurance_carrier": "Blue Cross Blue Shield Georgia",
+        "insurance_id": "BCBS-7742901"
+      },
+      "problems": [
+        { "problem_name": "Type 2 Diabetes Mellitus", "icd10_code": "E11.9", "status": "active", "onset_date": "2018-06-01" },
+        { "problem_name": "Obesity", "icd10_code": "E66.9", "status": "chronic", "onset_date": "2015-01-01" },
+        { "problem_name": "Hyperlipidemia", "icd10_code": "E78.5", "status": "active", "onset_date": "2019-02-15" }
+      ],
+      "medications": [
+        { "medication_name": "Metformin", "generic_name": "Metformin", "dose": "1000mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Williams" },
+        { "medication_name": "Glipizide", "generic_name": "Glipizide", "dose": "5mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Williams" },
+        { "medication_name": "Atorvastatin", "generic_name": "Atorvastatin", "dose": "20mg", "route": "PO", "frequency": "qHS", "status": "active", "prescriber": "Dr. Williams" }
+      ],
+      "allergies": [
+        { "allergen": "Sulfa", "reaction": "Rash", "severity": "moderate" }
+      ],
+      "encounter": {
+        "encounter_type": "Office Visit - Follow-up",
+        "chief_complaint": "Follow-up for diabetes, sugars running 200-300",
+        "provider": "Dr. Williams"
+      },
+      "vitals": {
+        "systolic_bp": 138,
+        "diastolic_bp": 86,
+        "heart_rate": 78,
+        "temperature": 98.4,
+        "weight": 198,
+        "height": 64,
+        "spo2": 98,
+        "respiratory_rate": 16
+      },
+      "labs": [
+        { "test_name": "Hemoglobin A1C", "result_value": "9.2", "units": "%", "reference_range": "4.0-5.6", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Fasting Glucose", "result_value": "245", "units": "mg/dL", "reference_range": "70-100", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Creatinine", "result_value": "0.9", "units": "mg/dL", "reference_range": "0.6-1.2", "abnormal_flag": "", "status": "final" },
+        { "test_name": "eGFR", "result_value": "78", "units": "mL/min", "reference_range": ">60", "abnormal_flag": "", "status": "final" }
+      ],
+      "transcript": "Doctor: Hi Maria, how are you doing today?\nPatient: Not great doctor. My blood sugars have been really high.\nDoctor: What have they been running?\nPatient: Usually around 200 to 300. Sometimes higher after meals.\nDoctor: I see your A1C came back at 9.2 percent, up from 7.8 percent last time. Your blood pressure is 138 over 86, heart rate 78, temperature 98.4, and weight is 198 pounds.\nDoctor: The Metformin and Glipizide aren't enough. I'd like to start you on Ozempic 0.25mg weekly. We'll also order a repeat A1C in 3 months, a lipid panel, and comprehensive metabolic panel.\nPatient: Is that the injection?\nDoctor: Yes, once a week injection. It will help with both your blood sugar and weight.",
+      "expected_cds": {
+        "should_fire": ["A1C Above Target", "Diabetes Monitoring"],
+        "should_not_fire": ["Hypertensive Crisis", "Hypoxia"]
+      }
+    },
+    {
+      "id": "CHEST-PAIN-001",
+      "name": "Acute Chest Pain — Rule Out ACS",
+      "category": "cardiovascular",
+      "severity": "urgent",
+      "patient": {
+        "first_name": "James",
+        "middle_name": "Edward",
+        "last_name": "Thompson",
+        "dob": "1958-11-22",
+        "sex": "M",
+        "phone": "478-555-0891",
+        "email": "james.thompson@email.com",
+        "address_line1": "789 Riverside Blvd",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31201",
+        "insurance_carrier": "Medicare",
+        "insurance_id": "MCR-1158A7792"
+      },
+      "problems": [
+        { "problem_name": "Essential Hypertension", "icd10_code": "I10", "status": "active", "onset_date": "2010-03-01" },
+        { "problem_name": "Hyperlipidemia", "icd10_code": "E78.5", "status": "active", "onset_date": "2012-06-15" },
+        { "problem_name": "Tobacco Use Disorder", "icd10_code": "F17.210", "status": "active", "onset_date": "1980-01-01" },
+        { "problem_name": "Coronary Artery Disease", "icd10_code": "I25.10", "status": "active", "onset_date": "2020-09-01" }
+      ],
+      "medications": [
+        { "medication_name": "Aspirin", "generic_name": "Aspirin", "dose": "81mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Patel" },
+        { "medication_name": "Atorvastatin", "generic_name": "Atorvastatin", "dose": "40mg", "route": "PO", "frequency": "qHS", "status": "active", "prescriber": "Dr. Patel" },
+        { "medication_name": "Lisinopril", "generic_name": "Lisinopril", "dose": "20mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Patel" },
+        { "medication_name": "Metoprolol Succinate", "generic_name": "Metoprolol", "dose": "50mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Patel" }
+      ],
+      "allergies": [],
+      "encounter": {
+        "encounter_type": "Office Visit - Urgent",
+        "chief_complaint": "Chest pain for 2 hours, pressure-like, radiating to left arm",
+        "provider": "Dr. Patel"
+      },
+      "vitals": {
+        "systolic_bp": 168,
+        "diastolic_bp": 98,
+        "heart_rate": 102,
+        "temperature": 98.2,
+        "weight": 210,
+        "height": 71,
+        "spo2": 94,
+        "respiratory_rate": 22
+      },
+      "labs": [],
+      "transcript": "Doctor: Mr. Thompson, tell me about this chest pain.\nPatient: It started about two hours ago. It feels like someone is sitting on my chest. It goes down into my left arm.\nDoctor: Any shortness of breath?\nPatient: Yes, and I'm sweating a lot.\nDoctor: On a scale of 1 to 10?\nPatient: About an 8.\nDoctor: Blood pressure is 168 over 98, heart rate 102, oxygen saturation 94 percent, respiratory rate 22. Temperature 98.2.\nDoctor: Given your history of coronary artery disease, we need to act quickly. I'm ordering a stat troponin, EKG, chest X-ray, and basic metabolic panel. We'll give you sublingual nitroglycerin and start oxygen.",
+      "expected_cds": {
+        "should_fire": ["Stage 2 Hypertension", "Tachycardia", "Differential: Chest Pain"],
+        "should_not_fire": ["Bradycardia", "Fever"]
+      }
+    },
+    {
+      "id": "COPD-CHF-001",
+      "name": "COPD Exacerbation with CHF",
+      "category": "pulmonary-cardiac",
+      "severity": "urgent",
+      "patient": {
+        "first_name": "Willie",
+        "middle_name": "James",
+        "last_name": "Johnson",
+        "dob": "1953-07-08",
+        "sex": "M",
+        "phone": "478-555-0456",
+        "email": "willie.johnson@email.com",
+        "address_line1": "234 Pine Street",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31206",
+        "insurance_carrier": "Medicare",
+        "insurance_id": "MCR-5307B1123"
+      },
+      "problems": [
+        { "problem_name": "COPD with Acute Exacerbation", "icd10_code": "J44.1", "status": "active", "onset_date": "2008-04-01" },
+        { "problem_name": "Heart Failure with Reduced EF", "icd10_code": "I50.22", "status": "active", "onset_date": "2019-11-01" },
+        { "problem_name": "Atrial Fibrillation", "icd10_code": "I48.91", "status": "chronic", "onset_date": "2017-06-15" },
+        { "problem_name": "Type 2 Diabetes Mellitus", "icd10_code": "E11.9", "status": "active", "onset_date": "2014-03-01" }
+      ],
+      "medications": [
+        { "medication_name": "Metoprolol Tartrate", "generic_name": "Metoprolol", "dose": "25mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Chen" },
+        { "medication_name": "Furosemide", "generic_name": "Furosemide", "dose": "40mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Chen" },
+        { "medication_name": "Apixaban", "generic_name": "Apixaban", "dose": "5mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Chen" },
+        { "medication_name": "Tiotropium", "generic_name": "Tiotropium", "dose": "18mcg", "route": "INH", "frequency": "daily", "status": "active", "prescriber": "Dr. Chen" },
+        { "medication_name": "Albuterol", "generic_name": "Albuterol", "dose": "90mcg", "route": "INH", "frequency": "PRN", "status": "active", "prescriber": "Dr. Chen" },
+        { "medication_name": "Metformin", "generic_name": "Metformin", "dose": "500mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Chen" }
+      ],
+      "allergies": [
+        { "allergen": "Sulfa", "reaction": "Rash", "severity": "moderate" }
+      ],
+      "encounter": {
+        "encounter_type": "Office Visit - Urgent",
+        "chief_complaint": "Worsening shortness of breath and leg swelling for 5 days",
+        "provider": "Dr. Chen"
+      },
+      "vitals": {
+        "systolic_bp": 145,
+        "diastolic_bp": 82,
+        "heart_rate": 96,
+        "temperature": 99.1,
+        "weight": 225,
+        "height": 69,
+        "spo2": 89,
+        "respiratory_rate": 24
+      },
+      "labs": [
+        { "test_name": "BNP", "result_value": "580", "units": "pg/mL", "reference_range": "<100", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Hemoglobin A1C", "result_value": "7.1", "units": "%", "reference_range": "4.0-5.6", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Creatinine", "result_value": "1.2", "units": "mg/dL", "reference_range": "0.6-1.2", "abnormal_flag": "", "status": "final" }
+      ],
+      "transcript": "Patient: Doctor I can barely walk to the bathroom without gasping for air. My ankles are swollen up real bad.\nDoctor: When did this start?\nPatient: About 5 days ago. It's been getting worse.\nDoctor: Blood pressure is 145 over 82, heart rate 96, temperature 99.1, respiratory rate 24. Oxygen saturation is only 89 percent. Weight is 225 pounds.\nDoctor: You've gained 10 pounds of fluid. I'm going to increase your Lasix to 60mg daily, order a BNP, basic metabolic panel, chest X-ray, and we need to start supplemental oxygen.\nPatient: Am I going to need to go to the hospital?\nDoctor: If this doesn't improve in 24 to 48 hours, yes.",
+      "expected_cds": {
+        "should_fire": ["Hypoxia", "Differential: Shortness of Breath", "A1C Above Target"],
+        "should_not_fire": ["Bradycardia", "Hypertensive Crisis"]
+      }
+    },
+    {
+      "id": "HTN-CRISIS-001",
+      "name": "Hypertensive Crisis",
+      "category": "cardiovascular",
+      "severity": "emergent",
+      "patient": {
+        "first_name": "Tamika",
+        "middle_name": "Renee",
+        "last_name": "Washington",
+        "dob": "1980-09-03",
+        "sex": "F",
+        "phone": "478-555-0712",
+        "email": "tamika.washington@email.com",
+        "address_line1": "567 MLK Jr Boulevard",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31201",
+        "insurance_carrier": "Ambetter",
+        "insurance_id": "AMB-9903421"
+      },
+      "problems": [
+        { "problem_name": "Essential Hypertension", "icd10_code": "I10", "status": "active", "onset_date": "2017-02-01" },
+        { "problem_name": "Migraine without aura", "icd10_code": "G43.909", "status": "active", "onset_date": "2010-06-01" },
+        { "problem_name": "Generalized Anxiety Disorder", "icd10_code": "F41.1", "status": "active", "onset_date": "2019-08-01" }
+      ],
+      "medications": [
+        { "medication_name": "Amlodipine", "generic_name": "Amlodipine", "dose": "10mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Martinez" },
+        { "medication_name": "Hydrochlorothiazide", "generic_name": "Hydrochlorothiazide", "dose": "25mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Martinez" }
+      ],
+      "allergies": [
+        { "allergen": "ACE Inhibitors", "reaction": "Cough", "severity": "moderate" }
+      ],
+      "encounter": {
+        "encounter_type": "Office Visit - Urgent",
+        "chief_complaint": "Severe headache and blurred vision, hasn't taken medications in 2 weeks",
+        "provider": "Dr. Martinez"
+      },
+      "vitals": {
+        "systolic_bp": 192,
+        "diastolic_bp": 118,
+        "heart_rate": 98,
+        "temperature": 98.6,
+        "weight": 175,
+        "height": 65,
+        "spo2": 97,
+        "respiratory_rate": 18
+      },
+      "labs": [],
+      "transcript": "Patient: My head has been pounding since yesterday and my vision is blurry. I feel terrible.\nDoctor: When did you last take your blood pressure medications?\nPatient: About two weeks ago. I ran out and didn't get them refilled.\nDoctor: Your blood pressure is 192 over 118. This is dangerously high. Heart rate is 98, temp 98.6, O2 sat 97 percent.\nDoctor: We need to bring this down carefully. I'm going to restart your Amlodipine and add Losartan 50mg daily since you can't take ACE inhibitors. Let's check a basic metabolic panel and urinalysis. I need you to sit here while we monitor your pressure.",
+      "expected_cds": {
+        "should_fire": ["Hypertensive Crisis", "Stage 2 Hypertension"],
+        "should_not_fire": ["Hypoxia", "Bradycardia", "Tachycardia"]
+      }
+    },
+    {
+      "id": "CKD-MED-ADJ-001",
+      "name": "CKD Stage 3 with Medication Adjustments",
+      "category": "renal",
+      "severity": "moderate",
+      "patient": {
+        "first_name": "Harold",
+        "middle_name": "Dean",
+        "last_name": "Mitchell",
+        "dob": "1962-04-19",
+        "sex": "M",
+        "phone": "478-555-0333",
+        "email": "harold.mitchell@email.com",
+        "address_line1": "890 Vineville Avenue",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31204",
+        "insurance_carrier": "Aetna",
+        "insurance_id": "AET-6628103"
+      },
+      "problems": [
+        { "problem_name": "CKD Stage 3b", "icd10_code": "N18.31", "status": "active", "onset_date": "2023-01-15" },
+        { "problem_name": "Type 2 DM with Diabetic CKD", "icd10_code": "E11.65", "status": "active", "onset_date": "2016-07-01" },
+        { "problem_name": "Essential Hypertension", "icd10_code": "I10", "status": "active", "onset_date": "2012-03-01" },
+        { "problem_name": "Hyperlipidemia", "icd10_code": "E78.5", "status": "active", "onset_date": "2014-11-01" }
+      ],
+      "medications": [
+        { "medication_name": "Metformin", "generic_name": "Metformin", "dose": "1000mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Patel" },
+        { "medication_name": "Lisinopril", "generic_name": "Lisinopril", "dose": "40mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Patel" },
+        { "medication_name": "Atorvastatin", "generic_name": "Atorvastatin", "dose": "40mg", "route": "PO", "frequency": "qHS", "status": "active", "prescriber": "Dr. Patel" },
+        { "medication_name": "Amlodipine", "generic_name": "Amlodipine", "dose": "5mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Patel" }
+      ],
+      "allergies": [
+        { "allergen": "Penicillin", "reaction": "Anaphylaxis", "severity": "severe" }
+      ],
+      "encounter": {
+        "encounter_type": "Office Visit - Follow-up",
+        "chief_complaint": "Follow-up for kidney function, recent labs showed decline",
+        "provider": "Dr. Patel"
+      },
+      "vitals": {
+        "systolic_bp": 148,
+        "diastolic_bp": 88,
+        "heart_rate": 72,
+        "temperature": 98.4,
+        "weight": 195,
+        "height": 70,
+        "spo2": 97,
+        "respiratory_rate": 16
+      },
+      "labs": [
+        { "test_name": "Creatinine", "result_value": "1.8", "units": "mg/dL", "reference_range": "0.6-1.2", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "eGFR", "result_value": "42", "units": "mL/min", "reference_range": ">60", "abnormal_flag": "L", "status": "final" },
+        { "test_name": "Hemoglobin A1C", "result_value": "7.5", "units": "%", "reference_range": "4.0-5.6", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Urine Microalbumin", "result_value": "120", "units": "mg/L", "reference_range": "<30", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Potassium", "result_value": "5.1", "units": "mEq/L", "reference_range": "3.5-5.0", "abnormal_flag": "H", "status": "final" }
+      ],
+      "transcript": "Doctor: Harold, your kidney function has declined further. Your eGFR is now 42, down from 55 last year. Creatinine is 1.8.\nPatient: That doesn't sound good.\nDoctor: We need to make some medication changes. I'm reducing your Metformin to 500mg twice daily because your kidneys can't handle the higher dose. We also need to monitor your potassium closely since you're on Lisinopril and it's already at 5.1.\nDoctor: Blood pressure is 148 over 88, heart rate 72, temperature 98.4, weight 195, oxygen sat 97 percent.\nDoctor: I'm ordering a comprehensive metabolic panel and urine albumin-creatinine ratio in 6 weeks. I'd also like to refer you to nephrology.\nPatient: Am I going to need dialysis?\nDoctor: Not at this stage, but we need to protect your kidneys as much as possible.",
+      "expected_cds": {
+        "should_fire": ["Elevated Creatinine", "Declining Kidney Function", "Elevated Microalbumin", "A1C Above Target", "Stage 2 Hypertension", "Metformin Dose Adjustment", "ACE/ARB + CKD", "CKD Monitoring"],
+        "should_not_fire": ["Hypertensive Crisis", "Tachycardia"]
+      }
+    },
+    {
+      "id": "NEW-DM-001",
+      "name": "New Onset Type 2 Diabetes in Young Adult",
+      "category": "endocrine",
+      "severity": "moderate",
+      "patient": {
+        "first_name": "Ashley",
+        "middle_name": "Nicole",
+        "last_name": "Davis",
+        "dob": "1997-12-05",
+        "sex": "F",
+        "phone": "478-555-0198",
+        "email": "ashley.davis@email.com",
+        "address_line1": "321 College Street",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31207",
+        "insurance_carrier": "UnitedHealthcare",
+        "insurance_id": "UHC-4419876"
+      },
+      "problems": [
+        { "problem_name": "Type 2 Diabetes Mellitus", "icd10_code": "E11.9", "status": "active", "onset_date": "2026-02-01" },
+        { "problem_name": "Obesity, BMI 30-34.9", "icd10_code": "E66.01", "status": "active", "onset_date": "2023-01-01" },
+        { "problem_name": "Family History of Diabetes", "icd10_code": "Z83.3", "status": "active", "onset_date": "1997-12-05" }
+      ],
+      "medications": [
+        { "medication_name": "Oral Contraceptive", "generic_name": "Norgestimate-Ethinyl Estradiol", "dose": "0.25mg-35mcg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Adams" }
+      ],
+      "allergies": [],
+      "encounter": {
+        "encounter_type": "Office Visit - New Problem",
+        "chief_complaint": "Excessive thirst and urination for 3 weeks, lost 8 pounds",
+        "provider": "Dr. Adams"
+      },
+      "vitals": {
+        "systolic_bp": 118,
+        "diastolic_bp": 74,
+        "heart_rate": 82,
+        "temperature": 98.6,
+        "weight": 185,
+        "height": 65,
+        "spo2": 99,
+        "respiratory_rate": 16
+      },
+      "labs": [
+        { "test_name": "Hemoglobin A1C", "result_value": "10.2", "units": "%", "reference_range": "4.0-5.6", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Fasting Glucose", "result_value": "310", "units": "mg/dL", "reference_range": "70-100", "abnormal_flag": "H", "status": "final" }
+      ],
+      "transcript": "Patient: I've been so thirsty I'm drinking almost a gallon of water every day. And I'm going to the bathroom every hour. I've also lost about 8 pounds in the last 3 weeks without trying.\nDoctor: Your blood pressure is 118 over 74, heart rate 82, temperature 98.6, oxygen sat 99, weight 185, height 5 foot 5.\nDoctor: Your A1C came back at 10.2 percent and your fasting glucose is 310. This confirms new onset type 2 diabetes.\nPatient: My mom has diabetes too.\nDoctor: That's a significant risk factor. I'm starting you on Metformin 500mg twice daily. We'll work up to a higher dose. I'm ordering a comprehensive metabolic panel, lipid panel, urine microalbumin, and thyroid panel. I want to see you back in 4 weeks.",
+      "expected_cds": {
+        "should_fire": ["A1C Above Target", "Diabetes Monitoring"],
+        "should_not_fire": ["Hypertension Stage 2", "Hypoxia"]
+      }
+    },
+    {
+      "id": "ELDERLY-FALLS-001",
+      "name": "Elderly Fall Risk with Polypharmacy",
+      "category": "geriatric",
+      "severity": "moderate",
+      "patient": {
+        "first_name": "Dorothy",
+        "middle_name": "Mae",
+        "last_name": "Patterson",
+        "dob": "1944-05-28",
+        "sex": "F",
+        "phone": "478-555-0567",
+        "email": "dorothy.patterson@email.com",
+        "address_line1": "45 Heritage Lane",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31210",
+        "insurance_carrier": "Medicare",
+        "insurance_id": "MCR-4405C8901"
+      },
+      "problems": [
+        { "problem_name": "Atrial Fibrillation", "icd10_code": "I48.91", "status": "chronic", "onset_date": "2015-03-01" },
+        { "problem_name": "Essential Hypertension", "icd10_code": "I10", "status": "active", "onset_date": "2005-06-01" },
+        { "problem_name": "Osteoporosis without Fracture", "icd10_code": "M81.0", "status": "active", "onset_date": "2018-09-01" },
+        { "problem_name": "Major Depressive Disorder", "icd10_code": "F32.9", "status": "active", "onset_date": "2020-01-01" },
+        { "problem_name": "Hypothyroidism", "icd10_code": "E03.9", "status": "active", "onset_date": "2012-11-01" }
+      ],
+      "medications": [
+        { "medication_name": "Metoprolol Succinate", "generic_name": "Metoprolol", "dose": "100mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Robinson" },
+        { "medication_name": "Lisinopril", "generic_name": "Lisinopril", "dose": "20mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Robinson" },
+        { "medication_name": "Warfarin", "generic_name": "Warfarin", "dose": "5mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Robinson" },
+        { "medication_name": "Sertraline", "generic_name": "Sertraline", "dose": "100mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Robinson" },
+        { "medication_name": "Levothyroxine", "generic_name": "Levothyroxine", "dose": "75mcg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Robinson" },
+        { "medication_name": "Calcium Carbonate", "generic_name": "Calcium", "dose": "600mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Robinson" },
+        { "medication_name": "Vitamin D3", "generic_name": "Cholecalciferol", "dose": "2000IU", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Robinson" }
+      ],
+      "allergies": [
+        { "allergen": "Codeine", "reaction": "Nausea and vomiting", "severity": "moderate" }
+      ],
+      "encounter": {
+        "encounter_type": "Office Visit - Acute",
+        "chief_complaint": "Dizziness and two falls this month",
+        "provider": "Dr. Robinson"
+      },
+      "vitals": {
+        "systolic_bp": 108,
+        "diastolic_bp": 62,
+        "heart_rate": 48,
+        "temperature": 97.8,
+        "weight": 132,
+        "height": 63,
+        "spo2": 96,
+        "respiratory_rate": 16
+      },
+      "labs": [],
+      "transcript": "Patient: I've fallen twice this month, doctor. The last time I bruised my hip pretty bad.\nDoctor: Tell me what happens when you fall.\nPatient: I get dizzy when I stand up. The room spins.\nDoctor: Your blood pressure is 108 over 62 and your heart rate is only 48 beats per minute. That's quite low. Temperature 97.8, oxygen sat 96 percent, weight 132 pounds.\nDoctor: Your heart rate is too low and your blood pressure is dropping when you stand. I think the Metoprolol dose is too high. I want to reduce it from 100mg to 50mg twice daily. Let's check a TSH, CBC, basic metabolic panel, and vitamin D level. I'd also like to order a DEXA scan to check your bone density given the falls and osteoporosis.",
+      "expected_cds": {
+        "should_fire": ["Bradycardia"],
+        "should_not_fire": ["Hypertension Stage 2", "Hypertensive Crisis", "Tachycardia", "Fever"]
+      }
+    },
+    {
+      "id": "CHRONIC-PAIN-001",
+      "name": "Chronic Pain with Medication Considerations",
+      "category": "musculoskeletal",
+      "severity": "routine",
+      "patient": {
+        "first_name": "Michael",
+        "middle_name": "Ray",
+        "last_name": "Carter",
+        "dob": "1973-08-17",
+        "sex": "M",
+        "phone": "478-555-0890",
+        "email": "michael.carter@email.com",
+        "address_line1": "1200 Pio Nono Avenue",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31204",
+        "insurance_carrier": "Cigna",
+        "insurance_id": "CIG-7789012"
+      },
+      "problems": [
+        { "problem_name": "Chronic Low Back Pain", "icd10_code": "M54.5", "status": "chronic", "onset_date": "2018-03-01" },
+        { "problem_name": "Lumbar Degenerative Disc Disease", "icd10_code": "M51.36", "status": "chronic", "onset_date": "2018-03-01" },
+        { "problem_name": "Essential Hypertension", "icd10_code": "I10", "status": "active", "onset_date": "2020-01-01" },
+        { "problem_name": "Obesity", "icd10_code": "E66.9", "status": "chronic", "onset_date": "2019-06-01" },
+        { "problem_name": "GERD", "icd10_code": "K21.0", "status": "active", "onset_date": "2021-04-01" }
+      ],
+      "medications": [
+        { "medication_name": "Gabapentin", "generic_name": "Gabapentin", "dose": "300mg", "route": "PO", "frequency": "TID", "status": "active", "prescriber": "Dr. Kim" },
+        { "medication_name": "Meloxicam", "generic_name": "Meloxicam", "dose": "15mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Kim" },
+        { "medication_name": "Omeprazole", "generic_name": "Omeprazole", "dose": "20mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Kim" },
+        { "medication_name": "Lisinopril", "generic_name": "Lisinopril", "dose": "10mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Kim" }
+      ],
+      "allergies": [
+        { "allergen": "Tramadol", "reaction": "Seizure", "severity": "severe" }
+      ],
+      "encounter": {
+        "encounter_type": "Office Visit - Follow-up",
+        "chief_complaint": "Back pain flare-up, current medications not controlling pain",
+        "provider": "Dr. Kim"
+      },
+      "vitals": {
+        "systolic_bp": 142,
+        "diastolic_bp": 88,
+        "heart_rate": 80,
+        "temperature": 98.4,
+        "weight": 210,
+        "height": 71,
+        "spo2": 98,
+        "respiratory_rate": 16
+      },
+      "labs": [],
+      "transcript": "Patient: My back has been terrible for the last two weeks. The pain wakes me up at night.\nDoctor: On a scale of 1 to 10, where is it?\nPatient: About a 7, sometimes 8. The gabapentin helps a little but not enough.\nDoctor: Blood pressure is 142 over 88, heart rate 80, temperature 98.4, oxygen sat 98 percent, weight 210.\nDoctor: Given your blood pressure is elevated, I'd like to switch you off the Meloxicam. NSAIDs can raise blood pressure. Let's try Acetaminophen 1000mg three times daily instead. I'll also increase the Gabapentin to 400mg three times daily.\nDoctor: I want to order an MRI of the lumbar spine to see if there's been any progression of the disc disease.",
+      "expected_cds": {
+        "should_fire": ["Stage 2 Hypertension"],
+        "should_not_fire": ["Hypertensive Crisis", "Tachycardia", "Hypoxia"]
+      }
+    },
+    {
+      "id": "THYROID-FERTILITY-001",
+      "name": "Hypothyroidism Affecting Fertility",
+      "category": "endocrine-reproductive",
+      "severity": "routine",
+      "patient": {
+        "first_name": "Jessica",
+        "middle_name": "Lynn",
+        "last_name": "Morgan",
+        "dob": "1993-06-22",
+        "sex": "F",
+        "phone": "478-555-0145",
+        "email": "jessica.morgan@email.com",
+        "address_line1": "678 Forsyth Road",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31210",
+        "insurance_carrier": "Anthem",
+        "insurance_id": "ANT-3312456"
+      },
+      "problems": [
+        { "problem_name": "Hypothyroidism", "icd10_code": "E03.9", "status": "active", "onset_date": "2026-01-15" },
+        { "problem_name": "Female Infertility", "icd10_code": "N97.9", "status": "active", "onset_date": "2025-08-01" },
+        { "problem_name": "Iron Deficiency Anemia", "icd10_code": "D50.9", "status": "active", "onset_date": "2025-06-01" }
+      ],
+      "medications": [
+        { "medication_name": "Prenatal Vitamin", "generic_name": "Prenatal Multivitamin", "dose": "1 tablet", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Adams" },
+        { "medication_name": "Ferrous Sulfate", "generic_name": "Ferrous Sulfate", "dose": "325mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Adams" }
+      ],
+      "allergies": [
+        { "allergen": "Latex", "reaction": "Contact dermatitis", "severity": "mild" }
+      ],
+      "encounter": {
+        "encounter_type": "Office Visit - New Problem",
+        "chief_complaint": "Fatigue, weight gain, trying to get pregnant for 6 months",
+        "provider": "Dr. Adams"
+      },
+      "vitals": {
+        "systolic_bp": 112,
+        "diastolic_bp": 72,
+        "heart_rate": 62,
+        "temperature": 97.6,
+        "weight": 158,
+        "height": 66,
+        "spo2": 99,
+        "respiratory_rate": 14
+      },
+      "labs": [
+        { "test_name": "TSH", "result_value": "8.4", "units": "mIU/L", "reference_range": "0.4-4.0", "abnormal_flag": "H", "status": "final" },
+        { "test_name": "Free T4", "result_value": "0.7", "units": "ng/dL", "reference_range": "0.8-1.8", "abnormal_flag": "L", "status": "final" },
+        { "test_name": "Hemoglobin", "result_value": "10.8", "units": "g/dL", "reference_range": "12.0-15.5", "abnormal_flag": "L", "status": "final" },
+        { "test_name": "Ferritin", "result_value": "12", "units": "ng/mL", "reference_range": "20-200", "abnormal_flag": "L", "status": "final" }
+      ],
+      "transcript": "Patient: I've been exhausted all the time. I've gained about 12 pounds in the last 3 months. And my husband and I have been trying for a baby for 6 months with no luck.\nDoctor: Blood pressure is 112 over 72, heart rate 62, temperature 97.6, oxygen sat 99 percent, weight 158, height 5 foot 6.\nDoctor: Your TSH is significantly elevated at 8.4 and your Free T4 is low at 0.7. You have hypothyroidism, which can definitely affect fertility.\nDoctor: I'm starting you on Levothyroxine 50 micrograms daily. Take it first thing in the morning on an empty stomach, 30 minutes before eating. Separate it from your iron supplement by at least 4 hours.\nDoctor: I want to recheck TSH in 6 weeks. I'm also ordering a full thyroid panel, CBC, and iron studies.",
+      "expected_cds": {
+        "should_fire": [],
+        "should_not_fire": ["Hypertension Stage 2", "Tachycardia", "Hypoxia"]
+      }
+    },
+    {
+      "id": "ANNUAL-WELLNESS-001",
+      "name": "Multi-Morbidity Annual Wellness Visit",
+      "category": "preventive",
+      "severity": "routine",
+      "patient": {
+        "first_name": "Charles",
+        "middle_name": "William",
+        "last_name": "Henderson",
+        "dob": "1950-10-11",
+        "sex": "M",
+        "phone": "478-555-0278",
+        "email": "charles.henderson@email.com",
+        "address_line1": "1500 Northside Drive",
+        "city": "Macon",
+        "state": "GA",
+        "zip": "31210",
+        "insurance_carrier": "Medicare",
+        "insurance_id": "MCR-5010D3344"
+      },
+      "problems": [
+        { "problem_name": "Type 2 Diabetes Mellitus", "icd10_code": "E11.9", "status": "active", "onset_date": "2008-05-01" },
+        { "problem_name": "Essential Hypertension", "icd10_code": "I10", "status": "active", "onset_date": "2005-02-01" },
+        { "problem_name": "Benign Prostatic Hyperplasia", "icd10_code": "N40.0", "status": "active", "onset_date": "2018-07-01" },
+        { "problem_name": "Primary Osteoarthritis Right Knee", "icd10_code": "M17.11", "status": "chronic", "onset_date": "2016-09-01" },
+        { "problem_name": "Hyperlipidemia", "icd10_code": "E78.5", "status": "active", "onset_date": "2007-03-01" }
+      ],
+      "medications": [
+        { "medication_name": "Metformin", "generic_name": "Metformin", "dose": "500mg", "route": "PO", "frequency": "BID", "status": "active", "prescriber": "Dr. Williams" },
+        { "medication_name": "Lisinopril", "generic_name": "Lisinopril", "dose": "10mg", "route": "PO", "frequency": "daily", "status": "active", "prescriber": "Dr. Williams" },
+        { "medication_name": "Tamsulosin", "generic_name": "Tamsulosin", "dose": "0.4mg", "route": "PO", "frequency": "qHS", "status": "active", "prescriber": "Dr. Williams" },
+        { "medication_name": "Atorvastatin", "generic_name": "Atorvastatin", "dose": "20mg", "route": "PO", "frequency": "qHS", "status": "active", "prescriber": "Dr. Williams" },
+        { "medication_name": "Acetaminophen", "generic_name": "Acetaminophen", "dose": "500mg", "route": "PO", "frequency": "PRN", "status": "active", "prescriber": "Dr. Williams" }
+      ],
+      "allergies": [
+        { "allergen": "Sulfa", "reaction": "Hives", "severity": "moderate" }
+      ],
+      "encounter": {
+        "encounter_type": "Annual Wellness Visit",
+        "chief_complaint": "Annual wellness visit, feeling generally well",
+        "provider": "Dr. Williams"
+      },
+      "vitals": {
+        "systolic_bp": 134,
+        "diastolic_bp": 78,
+        "heart_rate": 70,
+        "temperature": 98.2,
+        "weight": 180,
+        "height": 70,
+        "spo2": 97,
+        "respiratory_rate": 16
+      },
+      "labs": [],
+      "transcript": "Doctor: Good morning Charles, how have you been?\nPatient: Pretty good doctor. No major complaints. Knee still bothers me some but manageable.\nDoctor: Blood pressure is 134 over 78, heart rate 70, temperature 98.2, oxygen saturation 97 percent, weight 180 pounds.\nDoctor: Everything looks stable. Let's do your yearly labs. I'm ordering an A1C, lipid panel, comprehensive metabolic panel, urinalysis, and PSA. Continue all your current medications.\nPatient: Sounds good. When should I come back?\nDoctor: I'll have the lab results in about a week. We'll call you with results and schedule a follow-up if anything needs adjusting.",
+      "expected_cds": {
+        "should_fire": ["Diabetes Monitoring", "Hypertension Monitoring"],
+        "should_not_fire": ["Hypertensive Crisis", "Tachycardia", "Hypoxia", "Bradycardia"]
+      }
+    }
+  ]
+}

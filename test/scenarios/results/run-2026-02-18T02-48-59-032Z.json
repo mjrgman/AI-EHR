@@ -1,0 +1,238 @@
+{
+  "timestamp": "2026-02-18T02:48:59.032Z",
+  "results": [
+    {
+      "id": "DM-UNCONTROLLED-001",
+      "name": "Uncontrolled Type 2 Diabetes",
+      "category": "endocrine",
+      "severity": "moderate",
+      "timestamp": "2026-02-18T02:48:58.956Z",
+      "steps": [
+        {
+          "step": "Create Patient",
+          "status": "OK",
+          "detail": "Maria Gonzalez (MRN: 2026-70583, ID: 4)",
+          "time": "2026-02-18T02:48:58.970Z"
+        },
+        {
+          "step": "Add Problem",
+          "status": "OK",
+          "detail": "Type 2 Diabetes Mellitus (E11.9)",
+          "time": "2026-02-18T02:48:58.973Z"
+        },
+        {
+          "step": "Add Problem",
+          "status": "OK",
+          "detail": "Obesity (E66.9)",
+          "time": "2026-02-18T02:48:58.975Z"
+        },
+        {
+          "step": "Add Problem",
+          "status": "OK",
+          "detail": "Hyperlipidemia (E78.5)",
+          "time": "2026-02-18T02:48:58.977Z"
+        },
+        {
+          "step": "Add Medication",
+          "status": "OK",
+          "detail": "Metformin 1000mg BID",
+          "time": "2026-02-18T02:48:58.979Z"
+        },
+        {
+          "step": "Add Medication",
+          "status": "OK",
+          "detail": "Glipizide 5mg daily",
+          "time": "2026-02-18T02:48:58.981Z"
+        },
+        {
+          "step": "Add Medication",
+          "status": "OK",
+          "detail": "Atorvastatin 20mg qHS",
+          "time": "2026-02-18T02:48:58.983Z"
+        },
+        {
+          "step": "Add Allergy",
+          "status": "OK",
+          "detail": "Sulfa (moderate)",
+          "time": "2026-02-18T02:48:58.986Z"
+        },
+        {
+          "step": "Add Lab Result",
+          "status": "OK",
+          "detail": "Hemoglobin A1C: 9.2 % [ABNORMAL]",
+          "time": "2026-02-18T02:48:58.989Z"
+        },
+        {
+          "step": "Add Lab Result",
+          "status": "OK",
+          "detail": "Fasting Glucose: 245 mg/dL [ABNORMAL]",
+          "time": "2026-02-18T02:48:58.990Z"
+        },
+        {
+          "step": "Add Lab Result",
+          "status": "OK",
+          "detail": "Creatinine: 0.9 mg/dL ",
+          "time": "2026-02-18T02:48:58.992Z"
+        },
+        {
+          "step": "Add Lab Result",
+          "status": "OK",
+          "detail": "eGFR: 78 mL/min ",
+          "time": "2026-02-18T02:48:58.993Z"
+        },
+        {
+          "step": "Create Encounter",
+          "status": "OK",
+          "detail": "Office Visit - Follow-up — \"Follow-up for diabetes, sugars running 200-300\" (ID: 3)",
+          "time": "2026-02-18T02:48:58.996Z"
+        },
+        {
+          "step": "Record Vitals",
+          "status": "OK",
+          "detail": "BP 138/86 | HR 78 | Temp 98.4 | SpO2 98% | Wt 198",
+          "time": "2026-02-18T02:48:59.003Z"
+        },
+        {
+          "step": "Create Workflow",
+          "status": "WARN",
+          "detail": "HTTP 500 — workflow may already exist",
+          "time": "2026-02-18T02:48:59.005Z"
+        },
+        {
+          "step": "CDS Evaluation",
+          "status": "OK",
+          "detail": "2 suggestion(s) generated",
+          "time": "2026-02-18T02:48:59.009Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "OK",
+          "detail": "Expected rule fired: \"A1C Above Target\"",
+          "time": "2026-02-18T02:48:59.010Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "OK",
+          "detail": "Expected rule fired: \"Diabetes Monitoring\"",
+          "time": "2026-02-18T02:48:59.010Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "OK",
+          "detail": "Correctly absent: \"Hypertensive Crisis\"",
+          "time": "2026-02-18T02:48:59.010Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "OK",
+          "detail": "Correctly absent: \"Hypoxia\"",
+          "time": "2026-02-18T02:48:59.010Z"
+        },
+        {
+          "step": "AI Extract",
+          "status": "OK",
+          "detail": "Vitals: 0 fields | Meds: 0 | Problems: 0",
+          "time": "2026-02-18T02:48:59.024Z"
+        },
+        {
+          "step": "SOAP Note",
+          "status": "OK",
+          "detail": "Generated (858 chars) — All 4 sections present",
+          "time": "2026-02-18T02:48:59.031Z"
+        }
+      ],
+      "cds_results": [
+        {
+          "id": 33,
+          "suggestion_type": "lab_order",
+          "category": "routine",
+          "priority": 20,
+          "title": "A1C Above Target (Hemoglobin A1C: 9.2 %)",
+          "description": "A1C >= 7.0% in diabetic patient. Consider medication escalation.",
+          "rationale": "Hemoglobin A1C = 9.2 (ref: 4.0-5.6). ADA Standards of Care 2024",
+          "suggested_action": [
+            {
+              "type": "create_prescription",
+              "description": "Consider adding GLP-1 agonist (Ozempic/Semaglutide)",
+              "payload": {
+                "medication_name": "Semaglutide (Ozempic)",
+                "generic_name": "Semaglutide",
+                "dose": "0.25mg",
+                "route": "SC",
+                "frequency": "weekly",
+                "quantity": 4,
+                "refills": 0,
+                "instructions": "Inject 0.25mg SC once weekly. Titrate to 0.5mg after 4 weeks.",
+                "indication": "Type 2 Diabetes Mellitus",
+                "icd10_codes": "E11.9"
+              }
+            },
+            {
+              "type": "create_referral",
+              "description": "Endocrinology referral if A1C > 9.0",
+              "payload": {
+                "specialty": "Endocrinology",
+                "reason": "Uncontrolled Type 2 Diabetes",
+                "urgency": "routine"
+              }
+            }
+          ],
+          "source": "rule_engine"
+        },
+        {
+          "id": 34,
+          "suggestion_type": "preventive_care",
+          "category": "routine",
+          "priority": 50,
+          "title": "Diabetes Monitoring Due (2 tests due)",
+          "description": "Routine diabetes screening tests are due per ADA guidelines. Due: Urine Microalbumin, Lipid Panel.",
+          "rationale": "ADA Standards of Care 2024",
+          "suggested_action": [
+            {
+              "type": "create_lab_order",
+              "description": "A1C",
+              "payload": {
+                "test_name": "Hemoglobin A1C",
+                "cpt_code": "83036",
+                "priority": "routine"
+              }
+            },
+            {
+              "type": "create_lab_order",
+              "description": "UACR",
+              "payload": {
+                "test_name": "Urine Microalbumin",
+                "cpt_code": "82043",
+                "priority": "routine"
+              }
+            },
+            {
+              "type": "create_lab_order",
+              "description": "Lipid Panel",
+              "payload": {
+                "test_name": "Lipid Panel",
+                "cpt_code": "80061",
+                "priority": "routine"
+              }
+            },
+            {
+              "type": "create_referral",
+              "description": "Annual eye exam",
+              "payload": {
+                "specialty": "Ophthalmology",
+                "reason": "Diabetic retinopathy screening",
+                "urgency": "routine"
+              }
+            }
+          ],
+          "source": "rule_engine"
+        }
+      ],
+      "pass": true,
+      "errors": [],
+      "patient_id": 4,
+      "mrn": "2026-70583",
+      "encounter_id": 3
+    }
+  ]
+}

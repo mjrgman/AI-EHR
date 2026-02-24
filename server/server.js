@@ -1,19 +1,30 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const db = require('./database');
 const aiClient = require('./ai-client');
 const workflow = require('./workflow-engine');
 const cds = require('./cds-engine');
 const providerLearning = require('./provider-learning');
+const audit = require('./audit-logger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+app.use(cors({
+  exposedHeaders: ['X-Audit-Session-Id'],
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../dist')));
+app.use(audit.auditMiddleware({
+  excludePaths: ['/api/health', '/api/ai/status'],
+}));
 
 // ==========================================
 // VALIDATION HELPERS
@@ -1308,6 +1319,32 @@ app.get('/api/patients/:id/labs', async (req, res) => {
   }
 });
 
+app.post('/api/patients/:id/labs', async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid patient ID' });
+
+    const err = requireFields(req.body, ['test_name', 'result_value']);
+    if (err) return res.status(400).json({ error: err });
+
+    const result = await db.addLab({
+      patient_id: id,
+      test_name: sanitizeString(req.body.test_name, 200),
+      result_value: sanitizeString(String(req.body.result_value), 100),
+      reference_range: req.body.reference_range || null,
+      units: req.body.units || null,
+      result_date: req.body.result_date || new Date().toISOString().split('T')[0],
+      status: req.body.status || 'final',
+      abnormal_flag: req.body.abnormal_flag || null,
+      notes: req.body.notes || null
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Error adding lab result:', error);
+    res.status(500).json({ error: 'Failed to add lab result' });
+  }
+});
+
 app.get('/api/patients/:id/vitals', async (req, res) => {
   try {
     const id = validateId(req.params.id);
@@ -1407,7 +1444,8 @@ app.get('/api/health', (req, res) => {
       provider_learning: true,
       voice_recognition: true,
       pattern_matching: true,
-      soap_generation: true
+      soap_generation: true,
+      audit_logging: true
     },
     timestamp: new Date().toISOString()
   });
@@ -1426,6 +1464,99 @@ app.get('/api/ai/status', (req, res) => {
       provider_learning: true
     }
   });
+});
+
+// ==========================================
+// AUDIT LOG ENDPOINTS
+// ==========================================
+
+app.get('/api/audit/logs', async (req, res) => {
+  try {
+    const result = await audit.queryAuditLogs({
+      page: parseInt(req.query.page, 10) || 1,
+      limit: Math.min(parseInt(req.query.limit, 10) || 50, 200),
+      user: req.query.user || undefined,
+      action: req.query.action || undefined,
+      resource_type: req.query.resource_type || undefined,
+      patient_id: req.query.patient_id || undefined,
+      phi_only: req.query.phi_only === 'true',
+      date_from: req.query.date_from || undefined,
+      date_to: req.query.date_to || undefined,
+      search: req.query.search ? sanitizeString(req.query.search, 100) : undefined,
+      session_id: req.query.session_id || undefined,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error querying audit logs:', error);
+    res.status(500).json({ error: 'Failed to query audit logs' });
+  }
+});
+
+app.get('/api/audit/stats', async (req, res) => {
+  try {
+    const stats = await audit.getAuditStats({
+      date_from: req.query.date_from || undefined,
+      date_to: req.query.date_to || undefined,
+    });
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching audit stats:', error);
+    res.status(500).json({ error: 'Failed to fetch audit stats' });
+  }
+});
+
+app.get('/api/audit/sessions', async (req, res) => {
+  try {
+    const result = await audit.getAuditSessions({
+      page: parseInt(req.query.page, 10) || 1,
+      limit: Math.min(parseInt(req.query.limit, 10) || 20, 100),
+      active_only: req.query.active_only === 'true',
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching audit sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch audit sessions' });
+  }
+});
+
+app.get('/api/audit/patient/:id', async (req, res) => {
+  try {
+    const patientId = validateId(req.params.id);
+    if (!patientId) return res.status(400).json({ error: 'Invalid patient ID' });
+
+    const result = await audit.queryAuditLogs({
+      patient_id: patientId,
+      page: parseInt(req.query.page, 10) || 1,
+      limit: Math.min(parseInt(req.query.limit, 10) || 50, 200),
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching patient audit trail:', error);
+    res.status(500).json({ error: 'Failed to fetch patient audit trail' });
+  }
+});
+
+app.get('/api/audit/export', async (req, res) => {
+  try {
+    const result = await audit.queryAuditLogs({
+      page: 1,
+      limit: 10000,
+      phi_only: req.query.phi_only === 'true',
+      date_from: req.query.date_from || undefined,
+      date_to: req.query.date_to || undefined,
+    });
+
+    const headers = ['timestamp','user_identity','user_role','action','resource_type','resource_id','patient_id','phi_accessed','request_path','response_status','ip_address','duration_ms'];
+    const rows = result.logs.map(log => headers.map(h => JSON.stringify(log[h] ?? '')).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="audit-log-${new Date().toISOString().split('T')[0]}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Error exporting audit logs:', error);
+    res.status(500).json({ error: 'Failed to export audit logs' });
+  }
 });
 
 // ==========================================
@@ -1467,8 +1598,10 @@ async function startServer() {
     Workflow Engine:    9-state machine ready
     Provider Learning:  Preference tracking enabled
     Speech Recognition: Ready (browser-based)
+    Audit Logger:      Active (HIPAA compliance)
+    Security Headers:  Helmet enabled
 
-  API Endpoints: ~35 routes active
+  API Endpoints: ~40 routes active
   Ready for interactive demos!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     `);

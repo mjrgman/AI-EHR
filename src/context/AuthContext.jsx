@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { setAuditContext } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -11,6 +12,11 @@ const ROLES = {
 export function AuthProvider({ children }) {
   const [currentRole, setCurrentRole] = useState('provider');
   const [providerName, setProviderName] = useState('Dr. MJR');
+
+  // Sync audit identity to API client whenever role or name changes
+  useEffect(() => {
+    setAuditContext(providerName, currentRole);
+  }, [providerName, currentRole]);
 
   const switchRole = useCallback((role) => {
     if (ROLES[role]) setCurrentRole(role);

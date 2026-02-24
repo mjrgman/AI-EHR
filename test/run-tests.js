@@ -29,6 +29,7 @@ const aiClient = require('../server/ai-client');
 const workflowEngine = require('../server/workflow-engine');
 const cdsEngine = require('../server/cds-engine');
 const providerLearning = require('../server/provider-learning');
+const auditLogger = require('../server/audit-logger');
 
 // Test utilities
 let testCount = 0;
@@ -89,7 +90,7 @@ async function runAllTests() {
   console.log('PHASE 1: DATABASE TESTS\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  await test('Database initialized with 15 tables', async () => {
+  await test('Database initialized with 17 tables', async () => {
     const tables = await db.dbAll("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
     const tableNames = tables.map(t => t.name);
     assert(tableNames.includes('patients'), 'patients table should exist');
@@ -653,6 +654,122 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     // Should trigger tachycardia and/or hypoxia alerts
     const urgentAlerts = suggestions.filter(s => s.category === 'urgent');
     assert(urgentAlerts.length >= 1, 'Should have at least 1 urgent alert');
+  });
+
+  // ==========================================
+  // PHASE 10: AUDIT LOGGING TESTS
+  // ==========================================
+
+  console.log('\n--- PHASE 10: AUDIT LOGGING ---\n');
+
+  await test('Audit tables exist (audit_log, audit_sessions)', async () => {
+    const tables = await db.dbAll("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+    const names = tables.map(t => t.name);
+    assert(names.includes('audit_log'), 'audit_log table should exist');
+    assert(names.includes('audit_sessions'), 'audit_sessions table should exist');
+  });
+
+  await test('Insert and query audit log entry', async () => {
+    await db.dbRun(`INSERT INTO audit_log (
+      session_id, user_identity, user_role, action, resource_type, resource_id,
+      description, request_method, request_path, response_status, phi_accessed,
+      phi_fields_accessed, patient_id, ip_address, duration_ms
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ['test-session-1', 'Dr. Test', 'provider', 'READ', 'patient', 1,
+       'READ patient ID:1', 'GET', '/api/patients/1', 200, 1,
+       '["dob","phone","insurance_id"]', 1, '127.0.0.1', 42]);
+
+    const logs = await db.dbAll('SELECT * FROM audit_log WHERE session_id = ?', ['test-session-1']);
+    assert(logs.length === 1, `Should have 1 audit log entry, got ${logs.length}`);
+    assertEqual(logs[0].user_identity, 'Dr. Test', 'User identity');
+    assertEqual(logs[0].phi_accessed, 1, 'PHI accessed flag');
+    assertEqual(logs[0].patient_id, 1, 'Patient ID');
+    assertEqual(logs[0].action, 'READ', 'Action');
+    assertEqual(logs[0].resource_type, 'patient', 'Resource type');
+  });
+
+  await test('Insert and query audit session', async () => {
+    await db.dbRun('INSERT INTO audit_sessions (id, user_identity, user_role, ip_address) VALUES (?,?,?,?)',
+      ['test-session-1', 'Dr. Test', 'provider', '127.0.0.1']);
+
+    const session = await db.dbGet('SELECT * FROM audit_sessions WHERE id = ?', ['test-session-1']);
+    assert(session, 'Session should exist');
+    assertEqual(session.user_identity, 'Dr. Test', 'Session user');
+    assertEqual(session.request_count, 0, 'Initial request count');
+  });
+
+  await test('Session request count increments', async () => {
+    await db.dbRun('UPDATE audit_sessions SET request_count = request_count + 1 WHERE id = ?', ['test-session-1']);
+    await db.dbRun('UPDATE audit_sessions SET request_count = request_count + 1 WHERE id = ?', ['test-session-1']);
+
+    const session = await db.dbGet('SELECT * FROM audit_sessions WHERE id = ?', ['test-session-1']);
+    assertEqual(session.request_count, 2, 'Request count should be 2');
+  });
+
+  await test('Audit log filtered queries work', async () => {
+    // Insert diverse entries
+    for (let i = 0; i < 5; i++) {
+      await db.dbRun(`INSERT INTO audit_log (
+        session_id, user_identity, action, resource_type, response_status,
+        phi_accessed, patient_id, ip_address, duration_ms, request_method, request_path
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [`sess-filter-${i}`, i % 2 === 0 ? 'Dr. Test' : 'Nurse Jane',
+         i % 2 === 0 ? 'READ' : 'CREATE',
+         i % 2 === 0 ? 'patient' : 'encounter',
+         200, i % 2, i % 2 === 0 ? 1 : null,
+         '127.0.0.1', 10 + i, 'GET', `/api/test/${i}`]);
+    }
+
+    // Query by user
+    const byUser = await db.dbAll("SELECT * FROM audit_log WHERE user_identity = 'Nurse Jane'");
+    assert(byUser.length >= 2, `Should filter by user, got ${byUser.length}`);
+
+    // Query PHI only
+    const phiOnly = await db.dbAll('SELECT * FROM audit_log WHERE phi_accessed = 1');
+    assert(phiOnly.length >= 1, `Should filter PHI accesses, got ${phiOnly.length}`);
+
+    // Query by patient
+    const byPatient = await db.dbAll('SELECT * FROM audit_log WHERE patient_id = 1');
+    assert(byPatient.length >= 1, `Should filter by patient, got ${byPatient.length}`);
+  });
+
+  await test('PHI route classification is correct', () => {
+    const routes = auditLogger.PHI_ROUTES;
+
+    // Patient detail should be PHI
+    const patientRoute = routes['GET /api/patients/:id'];
+    assert(patientRoute, 'Patient detail route should be classified');
+    assert(patientRoute.phi === true, 'Patient detail should be marked as PHI');
+    assert(patientRoute.phiFields.includes('dob'), 'Patient PHI fields should include dob');
+
+    // Health endpoint should NOT be PHI
+    const healthRoute = routes['GET /api/health'];
+    assert(healthRoute, 'Health route should be classified');
+    assert(healthRoute.phi === false, 'Health route should not be PHI');
+
+    // Workflow should NOT be PHI
+    const workflowRoute = routes['GET /api/workflows'];
+    assert(workflowRoute, 'Workflows route should be classified');
+    assert(workflowRoute.phi === false, 'Workflows route should not be PHI');
+
+    // Prescriptions should be PHI
+    const rxRoute = routes['POST /api/prescriptions'];
+    assert(rxRoute, 'Prescriptions route should be classified');
+    assert(rxRoute.phi === true, 'Prescriptions should be marked as PHI');
+  });
+
+  await test('Route matching resolves parameterized paths', () => {
+    const result = auditLogger.matchRoute('GET', '/api/patients/42');
+    assert(result, 'Should match /api/patients/42');
+    assertEqual(result.key, 'GET /api/patients/:id', 'Should resolve to parameterized pattern');
+    assert(result.config.phi === true, 'Should be classified as PHI');
+
+    const noMatch = auditLogger.matchRoute('GET', '/api/nonexistent/route');
+    assert(noMatch === null, 'Should return null for unclassified route');
+
+    const exactMatch = auditLogger.matchRoute('GET', '/api/patients');
+    assert(exactMatch, 'Should match exact path');
+    assertEqual(exactMatch.key, 'GET /api/patients', 'Should resolve to exact pattern');
   });
 
   // ==========================================

@@ -1,0 +1,204 @@
+{
+  "timestamp": "2026-02-18T02:45:40.574Z",
+  "results": [
+    {
+      "id": "DM-UNCONTROLLED-001",
+      "name": "Uncontrolled Type 2 Diabetes",
+      "category": "endocrine",
+      "severity": "moderate",
+      "timestamp": "2026-02-18T02:45:40.506Z",
+      "steps": [
+        {
+          "step": "Create Patient",
+          "status": "OK",
+          "detail": "Maria Gonzalez (MRN: 2026-68528, ID: 3)",
+          "time": "2026-02-18T02:45:40.522Z"
+        },
+        {
+          "step": "Add Problem",
+          "status": "OK",
+          "detail": "Type 2 Diabetes Mellitus (E11.9)",
+          "time": "2026-02-18T02:45:40.525Z"
+        },
+        {
+          "step": "Add Problem",
+          "status": "OK",
+          "detail": "Obesity (E66.9)",
+          "time": "2026-02-18T02:45:40.527Z"
+        },
+        {
+          "step": "Add Problem",
+          "status": "OK",
+          "detail": "Hyperlipidemia (E78.5)",
+          "time": "2026-02-18T02:45:40.529Z"
+        },
+        {
+          "step": "Add Medication",
+          "status": "OK",
+          "detail": "Metformin 1000mg BID",
+          "time": "2026-02-18T02:45:40.530Z"
+        },
+        {
+          "step": "Add Medication",
+          "status": "OK",
+          "detail": "Glipizide 5mg daily",
+          "time": "2026-02-18T02:45:40.533Z"
+        },
+        {
+          "step": "Add Medication",
+          "status": "OK",
+          "detail": "Atorvastatin 20mg qHS",
+          "time": "2026-02-18T02:45:40.536Z"
+        },
+        {
+          "step": "Add Allergy",
+          "status": "FAIL",
+          "detail": "Sulfa: HTTP 500",
+          "time": "2026-02-18T02:45:40.539Z"
+        },
+        {
+          "step": "Lab Result (Context)",
+          "status": "OK",
+          "detail": "Hemoglobin A1C: 9.2 % [ABNORMAL]",
+          "time": "2026-02-18T02:45:40.539Z"
+        },
+        {
+          "step": "Lab Result (Context)",
+          "status": "OK",
+          "detail": "Fasting Glucose: 245 mg/dL [ABNORMAL]",
+          "time": "2026-02-18T02:45:40.539Z"
+        },
+        {
+          "step": "Lab Result (Context)",
+          "status": "OK",
+          "detail": "Creatinine: 0.9 mg/dL ",
+          "time": "2026-02-18T02:45:40.539Z"
+        },
+        {
+          "step": "Lab Result (Context)",
+          "status": "OK",
+          "detail": "eGFR: 78 mL/min ",
+          "time": "2026-02-18T02:45:40.539Z"
+        },
+        {
+          "step": "Create Encounter",
+          "status": "OK",
+          "detail": "Office Visit - Follow-up — \"Follow-up for diabetes, sugars running 200-300\" (ID: 2)",
+          "time": "2026-02-18T02:45:40.542Z"
+        },
+        {
+          "step": "Record Vitals",
+          "status": "OK",
+          "detail": "BP 138/86 | HR 78 | Temp 98.4 | SpO2 98% | Wt 198",
+          "time": "2026-02-18T02:45:40.548Z"
+        },
+        {
+          "step": "Create Workflow",
+          "status": "WARN",
+          "detail": "HTTP 500 — workflow may already exist",
+          "time": "2026-02-18T02:45:40.550Z"
+        },
+        {
+          "step": "CDS Evaluation",
+          "status": "OK",
+          "detail": "1 suggestion(s) generated",
+          "time": "2026-02-18T02:45:40.555Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "FAIL",
+          "detail": "Expected rule DID NOT fire: \"A1C Above Target\"",
+          "time": "2026-02-18T02:45:40.556Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "OK",
+          "detail": "Expected rule fired: \"Diabetes Monitoring\"",
+          "time": "2026-02-18T02:45:40.556Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "OK",
+          "detail": "Correctly absent: \"Hypertensive Crisis\"",
+          "time": "2026-02-18T02:45:40.556Z"
+        },
+        {
+          "step": "CDS Verify",
+          "status": "OK",
+          "detail": "Correctly absent: \"Hypoxia\"",
+          "time": "2026-02-18T02:45:40.556Z"
+        },
+        {
+          "step": "AI Extract",
+          "status": "OK",
+          "detail": "Vitals: 0 fields | Meds: 0 | Problems: 0",
+          "time": "2026-02-18T02:45:40.566Z"
+        },
+        {
+          "step": "SOAP Note",
+          "status": "OK",
+          "detail": "Generated (858 chars) — All 4 sections present",
+          "time": "2026-02-18T02:45:40.573Z"
+        }
+      ],
+      "cds_results": [
+        {
+          "id": 29,
+          "suggestion_type": "preventive_care",
+          "category": "routine",
+          "priority": 50,
+          "title": "Diabetes Monitoring Due (3 tests due)",
+          "description": "Routine diabetes screening tests are due per ADA guidelines. Due: Hemoglobin A1C, Urine Microalbumin, Lipid Panel.",
+          "rationale": "ADA Standards of Care 2024",
+          "suggested_action": [
+            {
+              "type": "create_lab_order",
+              "description": "A1C",
+              "payload": {
+                "test_name": "Hemoglobin A1C",
+                "cpt_code": "83036",
+                "priority": "routine"
+              }
+            },
+            {
+              "type": "create_lab_order",
+              "description": "UACR",
+              "payload": {
+                "test_name": "Urine Microalbumin",
+                "cpt_code": "82043",
+                "priority": "routine"
+              }
+            },
+            {
+              "type": "create_lab_order",
+              "description": "Lipid Panel",
+              "payload": {
+                "test_name": "Lipid Panel",
+                "cpt_code": "80061",
+                "priority": "routine"
+              }
+            },
+            {
+              "type": "create_referral",
+              "description": "Annual eye exam",
+              "payload": {
+                "specialty": "Ophthalmology",
+                "reason": "Diabetic retinopathy screening",
+                "urgency": "routine"
+              }
+            }
+          ],
+          "source": "rule_engine"
+        }
+      ],
+      "pass": false,
+      "errors": [
+        "Failed to add allergy: Sulfa",
+        "CDS rule \"A1C Above Target\" did not fire as expected"
+      ],
+      "patient_id": 3,
+      "mrn": "2026-68528",
+      "encounter_id": 2
+    }
+  ]
+}
