@@ -1,0 +1,4 @@
+gradio>=4.0
+sqlalchemy>=2.0
+google-generativeai>=0.3
+python-dotenv>=1.0
