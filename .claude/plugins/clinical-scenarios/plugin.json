@@ -1,0 +1,7 @@
+{
+  "name": "clinical-scenarios",
+  "version": "1.0.0",
+  "description": "Clinical scenario walkthrough agent for MJR-EHR. Generates and tests realistic patient encounters with real complaints, vitals, labs, and clinical decision support evaluation.",
+  "author": "MJR-EHR Health Systems",
+  "agents": "agents"
+}

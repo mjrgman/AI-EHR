@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["nodemon", "server/server.js"],
+      "port": 3000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite"],
+      "port": 5173
+    },
+    {
+      "name": "website",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "D:/files/website/impact-medicine/dist", "-l", "4321"],
+      "port": 4321
+    }
+  ]
+}
