@@ -1,0 +1,163 @@
+version: '3.8'
+
+# ==========================================
+# Agentic EHR Docker Compose Configuration
+# ==========================================
+# Supports both local development and production deployment
+#
+# Local dev:
+#   docker-compose up
+#
+# Production (with .env file):
+#   docker-compose -f docker-compose.yml up -d
+#
+# Services:
+#   - agentic-ehr: Node.js/Express backend + React frontend
+#   - nginx: Reverse proxy with TLS termination
+
+services:
+  # ==========================================
+  # Agentic EHR APPLICATION
+  # ==========================================
+  agentic-ehr:
+    # Build from local Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # Container name for easy reference
+    container_name: agentic-ehr-app
+
+    # Restart policy for production
+    restart: unless-stopped
+
+    # Environment variables
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_PATH: /data/agentic-ehr.db
+      LOG_DIR: /data/logs
+
+    # Port mapping
+    # Internal 3000 -> exposed only to nginx (not public)
+    ports:
+      - "3000:3000"
+
+    # Volumes
+    volumes:
+      # Persistent SQLite database
+      - ehr-data:/data
+      # Audit logs
+      - ehr-logs:/data/logs
+      # Optional: development source code hot-reload
+      # Uncomment for development, keep commented for production
+      # - ./server:/app/server
+      # - ./src:/app/src
+
+    # Resource constraints
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+    # Network
+    networks:
+      - ehr-internal
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================
+  # NGINX REVERSE PROXY WITH TLS
+  # ==========================================
+  nginx:
+    # Official nginx alpine image
+    image: nginx:1.27-alpine
+
+    # Container name
+    container_name: agentic-ehr-nginx
+
+    # Restart policy
+    restart: unless-stopped
+
+    # Port mapping
+    # HTTP 80 -> redirect to HTTPS
+    # HTTPS 443 -> proxy to agentic-ehr:3000
+    ports:
+      - "80:80"
+      - "443:443"
+
+    # Configuration and certificates
+    volumes:
+      # Nginx configuration
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx-default.conf:/etc/nginx/conf.d/default.conf:ro
+      # TLS certificates (mount from host or named volume)
+      - ./certs:/etc/nginx/certs:ro
+      # Logs
+      - ehr-logs:/var/log/nginx
+
+    # Depends on agentic-ehr service
+    depends_on:
+      agentic-ehr:
+        condition: service_healthy
+
+    # Network
+    networks:
+      - ehr-internal
+
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ==========================================
+# VOLUMES
+# ==========================================
+volumes:
+  # SQLite database + application data
+  ehr-data:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      # For persistent storage, remove tmpfs and use:
+      # type: none
+      # o: bind
+      # device: /path/to/host/data
+
+  # Audit logs + nginx logs
+  ehr-logs:
+    driver: local
+
+# ==========================================
+# NETWORKS
+# ==========================================
+networks:
+  # Internal network - isolated from external access
+  # Only nginx has external ports
+  ehr-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

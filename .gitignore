@@ -1,6 +1,45 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+
+# Archive
 archive/
 *.tar.gz
 *.zip
+
+# Environment & secrets
 .env
+.env.local
+.env.production
+
+# Database files
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Backups
+backups/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+_seed-user.js
+
+# SSL certificates
+nginx/ssl/
+*.pem
+*.key
+*.crt

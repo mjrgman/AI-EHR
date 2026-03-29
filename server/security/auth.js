@@ -126,8 +126,22 @@ async function login(req, res) {
 
     const token = signToken(user);
 
+    // Issue refresh token if the module is initialized
+    let refreshToken = null;
+    let refreshExpiresAt = null;
+    try {
+      const refreshMod = require('./refresh-tokens');
+      const rt = await refreshMod.create(user.id);
+      refreshToken = rt.refreshToken;
+      refreshExpiresAt = rt.expiresAt;
+    } catch {
+      // Refresh tokens not initialized yet — skip
+    }
+
     res.json({
       token,
+      refreshToken,
+      refreshExpiresAt,
       user: {
         id: user.id,
         username: user.username,

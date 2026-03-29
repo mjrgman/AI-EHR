@@ -8,18 +8,78 @@ const workflow = require('./workflow-engine');
 const cds = require('./cds-engine');
 const providerLearning = require('./provider-learning');
 const audit = require('./audit-logger');
+const logger = require('./utils/logger');
+const { validate, schemas } = require('./utils/validate');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SERVER_START_TIME = Date.now();
 
-// Middleware
+// ==========================================
+// PROCESS-LEVEL ERROR HANDLERS (must be first)
+// ==========================================
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Promise Rejection', {
+    reason: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+  // Don't exit — log and continue. The request-level handler will catch individual failures.
+});
+
+process.on('uncaughtException', (error) => {
+  logger.fatal('Uncaught Exception — shutting down', {
+    error: error.message,
+    stack: error.stack,
+  });
+  // Give logs time to flush, then exit
+  setTimeout(() => process.exit(1), 1000);
+});
+
+// ==========================================
+// MIDDLEWARE
+// ==========================================
+
+// Helmet with nonce-based CSP (replaces contentSecurityPolicy: false)
+app.use((req, res, next) => {
+  const crypto = require('crypto');
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
+
+// CORS — locked to configured origins in production
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map(s => s.trim());
+
 app.use(cors({
-  exposedHeaders: ['X-Audit-Session-Id'],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, mobile apps)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (process.env.NODE_ENV !== 'production') return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+  exposedHeaders: ['X-Audit-Session-Id', 'X-RateLimit-Remaining'],
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../dist')));
 app.use(audit.auditMiddleware({
@@ -102,7 +162,7 @@ app.get('/api/patients/:id', async (req, res) => {
 });
 
 // Create new patient
-app.post('/api/patients', async (req, res) => {
+app.post('/api/patients', validate(schemas.createPatient), async (req, res) => {
   try {
     const err = requireFields(req.body, ['first_name', 'last_name', 'dob']);
     if (err) {
@@ -1433,11 +1493,34 @@ app.get('/api/dashboard', async (req, res) => {
 // SYSTEM ENDPOINTS
 // ==========================================
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
+app.get('/api/health', async (req, res) => {
+  // Database connectivity check
+  let dbStatus = 'unknown';
+  try {
+    const row = await db.dbGet('SELECT 1 as ok');
+    dbStatus = row && row.ok === 1 ? 'connected' : 'error';
+  } catch {
+    dbStatus = 'disconnected';
+  }
+
+  const memUsage = process.memoryUsage();
+  const uptimeSeconds = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
+
+  const isHealthy = dbStatus === 'connected';
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'ok' : 'degraded',
+    uptime_seconds: uptimeSeconds,
+    database: dbStatus,
+    memory: {
+      rss_mb: Math.round(memUsage.rss / 1048576),
+      heap_used_mb: Math.round(memUsage.heapUsed / 1048576),
+      heap_total_mb: Math.round(memUsage.heapTotal / 1048576),
+    },
     ai_mode: aiClient.getMode(),
     claude_enabled: aiClient.isClaudeEnabled(),
+    node_version: process.version,
+    environment: process.env.NODE_ENV || 'development',
     features: {
       clinical_decision_support: true,
       workflow_management: true,
@@ -1445,7 +1528,10 @@ app.get('/api/health', (req, res) => {
       voice_recognition: true,
       pattern_matching: true,
       soap_generation: true,
-      audit_logging: true
+      audit_logging: true,
+      phi_encryption: true,
+      jwt_authentication: true,
+      rbac: true,
     },
     timestamp: new Date().toISOString()
   });
@@ -1560,6 +1646,90 @@ app.get('/api/audit/export', async (req, res) => {
 });
 
 // ==========================================
+// REFRESH TOKEN ENDPOINTS
+// ==========================================
+
+const refreshTokens = require('./security/refresh-tokens');
+
+app.post('/api/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ error: 'refreshToken is required' });
+    }
+
+    const result = await refreshTokens.rotate(refreshToken);
+    if (!result) {
+      return res.status(401).json({ error: 'Invalid or expired refresh token' });
+    }
+
+    // Get the user to sign a new access token
+    const user = await db.dbGet('SELECT * FROM users WHERE id = ? AND is_active = 1', [result.refreshToken ? undefined : undefined]);
+    // We need the user_id from the validation step — get it from the new token's DB entry
+    const auth = require('./security/auth');
+    const tokenInfo = await refreshTokens.validate(result.refreshToken);
+    if (!tokenInfo) {
+      return res.status(401).json({ error: 'Token rotation failed' });
+    }
+
+    const userRow = await db.dbGet('SELECT * FROM users WHERE id = ? AND is_active = 1', [tokenInfo.userId]);
+    if (!userRow) {
+      return res.status(401).json({ error: 'User not found or inactive' });
+    }
+
+    const accessToken = auth.signToken(userRow);
+
+    res.json({
+      token: accessToken,
+      refreshToken: result.refreshToken,
+      expiresAt: result.expiresAt,
+    });
+  } catch (error) {
+    logger.error('Refresh token error', { error: error.message });
+    res.status(500).json({ error: 'Token refresh failed' });
+  }
+});
+
+app.post('/api/auth/logout-all', async (req, res) => {
+  try {
+    if (!req.user || !req.user.sub) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    await refreshTokens.revokeAllForUser(req.user.sub);
+    res.json({ message: 'All sessions revoked' });
+  } catch (error) {
+    logger.error('Logout-all error', { error: error.message });
+    res.status(500).json({ error: 'Failed to revoke sessions' });
+  }
+});
+
+// ==========================================
+// GLOBAL ERROR HANDLER (must be after all routes)
+// ==========================================
+
+app.use((err, req, res, next) => {
+  // CORS errors
+  if (err.message && err.message.startsWith('CORS:')) {
+    return res.status(403).json({ error: 'Forbidden: CORS policy violation' });
+  }
+
+  logger.error('Unhandled Express error', {
+    error: err.message,
+    stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined,
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+  });
+
+  const statusCode = err.status || err.statusCode || 500;
+  res.status(statusCode).json({
+    error: process.env.NODE_ENV === 'production'
+      ? 'An internal error occurred'
+      : err.message,
+  });
+});
+
+// ==========================================
 // SERVE REACT APP (catch-all must be last)
 // ==========================================
 
@@ -1575,14 +1745,23 @@ async function startServer() {
   // Wait for database to be ready
   await db.ready;
 
+  // Initialize refresh token module
+  await refreshTokens.init(db);
+
   // Run preference decay on startup
   try {
     await providerLearning.decayPreferences();
   } catch (err) {
-    console.error('Preference decay on startup failed (non-fatal):', err.message);
+    logger.warn('Preference decay on startup failed (non-fatal)', { error: err.message });
   }
 
   const server = app.listen(PORT, () => {
+    logger.info('Server started', {
+      port: PORT,
+      ai_mode: aiClient.getMode(),
+      claude_enabled: aiClient.isClaudeEnabled(),
+      node_env: process.env.NODE_ENV || 'development',
+    });
     console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   MJR-EHR Intelligent Clinical Agent System
@@ -1599,34 +1778,37 @@ async function startServer() {
     Provider Learning:  Preference tracking enabled
     Speech Recognition: Ready (browser-based)
     Audit Logger:      Active (HIPAA compliance)
-    Security Headers:  Helmet enabled
+    Security Headers:  Helmet + CSP (nonce-based)
+    Authentication:    JWT + Refresh Tokens
+    RBAC:              7 roles enforced
 
-  API Endpoints: ~40 routes active
-  Ready for interactive demos!
+  API Endpoints: ~55 routes active
+  Environment: ${process.env.NODE_ENV || 'development'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     `);
   });
 
   // Graceful shutdown
-  process.on('SIGTERM', () => {
-    console.log('SIGTERM received, shutting down...');
+  const gracefulShutdown = (signal) => {
+    logger.info(`${signal} received, shutting down gracefully...`);
     server.close(() => {
+      logger.info('HTTP server closed');
       db.close();
       process.exit(0);
     });
-  });
+    // Force exit if graceful shutdown takes too long
+    setTimeout(() => {
+      logger.error('Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
 
-  process.on('SIGINT', () => {
-    console.log('SIGINT received, shutting down...');
-    server.close(() => {
-      db.close();
-      process.exit(0);
-    });
-  });
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
 startServer().catch(err => {
-  console.error('Fatal: Server failed to start:', err);
+  logger.fatal('Server failed to start', { error: err.message, stack: err.stack });
   process.exit(1);
 });
 
