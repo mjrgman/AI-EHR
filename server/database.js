@@ -245,7 +245,7 @@ function initializeDatabase() {
         rule_name TEXT NOT NULL UNIQUE,
         rule_type TEXT NOT NULL CHECK(rule_type IN (
           'vital_alert','lab_alert','drug_interaction','drug_allergy',
-          'dose_check','differential','screening','follow_up'
+          'dose_check','differential','screening','follow_up','prescribing_advisory'
         )),
         trigger_condition TEXT NOT NULL,
         suggested_actions TEXT NOT NULL,
@@ -460,17 +460,30 @@ function loadClinicalRules() {
         {
           rule_name: 'hypoxia',
           rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({ field: 'spo2', operator: '<', value: 92 }),
+          trigger_condition: JSON.stringify({ field: 'spo2', operator: '<', value: 95 }),
           suggested_actions: JSON.stringify({
-            title: 'Hypoxia - SpO2 Below 92%',
-            description: 'Oxygen saturation critically low. Apply supplemental O2. Consider CXR and ABG.',
+            title: 'Low Oxygen Saturation - SpO2 Below 95%',
+            description: 'Oxygen saturation below normal threshold (< 95%). Evaluate for respiratory compromise. Apply supplemental O2 if SpO2 < 92%.',
             category: 'urgent',
             actions: [
               { type: 'create_imaging_order', description: 'Order Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046' }}
             ]
           }),
           priority: 5,
-          evidence_source: 'BTS Oxygen Guidelines'
+          evidence_source: 'BTS Oxygen Guidelines; ATS Normal SpO2 Reference'
+        },
+        {
+          rule_name: 'fever_low_grade',
+          rule_type: 'vital_alert',
+          trigger_condition: JSON.stringify({ field: 'temperature', operator: '>', value: 99.5 }),
+          suggested_actions: JSON.stringify({
+            title: 'Low-Grade Fever Advisory',
+            description: 'Temperature 99.5–100.4°F. Monitor for progression to true fever (> 100.4°F). Consider viral etiology. Reassess in 30 minutes.',
+            category: 'routine',
+            actions: []
+          }),
+          priority: 20,
+          evidence_source: 'IDSA Fever Definition Guidelines'
         },
         {
           rule_name: 'fever',
@@ -860,6 +873,22 @@ function loadClinicalRules() {
           }),
           priority: 60,
           evidence_source: 'Provider preference learning'
+        },
+        {
+          rule_name: 'antibiotic_stewardship_uri',
+          rule_type: 'prescribing_advisory',
+          trigger_condition: JSON.stringify({
+            drug_classes: ['Amoxicillin', 'Azithromycin', 'Doxycycline', 'Ciprofloxacin', 'Levofloxacin', 'Cephalexin', 'Augmentin', 'Amoxicillin-Clavulanate'],
+            chief_complaint_keywords: ['sinus', 'uri', 'upper respiratory', 'cold', 'rhinitis', 'sinusitis', 'pharyngitis', 'otitis', 'cough', 'bronchitis']
+          }),
+          suggested_actions: JSON.stringify({
+            title: 'Antibiotic Stewardship — URI/Sinusitis',
+            description: 'Antibiotic prescribed for upper respiratory complaint. Per ACP/CDC guidelines, most URIs and acute sinusitis are viral. Consider watchful waiting if symptoms < 10 days without complications (fever > 102°F, purulent discharge, unilateral facial pain). If antibiotic indicated, first-line is Amoxicillin.',
+            category: 'routine',
+            actions: []
+          }),
+          priority: 35,
+          evidence_source: 'ACP/CDC Antibiotic Stewardship Guidelines 2023; IDSA Sinusitis Guidelines'
         }
       ];
 

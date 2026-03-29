@@ -33,6 +33,7 @@ async function runMigrations(db) {
     await createPhysicianOverridesTable(db);
     await createLoginAttemptsTable(db);
     await createIndexes(db);
+    await migrateCdsRules(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -307,6 +308,109 @@ async function createIndexes(db) {
 }
 
 // ==========================================
+// CDS RULE MIGRATIONS
+// ==========================================
+
+/**
+ * Migrate clinical_rules table to add 'prescribing_advisory' rule type,
+ * update hypoxia threshold to clinically correct < 95%, and seed new rules.
+ * Idempotent — safe to run multiple times.
+ */
+async function migrateCdsRules(db) {
+  // Step 1: Rebuild clinical_rules with updated CHECK constraint to include prescribing_advisory.
+  // SQLite requires full table recreation to modify a CHECK constraint.
+  await dbRun(db, 'PRAGMA foreign_keys=OFF');
+  await dbRun(db, 'BEGIN TRANSACTION');
+  try {
+    await dbRun(db, `
+      CREATE TABLE IF NOT EXISTS clinical_rules_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        rule_name TEXT NOT NULL UNIQUE,
+        rule_type TEXT NOT NULL CHECK(rule_type IN (
+          'vital_alert','lab_alert','drug_interaction','drug_allergy',
+          'dose_check','differential','screening','follow_up','prescribing_advisory'
+        )),
+        trigger_condition TEXT NOT NULL,
+        suggested_actions TEXT NOT NULL,
+        priority INTEGER DEFAULT 50,
+        enabled BOOLEAN DEFAULT 1,
+        evidence_source TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await dbRun(db, `INSERT OR IGNORE INTO clinical_rules_new SELECT * FROM clinical_rules`);
+    await dbRun(db, `DROP TABLE clinical_rules`);
+    await dbRun(db, `ALTER TABLE clinical_rules_new RENAME TO clinical_rules`);
+    await dbRun(db, 'COMMIT');
+    console.log('[MIGRATIONS] clinical_rules table constraint updated');
+  } catch (err) {
+    await dbRun(db, 'ROLLBACK');
+    throw err;
+  }
+  await dbRun(db, 'PRAGMA foreign_keys=ON');
+
+  // Step 2: Update hypoxia rule from spo2 < 92 to < 95 (clinical standard for alert threshold).
+  await dbRun(db,
+    `UPDATE clinical_rules SET
+       trigger_condition = ?,
+       suggested_actions = ?
+     WHERE rule_name = 'hypoxia'
+       AND json_extract(trigger_condition, '$.value') = 92`,
+    [
+      JSON.stringify({ field: 'spo2', operator: '<', value: 95 }),
+      JSON.stringify({
+        title: 'Low Oxygen Saturation - SpO2 Below 95%',
+        description: 'Oxygen saturation below normal threshold (< 95%). Evaluate for respiratory compromise. Apply supplemental O2 if SpO2 < 92%.',
+        category: 'urgent',
+        actions: [
+          { type: 'create_imaging_order', description: 'Order Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046' } }
+        ]
+      })
+    ]
+  );
+
+  // Step 3: Insert new rules (idempotent via INSERT OR IGNORE).
+  await dbRun(db,
+    `INSERT OR IGNORE INTO clinical_rules (rule_name, rule_type, trigger_condition, suggested_actions, priority, evidence_source)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      'fever_low_grade', 'vital_alert',
+      JSON.stringify({ field: 'temperature', operator: '>', value: 99.5 }),
+      JSON.stringify({
+        title: 'Low-Grade Fever Advisory',
+        description: 'Temperature 99.5–100.4°F. Monitor for progression to true fever (> 100.4°F). Consider viral etiology. Reassess in 30 minutes.',
+        category: 'routine',
+        actions: []
+      }),
+      20,
+      'IDSA Fever Definition Guidelines'
+    ]
+  );
+
+  await dbRun(db,
+    `INSERT OR IGNORE INTO clinical_rules (rule_name, rule_type, trigger_condition, suggested_actions, priority, evidence_source)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      'antibiotic_stewardship_uri', 'prescribing_advisory',
+      JSON.stringify({
+        drug_classes: ['Amoxicillin', 'Azithromycin', 'Doxycycline', 'Ciprofloxacin', 'Levofloxacin', 'Cephalexin', 'Augmentin', 'Amoxicillin-Clavulanate'],
+        chief_complaint_keywords: ['sinus', 'uri', 'upper respiratory', 'cold', 'rhinitis', 'sinusitis', 'pharyngitis', 'otitis', 'cough', 'bronchitis']
+      }),
+      JSON.stringify({
+        title: 'Antibiotic Stewardship — URI/Sinusitis',
+        description: 'Antibiotic prescribed for upper respiratory complaint. Per ACP/CDC guidelines, most URIs and acute sinusitis are viral. Consider watchful waiting if symptoms < 10 days without complications (fever > 102°F, purulent discharge, unilateral facial pain). If antibiotic indicated, first-line is Amoxicillin.',
+        category: 'routine',
+        actions: []
+      }),
+      35,
+      'ACP/CDC Antibiotic Stewardship Guidelines 2023; IDSA Sinusitis Guidelines'
+    ]
+  );
+
+  console.log('[MIGRATIONS] CDS rules migrated (hypoxia threshold, fever_low_grade, antibiotic_stewardship_uri)');
+}
+
+// ==========================================
 // DATABASE HELPER (PROMISIFIED)
 // ==========================================
 
@@ -334,5 +438,6 @@ module.exports = {
   createSafetyEventsTable,
   createPhysicianOverridesTable,
   createLoginAttemptsTable,
-  createIndexes
+  createIndexes,
+  migrateCdsRules
 };

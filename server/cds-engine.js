@@ -229,6 +229,44 @@ function evaluateDifferentialRules(rules, chiefComplaint, transcript, context) {
   return suggestions;
 }
 
+function evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, transcript, context) {
+  if (!medications || medications.length === 0) return [];
+  const text = `${chiefComplaint || ''} ${transcript || ''}`.toLowerCase();
+  const suggestions = [];
+
+  for (const rule of rules.filter(r => r.rule_type === 'prescribing_advisory')) {
+    const trigger = JSON.parse(rule.trigger_condition);
+    const actions = JSON.parse(rule.suggested_actions);
+
+    // Check if chief complaint/transcript matches the target keywords
+    if (trigger.chief_complaint_keywords) {
+      if (!trigger.chief_complaint_keywords.some(kw => text.includes(kw.toLowerCase()))) continue;
+    }
+
+    // Check if an antibiotic from the drug_classes list is being prescribed
+    let hasDrug = false;
+    if (trigger.drug_classes) {
+      hasDrug = medications.some(m =>
+        m.status === 'active' &&
+        trigger.drug_classes.some(d => m.medication_name.toLowerCase().includes(d.toLowerCase()))
+      );
+    }
+    if (!hasDrug) continue;
+
+    suggestions.push({
+      suggestion_type: 'prescribing_advisory',
+      category: actions.category || 'routine',
+      priority: rule.priority,
+      title: actions.title,
+      description: actions.description,
+      rationale: rule.evidence_source || '',
+      suggested_action: actions.actions || [],
+      source: 'rule_engine'
+    });
+  }
+  return suggestions;
+}
+
 function evaluateScreeningRules(rules, problems, labs, context) {
   if (!problems || problems.length === 0) return [];
   const suggestions = [];
@@ -283,6 +321,7 @@ async function evaluatePatientContext(encounterId, patientId, context) {
   suggestions.push(...evaluateDrugInteractionRules(rules, context.medications, context.allergies, context));
   suggestions.push(...evaluateDifferentialRules(rules, context.chiefComplaint, context.transcript, context));
   suggestions.push(...evaluateScreeningRules(rules, context.problems, context.labs, context));
+  suggestions.push(...evaluatePrescribingAdvisoryRules(rules, context.medications, context.chiefComplaint, context.transcript, context));
 
   // Deduplicate by title
   const seen = new Set();
@@ -430,5 +469,6 @@ module.exports = {
   evaluateLabRules,
   evaluateDrugInteractionRules,
   evaluateDifferentialRules,
-  evaluateScreeningRules
+  evaluateScreeningRules,
+  evaluatePrescribingAdvisoryRules
 };

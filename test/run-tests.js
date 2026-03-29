@@ -115,9 +115,9 @@ async function runAllTests() {
     robertId = robert.id;
   });
 
-  await test('25 clinical rules loaded', async () => {
+  await test('27 clinical rules loaded', async () => {
     const rules = await db.getAllClinicalRules();
-    assert(rules.length >= 25, `Expected at least 25 rules, got ${rules.length}`);
+    assert(rules.length >= 27, `Expected at least 27 rules, got ${rules.length}`);
 
     // Check key rule types exist
     const types = [...new Set(rules.map(r => r.rule_type))];
@@ -127,6 +127,14 @@ async function runAllTests() {
     assert(types.includes('drug_interaction'), 'Should have drug_interaction rules');
     assert(types.includes('differential'), 'Should have differential rules');
     assert(types.includes('screening'), 'Should have screening rules');
+    assert(types.includes('prescribing_advisory'), 'Should have prescribing_advisory rules');
+
+    // Verify specific rules exist and have correct thresholds
+    const hypoxia = rules.find(r => r.rule_name === 'hypoxia');
+    assert(hypoxia, 'Hypoxia rule should exist');
+    assert(JSON.parse(hypoxia.trigger_condition).value === 95, 'Hypoxia threshold should be 95');
+    assert(rules.some(r => r.rule_name === 'fever_low_grade'), 'Low-grade fever rule should exist');
+    assert(rules.some(r => r.rule_name === 'antibiotic_stewardship_uri'), 'Antibiotic stewardship rule should exist');
   });
 
   await test('Retrieve patient with full clinical data', async () => {
@@ -469,6 +477,38 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
 
     assert(suggestions.length > 0, 'Should suggest screening for diabetes');
     assert(suggestions.some(s => s.suggestion_type === 'preventive_care'), 'Should be preventive_care type');
+  });
+
+  await test('CDS vital alert: Hypoxia fires at SpO2 94% (threshold = 95%)', async () => {
+    const rules = await db.getAllClinicalRules();
+    const vitals = { spo2: 94 };
+    const suggestions = cdsEngine.evaluateVitalRules(rules, vitals, {});
+
+    assert(suggestions.length > 0, 'Should generate hypoxia alert at SpO2 94%');
+    assert(suggestions.some(s => s.title.toLowerCase().includes('oxygen') || s.title.toLowerCase().includes('spo2') || s.title.toLowerCase().includes('hypox')),
+      'Should have SpO2/hypoxia-related alert');
+    assert(suggestions.some(s => s.category === 'urgent'), 'Hypoxia alert should be urgent');
+  });
+
+  await test('CDS vital alert: Low-grade fever fires at 100.0\u00b0F', async () => {
+    const rules = await db.getAllClinicalRules();
+    const vitals = { temperature: 100.0 };
+    const suggestions = cdsEngine.evaluateVitalRules(rules, vitals, {});
+
+    assert(suggestions.length > 0, 'Should generate low-grade fever advisory at 100.0\u00b0F');
+    assert(suggestions.some(s => s.title.toLowerCase().includes('fever')), 'Should have fever-related advisory');
+  });
+
+  await test('CDS prescribing advisory: Antibiotic stewardship for URI + Amoxicillin', async () => {
+    const rules = await db.getAllClinicalRules();
+    const medications = [{ medication_name: 'Amoxicillin 500mg', status: 'active' }];
+    const chiefComplaint = 'sinusitis, congestion, sinus pressure';
+    const suggestions = cdsEngine.evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, '', {});
+
+    assert(suggestions.length > 0, 'Should generate stewardship advisory for URI + antibiotic');
+    assert(suggestions.some(s => s.suggestion_type === 'prescribing_advisory'), 'Should be prescribing_advisory type');
+    assert(suggestions.some(s => s.title.toLowerCase().includes('stewardship') || s.title.toLowerCase().includes('antibiotic')),
+      'Should have antibiotic stewardship title');
   });
 
   await test('Full CDS evaluation for Sarah (HTN + DM + CKD)', async () => {
