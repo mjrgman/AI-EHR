@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
@@ -45,9 +45,24 @@ export default function CheckOutPage() {
   const [followUpInterval, setFollowUpInterval] = useState('');
   const [billingNotes, setBillingNotes] = useState('');
 
+  // Billing state
+  const [charge, setCharge] = useState(null);
+  const [chargeLoading, setChargeLoading] = useState(false);
+  const [emOverride, setEmOverride] = useState('');  // provider-selected level, overrides suggestion
+
   const { encounter, orders } = useEncounter(eid);
   const { patient } = usePatient(encounter?.patient_id);
   const { workflow, timeline, transition } = useWorkflow(eid);
+
+  // Load E/M suggestion from billing engine when encounter is ready
+  useEffect(() => {
+    if (!eid || !encounter) return;
+    setChargeLoading(true);
+    api.getCharge(eid)
+      .then(data => setCharge(data))
+      .catch(() => {/* charge preview non-fatal */})
+      .finally(() => setChargeLoading(false));
+  }, [eid, encounter?.id]);
 
   const orderCounts = useMemo(() => {
     if (!orders) return { prescriptions: 0, labs: 0, imaging: 0, referrals: 0, total: 0 };
@@ -110,15 +125,23 @@ export default function CheckOutPage() {
   async function handleCheckOut() {
     setCheckingOut(true);
     try {
+      // Finalize charge via billing engine (captures E/M code + ICD-10 codes + finalizes)
+      const checkoutPayload = {};
+      if (emOverride) checkoutPayload.em_level = emOverride;
+      if (billingNotes) checkoutPayload.notes = billingNotes;
+      await api.finalizeCheckout(encounterId, checkoutPayload);
+
+      // Transition workflow state
       if (workflow?.current_state === 'signed') {
         await transition('checked-out');
       }
 
+      // Mark encounter completed with follow-up date
       const updateData = { status: 'completed' };
       if (followUpDate) updateData.follow_up_date = followUpDate;
       if (billingNotes) updateData.billing_notes = billingNotes;
-
       await api.updateEncounter(encounterId, updateData);
+
       setCheckedOut(true);
       toast.success('Patient checked out successfully.');
     } catch (err) {
@@ -393,17 +416,82 @@ export default function CheckOutPage() {
           </CardBody>
         </Card>
 
-        {/* Copay / Billing Notes */}
+        {/* Billing / E&M Level */}
         <Card>
-          <CardHeader>Copay / Billing Notes</CardHeader>
-          <CardBody>
-            <input
-              type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Enter copay amount or billing notes..."
-              value={billingNotes}
-              onChange={(e) => setBillingNotes(e.target.value)}
-            />
+          <CardHeader>Billing &amp; E/M Coding</CardHeader>
+          <CardBody className="space-y-4">
+            {chargeLoading ? (
+              <p className="text-sm text-gray-400 animate-pulse">Computing E/M level...</p>
+            ) : charge?.em_suggestion ? (
+              <>
+                {/* Suggested level badge */}
+                <div className="bg-blue-50 rounded-xl p-3 space-y-1.5">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">AI Suggestion</span>
+                    <span className="font-bold text-blue-800 text-base">{charge.em_suggestion.code}</span>
+                    <Badge variant="routine" className="capitalize">{charge.em_suggestion.mdmLevel} complexity</Badge>
+                    <span className="text-xs text-blue-600">{charge.em_suggestion.rvu} wRVU</span>
+                  </div>
+                  <p className="text-xs text-blue-700 leading-relaxed">{charge.em_suggestion.rationale}</p>
+                </div>
+
+                {/* MDM breakdown */}
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  {[
+                    { label: 'Problems', value: charge.em_suggestion.problems?.level, sub: `${charge.em_suggestion.problems?.activeCount || 0} active` },
+                    { label: 'Data', value: charge.em_suggestion.data?.level, sub: `${charge.em_suggestion.data?.ordersPlaced || 0} orders` },
+                    { label: 'Risk', value: charge.em_suggestion.risk?.level, sub: `${charge.em_suggestion.risk?.prescriptionMeds || 0} Rx` },
+                  ].map(el => (
+                    <div key={el.label} className={`rounded-lg p-2 border ${
+                      el.value === 'high' ? 'border-red-200 bg-red-50' :
+                      el.value === 'moderate' ? 'border-amber-200 bg-amber-50' :
+                      'border-gray-200 bg-gray-50'
+                    }`}>
+                      <p className="font-semibold text-gray-700">{el.label}</p>
+                      <p className={`font-bold capitalize ${
+                        el.value === 'high' ? 'text-red-700' :
+                        el.value === 'moderate' ? 'text-amber-700' : 'text-gray-600'
+                      }`}>{el.value}</p>
+                      <p className="text-gray-400">{el.sub}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Provider override */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                    Provider Override <span className="normal-case font-normal text-gray-400">(leave blank to accept suggestion)</span>
+                  </label>
+                  <select
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    value={emOverride}
+                    onChange={(e) => setEmOverride(e.target.value)}
+                  >
+                    <option value="">Use suggestion ({charge.em_suggestion.code})</option>
+                    <optgroup label="New Patient">
+                      {['99202','99203','99204','99205'].map(c => <option key={c} value={c}>{c}</option>)}
+                    </optgroup>
+                    <optgroup label="Established Patient">
+                      {['99211','99212','99213','99214','99215'].map(c => <option key={c} value={c}>{c}</option>)}
+                    </optgroup>
+                  </select>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-gray-400 italic">E/M suggestion unavailable — billing engine requires a signed encounter with clinical data.</p>
+            )}
+
+            {/* Billing notes */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Billing Notes / Copay</label>
+              <input
+                type="text"
+                className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter copay amount or billing notes..."
+                value={billingNotes}
+                onChange={(e) => setBillingNotes(e.target.value)}
+              />
+            </div>
           </CardBody>
         </Card>
 

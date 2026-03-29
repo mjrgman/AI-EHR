@@ -12,6 +12,7 @@ import ReviewPage from './pages/ReviewPage';
 import CheckOutPage from './pages/CheckOutPage';
 import PatientPage from './pages/PatientPage';
 import AuditPage from './pages/AuditPage';
+import SchedulePage from './pages/SchedulePage';
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="/review/:encounterId" element={<ReviewPage />} />
               <Route path="/checkout/:encounterId" element={<CheckOutPage />} />
               <Route path="/audit" element={<AuditPage />} />
+              <Route path="/schedule" element={<SchedulePage />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AppShell>

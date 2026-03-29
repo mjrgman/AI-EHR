@@ -77,6 +77,20 @@ export const api = {
   getAuditStats: (params) => { const q = new URLSearchParams(params).toString(); return request(`/audit/stats${q ? '?' + q : ''}`); },
   getAuditSessions: (params) => { const q = new URLSearchParams(params).toString(); return request(`/audit/sessions${q ? '?' + q : ''}`); },
   getPatientAuditTrail: (patientId) => request(`/audit/patient/${patientId}`),
+
+  // Scheduling endpoints
+  getSchedule: (params) => { const q = new URLSearchParams(params).toString(); return request(`/schedule${q ? '?' + q : ''}`); },
+  getPatientAppointments: (patientId) => request(`/patients/${patientId}/appointments`),
+  getAppointment: (id) => request(`/appointments/${id}`),
+  createAppointment: (data) => request('/appointments', { method: 'POST', body: JSON.stringify(data) }),
+  updateAppointment: (id, data) => request(`/appointments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteAppointment: (id) => request(`/appointments/${id}`, { method: 'DELETE' }),
+
+  // Billing endpoints
+  getCharge: (encounterId) => request(`/encounters/${encounterId}/charge`),
+  updateCharge: (encounterId, data) => request(`/encounters/${encounterId}/charge`, { method: 'POST', body: JSON.stringify(data) }),
+  finalizeCheckout: (encounterId, data) => request(`/encounters/${encounterId}/checkout`, { method: 'POST', body: JSON.stringify(data) }),
+  getBillingCharges: (params) => { const q = new URLSearchParams(params).toString(); return request(`/billing/charges${q ? '?' + q : ''}`); },
 };
 
 export default api;
