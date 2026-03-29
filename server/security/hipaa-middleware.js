@@ -229,10 +229,18 @@ async function cleanupExpiredSessions() {
   try {
     const cutoffTime = new Date(Date.now() - SESSION_TIMEOUT_MS).toISOString();
     await db.dbRun(
-      `UPDATE audit_sessions SET is_active = 0 
+      `UPDATE audit_sessions SET is_active = 0
        WHERE is_active = 1 AND last_activity < ?`,
       [cutoffTime]
     );
+
+    // Prune orphaned entries from in-memory sessionStore
+    const cutoffMs = Date.now() - SESSION_TIMEOUT_MS;
+    for (const [id, session] of sessionStore) {
+      if (session.lastActivity < cutoffMs) {
+        sessionStore.delete(id);
+      }
+    }
   } catch (err) {
     console.error('[HIPAA] Session cleanup error:', err.message);
   }

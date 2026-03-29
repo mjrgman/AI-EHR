@@ -309,6 +309,142 @@ function evaluateScreeningRules(rules, problems, labs, context) {
 }
 
 // ==========================================
+// HEART SCORE PROTOCOL
+// ==========================================
+
+const HEART_CHEST_PAIN_KEYWORDS = [
+  'chest pain', 'chest pressure', 'chest tightness', 'substernal', 'angina',
+  'chest discomfort', 'chest heaviness', 'crushing chest', 'chest burning'
+];
+
+const CARDIAC_RISK_FACTOR_CODES = [
+  'I10',    // Hypertension
+  'E11',    // Type 2 diabetes
+  'E10',    // Type 1 diabetes
+  'E78',    // Hyperlipidemia / dyslipidemia
+  'E66',    // Obesity
+  'F17',    // Nicotine / tobacco use
+  'Z87.891', // Personal history of nicotine dependence
+  'I25',    // Chronic ischemic heart disease / known CAD
+  'I63',    // Stroke
+  'I65',    // Occlusion of precerebral arteries (PAD)
+  'I70',    // Atherosclerosis
+];
+
+const KNOWN_ATHEROSCLEROSIS_CODES = ['I25', 'I70', 'I63', 'I65'];
+
+/**
+ * Evaluate HEART score (History, ECG, Age, Risk factors, Troponin) for chest pain presentations.
+ * Triggered when chief complaint or transcript contains chest pain keywords.
+ *
+ * HEART score 0-3: Low risk  (<2% MACE at 6 weeks — discharge with follow-up)
+ * HEART score 4-6: Moderate  (observe, serial troponins, stress testing)
+ * HEART score 7-10: High risk (early invasive strategy, cardiology consult)
+ *
+ * Reference: Six ACS Risk Scores for Chest Pain in the ED — HEART Score. Ann Emerg Med 2010.
+ */
+function evaluateHeartScoreProtocol(context) {
+  const text = `${context.chiefComplaint || ''} ${context.transcript || ''}`.toLowerCase();
+
+  const isChestPain = HEART_CHEST_PAIN_KEYWORDS.some(kw => text.includes(kw));
+  if (!isChestPain) return [];
+
+  const components = {};
+
+  // --- H: History ---
+  // Highly suspicious: squeezing/pressure/radiation/diaphoresis/exertional onset
+  const highlyTypical = ['squeezing', 'pressure', 'radiation', 'radiates', 'left arm', 'jaw', 'diaphoresis', 'sweating', 'exertion', 'exertional'].some(kw => text.includes(kw));
+  // Slightly suspicious: pleuritic, positional, sharp, reproducible, no cardiac features
+  const slightlySuspicious = ['sharp', 'pleuritic', 'positional', 'reproducible', 'palpation', 'musculoskeletal'].some(kw => text.includes(kw));
+  components.history = highlyTypical ? 2 : slightlySuspicious ? 0 : 1;
+
+  // --- E: ECG ---
+  // Cannot evaluate without EKG data in current model; default 1 (non-specific changes pending)
+  components.ecg = 1;
+
+  // --- A: Age ---
+  let ageScore = 0;
+  if (context.patient && context.patient.dob) {
+    const birthDate = new Date(context.patient.dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    if (today.getMonth() < birthDate.getMonth() || (today.getMonth() === birthDate.getMonth() && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    ageScore = age >= 65 ? 2 : age >= 45 ? 1 : 0;
+  }
+  components.age = ageScore;
+
+  // --- R: Risk Factors ---
+  const problems = context.problems || [];
+  const problemCodes = problems.map(p => p.icd10_code || p.code || '');
+
+  const hasAtherosclerosis = KNOWN_ATHEROSCLEROSIS_CODES.some(code =>
+    problemCodes.some(pc => pc.startsWith(code))
+  );
+  const riskFactorCount = CARDIAC_RISK_FACTOR_CODES.filter(code =>
+    problemCodes.some(pc => pc.startsWith(code))
+  ).length;
+
+  components.riskFactors = (hasAtherosclerosis || riskFactorCount >= 3) ? 2 : riskFactorCount >= 1 ? 1 : 0;
+
+  // --- T: Troponin ---
+  // Check labs for troponin result
+  const labs = context.labs || [];
+  const troponinLab = labs.find(l => {
+    const name = (l.test_name || l.name || '').toLowerCase();
+    return name.includes('troponin') || name.includes('trop');
+  });
+  if (troponinLab) {
+    const result = parseFloat(troponinLab.result || troponinLab.value || '');
+    const uln = parseFloat(troponinLab.reference_range_high || troponinLab.upper_limit || '');
+    if (!isNaN(result) && !isNaN(uln) && uln > 0) {
+      components.troponin = result > uln * 3 ? 2 : result > uln ? 1 : 0;
+    } else {
+      components.troponin = 1; // Result present but can't parse value — moderate pending
+    }
+  } else {
+    components.troponin = 1; // No troponin ordered yet — flag as pending
+  }
+
+  const totalScore = components.history + components.ecg + components.age + components.riskFactors + components.troponin;
+
+  let tier, recommendation, category;
+  if (totalScore <= 3) {
+    tier = 'Low Risk';
+    category = 'routine';
+    recommendation = 'HEART score ≤ 3 (low risk). < 2% MACE risk at 6 weeks. Consider discharge with outpatient follow-up if troponin normal and clinical picture consistent.';
+  } else if (totalScore <= 6) {
+    tier = 'Moderate Risk';
+    category = 'urgent';
+    recommendation = 'HEART score 4-6 (moderate risk). Admit for observation, serial troponins at 3 and 6 hours, stress testing or coronary imaging prior to discharge.';
+  } else {
+    tier = 'High Risk';
+    category = 'critical';
+    recommendation = 'HEART score ≥ 7 (high risk). Early invasive strategy indicated. Cardiology consult, antiplatelet therapy, and urgent catheterization per institutional protocol.';
+  }
+
+  return [{
+    suggestion_type: 'clinical_protocol',
+    category,
+    priority: 5, // Highest priority — potential ACS
+    title: `HEART Score: ${totalScore}/10 — ${tier}`,
+    description: recommendation,
+    rationale: `HEART score components: History=${components.history}, ECG=${components.ecg} (pending review), Age=${components.age}, Risk Factors=${components.riskFactors}, Troponin=${components.troponin}. Note: ECG score defaults to 1 (non-specific) pending physician review.`,
+    suggested_action: {
+      protocol: 'HEART_SCORE',
+      score: totalScore,
+      components,
+      actions: totalScore >= 4 ? [
+        { type: 'order_lab', description: 'Serial Troponin (3-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } },
+        { type: 'order_lab', description: 'Serial Troponin (6-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } }
+      ] : []
+    },
+    source: 'heart_score_protocol'
+  }];
+}
+
+// ==========================================
 // MAIN EVALUATION
 // ==========================================
 
@@ -322,6 +458,7 @@ async function evaluatePatientContext(encounterId, patientId, context) {
   suggestions.push(...evaluateDifferentialRules(rules, context.chiefComplaint, context.transcript, context));
   suggestions.push(...evaluateScreeningRules(rules, context.problems, context.labs, context));
   suggestions.push(...evaluatePrescribingAdvisoryRules(rules, context.medications, context.chiefComplaint, context.transcript, context));
+  suggestions.push(...evaluateHeartScoreProtocol(context));
 
   // Deduplicate by title
   const seen = new Set();
@@ -470,5 +607,6 @@ module.exports = {
   evaluateDrugInteractionRules,
   evaluateDifferentialRules,
   evaluateScreeningRules,
-  evaluatePrescribingAdvisoryRules
+  evaluatePrescribingAdvisoryRules,
+  evaluateHeartScoreProtocol
 };

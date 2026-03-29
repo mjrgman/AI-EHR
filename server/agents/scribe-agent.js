@@ -70,7 +70,7 @@ class ScribeAgent extends BaseAgent {
     const problems = aiClient.extractProblems(transcript);
     const labOrders = aiClient.extractLabOrders(transcript);
     const imagingOrders = aiClient.extractImagingOrders ? aiClient.extractImagingOrders(transcript) : [];
-    const clinicalData = aiClient.extractClinicalData ? aiClient.extractClinicalData(transcript, patient) : null;
+    const clinicalData = aiClient.extractClinicalData ? await aiClient.extractClinicalData(transcript, patient) : null;
 
     // ROS and PE from clinical data or direct extraction
     const ros = clinicalData?.ros || (aiClient.extractROS ? aiClient.extractROS(transcript) : {});
