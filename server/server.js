@@ -11,6 +11,7 @@ const audit = require('./audit-logger');
 const logger = require('./utils/logger');
 const { validate, schemas } = require('./utils/validate');
 const auth = require('./security/auth');
+const billing = require('./billing-engine');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1725,6 +1726,213 @@ app.use((err, req, res, next) => {
       ? 'An internal error occurred'
       : err.message,
   });
+});
+
+// ==========================================
+// SCHEDULING ENDPOINTS
+// ==========================================
+
+app.get('/api/schedule', async (req, res) => {
+  try {
+    const { date, provider } = req.query;
+    if (!date) return res.status(400).json({ error: 'date query parameter required (YYYY-MM-DD)' });
+    const appointments = await db.getAppointmentsByDate(date, provider || null);
+    res.json({ date, provider: provider || 'all', appointments });
+  } catch (err) {
+    logger.error('Error fetching schedule', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch schedule' });
+  }
+});
+
+app.get('/api/patients/:id/appointments', async (req, res) => {
+  try {
+    const patientId = validateId(req.params.id);
+    if (!patientId) return res.status(400).json({ error: 'Invalid patient ID' });
+    const appointments = await db.getAppointmentsByPatient(patientId);
+    res.json(appointments);
+  } catch (err) {
+    logger.error('Error fetching patient appointments', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch appointments' });
+  }
+});
+
+app.get('/api/appointments/:id', async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid appointment ID' });
+    const appt = await db.getAppointmentById(id);
+    if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+    res.json(appt);
+  } catch (err) {
+    logger.error('Error fetching appointment', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch appointment' });
+  }
+});
+
+app.post('/api/appointments', async (req, res) => {
+  try {
+    const { patient_id, provider_name, appointment_date, appointment_time,
+      duration_minutes, appointment_type, chief_complaint, notes } = req.body;
+
+    if (!patient_id || !provider_name || !appointment_date || !appointment_time || !appointment_type) {
+      return res.status(400).json({
+        error: 'Required fields: patient_id, provider_name, appointment_date, appointment_time, appointment_type'
+      });
+    }
+
+    const validTypes = ['new_patient','follow_up','sick_visit','wellness','procedure','telehealth','referral','urgent'];
+    if (!validTypes.includes(appointment_type)) {
+      return res.status(400).json({ error: `appointment_type must be one of: ${validTypes.join(', ')}` });
+    }
+
+    const appt = await db.createAppointment({
+      patient_id: validateId(patient_id),
+      provider_name: sanitizeString(provider_name, 100),
+      appointment_date,
+      appointment_time,
+      duration_minutes: duration_minutes || 20,
+      appointment_type,
+      chief_complaint: chief_complaint ? sanitizeString(chief_complaint, 500) : null,
+      notes: notes ? sanitizeString(notes, 1000) : null
+    });
+    res.status(201).json(appt);
+  } catch (err) {
+    logger.error('Error creating appointment', { error: err.message });
+    res.status(500).json({ error: 'Failed to create appointment' });
+  }
+});
+
+app.patch('/api/appointments/:id', async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid appointment ID' });
+    const appt = await db.getAppointmentById(id);
+    if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+
+    const allowed = ['status','chief_complaint','notes','appointment_date',
+      'appointment_time','duration_minutes','encounter_id','appointment_type'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+
+    await db.updateAppointment(id, updates);
+    const updated = await db.getAppointmentById(id);
+    res.json(updated);
+  } catch (err) {
+    logger.error('Error updating appointment', { error: err.message });
+    res.status(500).json({ error: 'Failed to update appointment' });
+  }
+});
+
+app.delete('/api/appointments/:id', async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid appointment ID' });
+    await db.deleteAppointment(id);
+    res.json({ message: 'Appointment deleted' });
+  } catch (err) {
+    logger.error('Error deleting appointment', { error: err.message });
+    res.status(500).json({ error: 'Failed to delete appointment' });
+  }
+});
+
+// ==========================================
+// BILLING / CHARGE CAPTURE ENDPOINTS
+// ==========================================
+
+// Get charge for an encounter (or compute E/M suggestion without saving)
+app.get('/api/encounters/:id/charge', async (req, res) => {
+  try {
+    const encounterId = validateId(req.params.id);
+    if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    const existing = await db.getChargeByEncounter(encounterId);
+    if (existing) {
+      return res.json(existing);
+    }
+
+    // No charge yet — return E/M suggestion for preview
+    const encounter = await db.getEncounterById(encounterId);
+    if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+
+    const context = await billing.buildBillingContext(encounterId, encounter.patient_id);
+    const suggestion = billing.assessMDM(context);
+    res.json({ encounter_id: encounterId, status: 'draft', em_suggestion: suggestion, charge: null });
+  } catch (err) {
+    logger.error('Error fetching charge', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch charge' });
+  }
+});
+
+// Capture charge (creates/updates draft — does not finalize)
+app.post('/api/encounters/:id/charge', async (req, res) => {
+  try {
+    const encounterId = validateId(req.params.id);
+    if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    const encounter = await db.getEncounterById(encounterId);
+    if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+
+    const charge = await billing.captureCharge(
+      encounterId,
+      encounter.patient_id,
+      req.user?.name || encounter.provider,
+      {
+        em_level: req.body.em_level || null,
+        cpt_codes: req.body.cpt_codes || [],
+        icd10_codes: req.body.icd10_codes || null,
+        notes: req.body.notes || null
+      }
+    );
+    res.status(201).json(charge);
+  } catch (err) {
+    logger.error('Error capturing charge', { error: err.message });
+    res.status(500).json({ error: 'Failed to capture charge' });
+  }
+});
+
+// Checkout — finalizes charge and marks encounter checked-out
+app.post('/api/encounters/:id/checkout', async (req, res) => {
+  try {
+    const encounterId = validateId(req.params.id);
+    if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    const encounter = await db.getEncounterById(encounterId);
+    if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+
+    const charge = await billing.finalizeCheckout(
+      encounterId,
+      encounter.patient_id,
+      req.user?.name || encounter.provider,
+      {
+        em_level: req.body.em_level || null,
+        cpt_codes: req.body.cpt_codes || [],
+        icd10_codes: req.body.icd10_codes || null,
+        notes: req.body.notes || null
+      }
+    );
+    res.json({ message: 'Checkout complete', charge });
+  } catch (err) {
+    logger.error('Error processing checkout', { error: err.message });
+    res.status(500).json({ error: 'Failed to process checkout' });
+  }
+});
+
+// Get charges by status (billing worklist)
+app.get('/api/billing/charges', async (req, res) => {
+  try {
+    const { status } = req.query;
+    const validStatuses = ['draft','finalized','submitted','billed','paid','denied','voided'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({ error: `status must be one of: ${validStatuses.join(', ')}` });
+    }
+    const charges = await db.getChargesByStatus(status || 'finalized');
+    res.json(charges);
+  } catch (err) {
+    logger.error('Error fetching charges', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch charges' });
+  }
 });
 
 // ==========================================

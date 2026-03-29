@@ -905,6 +905,170 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   });
 
   // ==========================================
+  // PHASE 11: SCHEDULING TESTS
+  // ==========================================
+
+  console.log('\n--- PHASE 11: SCHEDULING ---\n');
+
+  let apptId;
+
+  await test('Create appointment for Sarah', async () => {
+    const appt = await db.createAppointment({
+      patient_id: sarahId,
+      provider_name: 'Dr. Test Provider',
+      appointment_date: '2026-04-01',
+      appointment_time: '09:00',
+      duration_minutes: 30,
+      appointment_type: 'follow_up',
+      chief_complaint: 'Diabetes follow-up, A1C recheck'
+    });
+
+    assert(appt.id > 0, 'Should have an ID');
+    assertEqual(appt.patient_id, sarahId, 'Patient ID should match');
+    assertEqual(appt.appointment_type, 'follow_up', 'Type should be follow_up');
+    assertEqual(appt.status, 'scheduled', 'Default status should be scheduled');
+    apptId = appt.id;
+  });
+
+  await test('Fetch daily schedule by date', async () => {
+    const schedule = await db.getAppointmentsByDate('2026-04-01');
+    assert(schedule.length >= 1, `Should have at least 1 appointment on 2026-04-01, got ${schedule.length}`);
+    const sarahAppt = schedule.find(a => a.patient_id === sarahId);
+    assert(sarahAppt, 'Sarah appointment should appear in schedule');
+    assert(sarahAppt.first_name, 'Schedule should include patient name via JOIN');
+    assert(sarahAppt.mrn, 'Schedule should include MRN via JOIN');
+  });
+
+  await test('Fetch daily schedule filtered by provider', async () => {
+    const schedule = await db.getAppointmentsByDate('2026-04-01', 'Dr. Test Provider');
+    assert(schedule.length >= 1, 'Should return appointments for this provider');
+    const noMatch = await db.getAppointmentsByDate('2026-04-01', 'Dr. Nonexistent');
+    assertEqual(noMatch.length, 0, 'Wrong provider should return empty schedule');
+  });
+
+  await test('Update appointment status to confirmed', async () => {
+    await db.updateAppointment(apptId, { status: 'confirmed' });
+    const updated = await db.getAppointmentById(apptId);
+    assertEqual(updated.status, 'confirmed', 'Status should be confirmed');
+  });
+
+  await test('Get appointments by patient', async () => {
+    const appts = await db.getAppointmentsByPatient(sarahId);
+    assert(appts.length >= 1, `Sarah should have at least 1 appointment, got ${appts.length}`);
+    assert(appts.every(a => a.patient_id === sarahId), 'All results should belong to Sarah');
+  });
+
+  // ==========================================
+  // PHASE 12: BILLING / CHARGE CAPTURE TESTS
+  // ==========================================
+
+  console.log('\n--- PHASE 12: BILLING / CHARGE CAPTURE ---\n');
+
+  const billingEngine = require('../server/billing-engine');
+
+  await test('E/M MDM: Low complexity — 1 stable chronic condition, no orders', async () => {
+    const context = {
+      problems: [{ icd10_code: 'I10', status: 'active' }],
+      medications: [{ medication_name: 'Lisinopril 10mg', status: 'active' }],
+      labs: [],
+      labOrders: [],
+      imagingOrders: [],
+      chiefComplaint: 'hypertension follow-up, stable',
+      transcript: 'Blood pressure well controlled today.',
+      encounter: { encounter_type: 'follow_up' }
+    };
+    const mdm = billingEngine.assessMDM(context);
+
+    assert(mdm.code, 'Should return an E/M code');
+    // 1 stable chronic → low problems; 0 orders → low data; 1 Rx → moderate risk
+    // 2 of 3 at low/moderate → low/moderate complexity
+    assert(['99213','99214'].includes(mdm.code), `Expected 99213 or 99214, got ${mdm.code}`);
+    assert(mdm.rvu > 0, 'Should have RVU value');
+    assert(mdm.rationale.includes('MDM:'), 'Rationale should be present');
+  });
+
+  await test('E/M MDM: High complexity — multiple unstable chronic conditions + high-risk med', async () => {
+    const context = {
+      problems: [
+        { icd10_code: 'I21.9', status: 'active' }, // STEMI — high complexity
+        { icd10_code: 'E11.9', status: 'active' },
+        { icd10_code: 'I10', status: 'active' },
+        { icd10_code: 'N18.4', status: 'active' }
+      ],
+      medications: [
+        { medication_name: 'Warfarin 5mg', status: 'active' }, // intensive monitoring
+        { medication_name: 'Insulin glargine', status: 'active' }
+      ],
+      labs: [],
+      labOrders: [{ test_name: 'INR' }, { test_name: 'BMP' }],
+      imagingOrders: [],
+      chiefComplaint: 'chest pain, worse today',
+      transcript: 'patient with worsening chest pain, EKG shows changes. Consider hospitalization.',
+      encounter: { encounter_type: 'follow_up' }
+    };
+    const mdm = billingEngine.assessMDM(context);
+
+    assertEqual(mdm.code, '99215', `Expected 99215 (high complexity), got ${mdm.code}`);
+    assertEqual(mdm.mdmLevel, 'high', 'MDM level should be high');
+    assertEqual(mdm.rvu, billingEngine.EM_RVU['99215'], 'RVU should match 99215');
+  });
+
+  await test('E/M MDM: New patient codes for first visits', async () => {
+    const context = {
+      problems: [{ icd10_code: 'E11.9', status: 'active' }],
+      medications: [{ medication_name: 'Metformin', status: 'active' }],
+      labs: [], labOrders: [], imagingOrders: [],
+      chiefComplaint: 'new patient first visit for diabetes management',
+      transcript: '',
+      encounter: { encounter_type: 'new_patient' }
+    };
+    const mdm = billingEngine.assessMDM(context);
+
+    assert(['99202','99203','99204','99205'].includes(mdm.code),
+      `New patient should get 992XX code, got ${mdm.code}`);
+    assertEqual(mdm.isNewPatient, true, 'Should detect new patient visit');
+  });
+
+  await test('Charge capture: create draft charge for encounter', async () => {
+    const charge = await billingEngine.captureCharge(cdsEncId, sarahId, 'Dr. Test Provider');
+
+    assert(charge, 'Should return charge record');
+    assert(charge.id > 0, 'Charge should have ID');
+    assertEqual(charge.encounter_id, cdsEncId, 'Should link to encounter');
+    assertEqual(charge.status, 'draft', 'Initial status should be draft');
+    assert(charge.em_level, 'Should have E/M level');
+    assert(charge.cpt_codes, 'Should have CPT codes JSON');
+    const cpts = JSON.parse(charge.cpt_codes);
+    assert(cpts.length >= 1, 'Should have at least the E/M CPT code');
+    assert(cpts[0].code, 'CPT entry should have a code');
+  });
+
+  await test('Charge capture: provider can override E/M level', async () => {
+    const charge = await billingEngine.captureCharge(
+      cdsEncId, sarahId, 'Dr. Test Provider',
+      { em_level: '99215', notes: 'High complexity — manually upgraded per documentation review' }
+    );
+
+    assertEqual(charge.em_level, '99215', 'E/M level should be provider-supplied override');
+    assertEqual(billingEngine.EM_RVU['99215'], charge.total_rvu, 'RVU should match override code');
+  });
+
+  await test('Checkout finalizes charge and sets status to finalized', async () => {
+    const charge = await billingEngine.finalizeCheckout(cdsEncId, sarahId, 'Dr. Test Provider');
+
+    assertEqual(charge.status, 'finalized', 'Status should be finalized after checkout');
+    assert(charge.finalized_at, 'Should have finalized_at timestamp');
+  });
+
+  await test('Billing worklist: getChargesByStatus returns finalized charges', async () => {
+    const charges = await db.getChargesByStatus('finalized');
+    assert(charges.length >= 1, 'Should have at least one finalized charge');
+    assert(charges.every(c => c.status === 'finalized'), 'All results should be finalized');
+    assert(charges[0].encounter_date, 'Should JOIN encounter date');
+    assert(charges[0].first_name, 'Should JOIN patient name');
+  });
+
+  // ==========================================
   // RESULTS
   // ==========================================
 

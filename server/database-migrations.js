@@ -34,6 +34,9 @@ async function runMigrations(db) {
     await createLoginAttemptsTable(db);
     await createIndexes(db);
     await migrateCdsRules(db);
+    await migrateSuggestionTypes(db);
+    await createAppointmentsTable(db);
+    await createChargesTable(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -411,6 +414,154 @@ async function migrateCdsRules(db) {
 }
 
 // ==========================================
+// MIGRATE CDS SUGGESTION TYPES
+// ==========================================
+
+/**
+ * Expand cds_suggestions.suggestion_type CHECK constraint to include
+ * 'prescribing_advisory' and 'clinical_protocol'.
+ * Idempotent — checks constraint text before rebuilding.
+ */
+async function migrateSuggestionTypes(db) {
+  const row = await new Promise((resolve, reject) => {
+    db.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='cds_suggestions'", (err, r) => {
+      if (err) reject(err); else resolve(r);
+    });
+  });
+
+  if (!row) return; // Table doesn't exist yet — initial schema already has correct types
+  if (row.sql.includes('clinical_protocol')) {
+    console.log('[MIGRATIONS] cds_suggestions suggestion_type constraint already current — skipping');
+    return;
+  }
+
+  console.log('[MIGRATIONS] Expanding cds_suggestions suggestion_type constraint...');
+  await dbRun(db, 'PRAGMA foreign_keys=OFF');
+  await dbRun(db, 'BEGIN TRANSACTION');
+  try {
+    await dbRun(db, `
+      CREATE TABLE IF NOT EXISTS cds_suggestions_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        encounter_id INTEGER NOT NULL,
+        patient_id INTEGER NOT NULL,
+        suggestion_type TEXT NOT NULL CHECK(suggestion_type IN (
+          'differential_diagnosis','lab_order','imaging_order',
+          'medication','medication_adjustment','referral',
+          'allergy_alert','interaction_alert','vital_alert',
+          'preventive_care','dose_adjustment',
+          'prescribing_advisory','clinical_protocol'
+        )),
+        category TEXT DEFAULT 'routine',
+        priority INTEGER DEFAULT 50,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        rationale TEXT,
+        suggested_action TEXT,
+        status TEXT NOT NULL CHECK(status IN (
+          'pending','accepted','rejected','deferred','expired','auto-applied'
+        )) DEFAULT 'pending',
+        provider_response_time DATETIME,
+        source TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE CASCADE,
+        FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+      )
+    `);
+    await dbRun(db, `INSERT INTO cds_suggestions_new SELECT * FROM cds_suggestions`);
+    await dbRun(db, `DROP TABLE cds_suggestions`);
+    await dbRun(db, `ALTER TABLE cds_suggestions_new RENAME TO cds_suggestions`);
+    await dbRun(db, 'COMMIT');
+    console.log('[MIGRATIONS] cds_suggestions constraint expanded successfully');
+  } catch (err) {
+    await dbRun(db, 'ROLLBACK');
+    throw err;
+  }
+  await dbRun(db, 'PRAGMA foreign_keys=ON');
+}
+
+// ==========================================
+// APPOINTMENTS TABLE
+// ==========================================
+
+/**
+ * Create appointments table for scheduling system.
+ * Idempotent via CREATE TABLE IF NOT EXISTS.
+ */
+async function createAppointmentsTable(db) {
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS appointments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL,
+      provider_name TEXT NOT NULL,
+      appointment_date DATE NOT NULL,
+      appointment_time TEXT NOT NULL,
+      duration_minutes INTEGER DEFAULT 20,
+      appointment_type TEXT NOT NULL CHECK(appointment_type IN (
+        'new_patient','follow_up','sick_visit','wellness',
+        'procedure','telehealth','referral','urgent'
+      )),
+      chief_complaint TEXT,
+      status TEXT NOT NULL CHECK(status IN (
+        'scheduled','confirmed','checked-in','no-show',
+        'cancelled','completed','rescheduled'
+      )) DEFAULT 'scheduled',
+      encounter_id INTEGER,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (patient_id) REFERENCES patients(id),
+      FOREIGN KEY (encounter_id) REFERENCES encounters(id)
+    )
+  `);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_name, appointment_date)`);
+  console.log('[MIGRATIONS] appointments table ready');
+}
+
+// ==========================================
+// CHARGES TABLE (BILLING / CHARGE CAPTURE)
+// ==========================================
+
+/**
+ * Create charges table for billing and charge capture at checkout.
+ * Stores E/M level, CPT codes, and ICD-10 linkage per encounter.
+ * Idempotent via CREATE TABLE IF NOT EXISTS.
+ */
+async function createChargesTable(db) {
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS charges (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      encounter_id INTEGER NOT NULL UNIQUE,
+      patient_id INTEGER NOT NULL,
+      provider_name TEXT NOT NULL,
+      em_level TEXT CHECK(em_level IN (
+        '99202','99203','99204','99205',
+        '99211','99212','99213','99214','99215',
+        '99241','99242','99243','99244','99245'
+      )),
+      cpt_codes TEXT NOT NULL DEFAULT '[]',
+      icd10_codes TEXT NOT NULL DEFAULT '[]',
+      modifiers TEXT NOT NULL DEFAULT '[]',
+      em_suggestion TEXT,
+      total_rvu REAL,
+      status TEXT NOT NULL CHECK(status IN (
+        'draft','finalized','submitted','billed','paid','denied','voided'
+      )) DEFAULT 'draft',
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      finalized_at DATETIME,
+      FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_charges_encounter ON charges(encounter_id)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_charges_patient ON charges(patient_id)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_charges_status ON charges(status)`);
+  console.log('[MIGRATIONS] charges table ready');
+}
+
+// ==========================================
 // DATABASE HELPER (PROMISIFIED)
 // ==========================================
 
@@ -439,5 +590,8 @@ module.exports = {
   createPhysicianOverridesTable,
   createLoginAttemptsTable,
   createIndexes,
-  migrateCdsRules
+  migrateCdsRules,
+  migrateSuggestionTypes,
+  createAppointmentsTable,
+  createChargesTable
 };

@@ -207,7 +207,8 @@ function initializeDatabase() {
           'differential_diagnosis','lab_order','imaging_order',
           'medication','medication_adjustment','referral',
           'allergy_alert','interaction_alert','vital_alert',
-          'preventive_care','dose_adjustment'
+          'preventive_care','dose_adjustment',
+          'prescribing_advisory','clinical_protocol'
         )),
         category TEXT DEFAULT 'routine',
         priority INTEGER DEFAULT 50,
@@ -336,10 +337,75 @@ function initializeDatabase() {
       db.run(`CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_log(resource_type, resource_id)`);
       db.run(`CREATE INDEX IF NOT EXISTS idx_audit_phi ON audit_log(phi_accessed, timestamp)`);
       db.run(`CREATE INDEX IF NOT EXISTS idx_audit_session ON audit_log(session_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)`, (err) => {
+      db.run(`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)`);
+
+      // ==========================================
+      // SCHEDULING TABLE
+      // ==========================================
+
+      db.run(`CREATE TABLE IF NOT EXISTS appointments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        patient_id INTEGER NOT NULL,
+        provider_name TEXT NOT NULL,
+        appointment_date DATE NOT NULL,
+        appointment_time TEXT NOT NULL,
+        duration_minutes INTEGER DEFAULT 20,
+        appointment_type TEXT NOT NULL CHECK(appointment_type IN (
+          'new_patient','follow_up','sick_visit','wellness',
+          'procedure','telehealth','referral','urgent'
+        )),
+        chief_complaint TEXT,
+        status TEXT NOT NULL CHECK(status IN (
+          'scheduled','confirmed','checked-in','no-show',
+          'cancelled','completed','rescheduled'
+        )) DEFAULT 'scheduled',
+        encounter_id INTEGER,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (patient_id) REFERENCES patients(id),
+        FOREIGN KEY (encounter_id) REFERENCES encounters(id)
+      )`);
+
+      db.run(`CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_name, appointment_date)`);
+
+      // ==========================================
+      // BILLING / CHARGE CAPTURE TABLE
+      // ==========================================
+
+      db.run(`CREATE TABLE IF NOT EXISTS charges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        encounter_id INTEGER NOT NULL UNIQUE,
+        patient_id INTEGER NOT NULL,
+        provider_name TEXT NOT NULL,
+        em_level TEXT CHECK(em_level IN (
+          '99202','99203','99204','99205',
+          '99211','99212','99213','99214','99215',
+          '99241','99242','99243','99244','99245'
+        )),
+        cpt_codes TEXT NOT NULL DEFAULT '[]',
+        icd10_codes TEXT NOT NULL DEFAULT '[]',
+        modifiers TEXT NOT NULL DEFAULT '[]',
+        em_suggestion TEXT,
+        total_rvu REAL,
+        status TEXT NOT NULL CHECK(status IN (
+          'draft','finalized','submitted','billed','paid','denied','voided'
+        )) DEFAULT 'draft',
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        finalized_at DATETIME,
+        FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE CASCADE,
+        FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+      )`);
+
+      db.run(`CREATE INDEX IF NOT EXISTS idx_charges_encounter ON charges(encounter_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_charges_patient ON charges(patient_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_charges_status ON charges(status)`, (err) => {
         if (err) reject(err);
         else {
-          console.log('Database schema initialized (17 tables + audit indexes)');
+          console.log('Database schema initialized (19 tables + indexes)');
           resolve();
         }
       });
@@ -1260,6 +1326,99 @@ const db_helpers = {
 };
 
 // ==========================================
+// SCHEDULING HELPERS
+// ==========================================
+
+const scheduling_helpers = {
+  createAppointment: ({ patient_id, provider_name, appointment_date, appointment_time, duration_minutes,
+    appointment_type, chief_complaint, notes }) =>
+    dbRun(`INSERT INTO appointments
+           (patient_id,provider_name,appointment_date,appointment_time,duration_minutes,
+            appointment_type,chief_complaint,notes)
+           VALUES (?,?,?,?,?,?,?,?)`,
+      [patient_id, provider_name, appointment_date, appointment_time, duration_minutes || 20,
+        appointment_type, chief_complaint || null, notes || null])
+      .then(r => dbGet('SELECT * FROM appointments WHERE id = ?', [r.lastID])),
+
+  getAppointmentById: (id) => dbGet('SELECT * FROM appointments WHERE id = ?', [id]),
+
+  updateAppointment: (id, fields) => {
+    const allowed = ['status','chief_complaint','notes','appointment_date','appointment_time',
+      'duration_minutes','encounter_id','appointment_type'];
+    const updates = Object.keys(fields).filter(k => allowed.includes(k));
+    if (!updates.length) return Promise.resolve({ changes: 0 });
+    const setClause = updates.map(k => `${k} = ?`).join(', ');
+    const values = updates.map(k => fields[k]);
+    return dbRun(`UPDATE appointments SET ${setClause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [...values, id]);
+  },
+
+  getAppointmentsByDate: (date, provider_name) => {
+    if (provider_name) {
+      return dbAll(
+        `SELECT a.*, p.first_name, p.last_name, p.dob, p.mrn
+         FROM appointments a JOIN patients p ON a.patient_id = p.id
+         WHERE a.appointment_date = ? AND a.provider_name = ?
+         ORDER BY a.appointment_time ASC`,
+        [date, provider_name]
+      );
+    }
+    return dbAll(
+      `SELECT a.*, p.first_name, p.last_name, p.dob, p.mrn
+       FROM appointments a JOIN patients p ON a.patient_id = p.id
+       WHERE a.appointment_date = ?
+       ORDER BY a.appointment_time ASC`,
+      [date]
+    );
+  },
+
+  getAppointmentsByPatient: (patient_id) =>
+    dbAll(
+      `SELECT * FROM appointments WHERE patient_id = ? ORDER BY appointment_date DESC, appointment_time DESC`,
+      [patient_id]
+    ),
+
+  deleteAppointment: (id) => dbRun('DELETE FROM appointments WHERE id = ?', [id])
+};
+
+// ==========================================
+// BILLING / CHARGE CAPTURE HELPERS
+// ==========================================
+
+const billing_helpers = {
+  createCharge: ({ encounter_id, patient_id, provider_name }) =>
+    dbRun(`INSERT OR IGNORE INTO charges (encounter_id, patient_id, provider_name)
+           VALUES (?, ?, ?)`,
+      [encounter_id, patient_id, provider_name])
+      .then(r => dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])),
+
+  getChargeByEncounter: (encounter_id) =>
+    dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id]),
+
+  updateCharge: (encounter_id, fields) => {
+    const allowed = ['em_level','cpt_codes','icd10_codes','modifiers','em_suggestion',
+      'total_rvu','status','notes'];
+    const updates = Object.keys(fields).filter(k => allowed.includes(k));
+    if (!updates.length) return Promise.resolve({ changes: 0 });
+    const setClause = updates.map(k => `${k} = ?`).join(', ');
+    const values = updates.map(k => {
+      const v = fields[k];
+      return (Array.isArray(v) || (typeof v === 'object' && v !== null)) ? JSON.stringify(v) : v;
+    });
+    return dbRun(`UPDATE charges SET ${setClause} WHERE encounter_id = ?`, [...values, encounter_id]);
+  },
+
+  finalizeCharge: (encounter_id) =>
+    dbRun(`UPDATE charges SET status = 'finalized', finalized_at = CURRENT_TIMESTAMP
+           WHERE encounter_id = ? AND status = 'draft'`,
+      [encounter_id]),
+
+  getChargesByStatus: (status) =>
+    dbAll('SELECT c.*, e.encounter_date, e.chief_complaint, p.first_name, p.last_name, p.mrn FROM charges c JOIN encounters e ON c.encounter_id = e.id JOIN patients p ON c.patient_id = p.id WHERE c.status = ? ORDER BY c.created_at DESC',
+      [status])
+};
+
+// ==========================================
 // CLOSE HANDLER
 // ==========================================
 
@@ -1285,5 +1444,7 @@ module.exports = {
   db, dbRun, dbGet, dbAll,
   ready, close,
   ...db_helpers,
+  ...scheduling_helpers,
+  ...billing_helpers,
   generateMRN, calculateAge
 };
