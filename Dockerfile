@@ -39,9 +39,9 @@ FROM node:22-alpine
 WORKDIR /app
 
 # Create non-root user for security
-# Avoid UID/GID 1000 because it is already present in some node:alpine images.
-RUN addgroup -g 1001 ehr && \
-    adduser -u 1001 -G ehr -s /sbin/nologin -D ehr
+# Use system-level IDs (-S) to avoid GID/UID collisions with the base image.
+RUN addgroup -S ehr && \
+    adduser -S -G ehr -s /sbin/nologin ehr
 
 # Copy package files from builder
 COPY package*.json ./
@@ -75,8 +75,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     DATABASE_PATH=/data/mjr-ehr.db
 
-# Volume for persistent SQLite database and logs
+# Volume for persistent SQLite database
 VOLUME ["/data"]
 
-# Start application
+# Start the server
 CMD ["node", "server/server.js"]
