@@ -6,8 +6,8 @@
 const messageBus = orchestrator.getMessageBus();
 
 await messageBus.sendMessage(
-  'ma_agent',                    // from
-  'physician_agent',             // to
+  'ma',                          // from
+  'physician',                   // to
   MESSAGE_TYPES.ESCALATION,      // type
   { patientName: 'John', question: 'Refill?' },  // payload
   { priority: 4, patientId: 123 }  // options
@@ -111,7 +111,7 @@ const history = await orchestrator.getEncounterMessages(encounterId);
 const history = await messageBus.getHistory({
   patientId: 123,
   messageType: MESSAGE_TYPES.ESCALATION,
-  fromAgent: 'ma_agent'
+  fromAgent: 'ma'
 });
 ```
 

@@ -18,6 +18,7 @@
 
 const EventEmitter = require('events');
 const crypto = require('crypto');
+const { getModuleDefinition } = require('./module-registry');
 
 // ==========================================
 // SHARED CONTEXT SCHEMA
@@ -108,6 +109,7 @@ class BaseAgent extends EventEmitter {
     this.safetyEvents = [];        // Safety event buffer
     this.overrideCount = 0;        // Tracks physician overrides for learning
     this.requiresApproval = options.requiresApproval !== false && this.autonomyTier === AUTONOMY_TIER.TIER_3;
+    this.moduleDefinition = options.moduleDefinition || getModuleDefinition(name);
 
     // Communication and memory
     this.messageBus = options.messageBus || null;
@@ -191,6 +193,7 @@ class BaseAgent extends EventEmitter {
       runCount: this.runCount,
       lastExecutionTimeMs: this.executionTimeMs,
       lastError: this.lastError,
+      module: this.moduleDefinition,
       governance: {
         autonomyTier: this.autonomyTier,
         tierLabel: tierLabels[this.autonomyTier] || 'Unknown',

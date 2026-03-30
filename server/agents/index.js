@@ -41,6 +41,7 @@ const { CDSAgent } = require('./cds-agent');
 const { OrdersAgent } = require('./orders-agent');
 const { CodingAgent } = require('./coding-agent');
 const { QualityAgent } = require('./quality-agent');
+const { MODULE_REGISTRY, listModules } = require('./module-registry');
 
 // ==========================================
 // SINGLETON ORCHESTRATOR
@@ -178,6 +179,8 @@ module.exports = {
   runPipeline,
   runEncounterPipeline,
   runAgent,
+  MODULE_REGISTRY,
+  listModules,
   // Export classes for testing / customization
   PhoneTriageAgent,
   FrontDeskAgent,

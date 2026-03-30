@@ -27,6 +27,26 @@ Built by Dr. Michael Renner / [ImpactMed Consulting, LLC](https://impactmedconsu
 - **Offline-first** — works without internet using pattern-matching fallback (Claude API optional)
 - **Docker-ready** — multi-stage build, non-root user, health checks, nginx reverse proxy
 
+## Clinical Modules
+
+The runtime is organized as nine explicit workflow modules with defined handoffs and safety boundaries.
+
+| Module | Stage | Tier | Mission |
+|---|---|---|---|
+| Phone Triage | Access | 1 | Turn inbound calls into documented triage and routing decisions |
+| Front Desk | Access / Pre-visit | 1 | Manage scheduling, patient contact, and pre-visit briefing assembly |
+| Medical Assistant | Protocol execution | 2 | Execute refill, lab, and support workflows inside approved protocols |
+| Physician | Clinical governance | 3 | Own protocols, escalation handling, and final clinical authority |
+| Scribe | Encounter capture | 3 | Draft the SOAP note and structure encounter data |
+| CDS | Encounter support | 2 | Surface alerts, care gaps, and evidence-based suggestions |
+| Orders | Clinical execution | 3 | Assemble labs, imaging, referrals, and prescriptions for approval |
+| Coding | Revenue / documentation | 2 | Generate E&M support, ICD-10 mapping, and completeness feedback |
+| Quality | Oversight | 2 | Track care gaps, quality measures, and compliance readiness |
+
+Patient-facing and patient-data-touching workflows stay inside authenticated, auditable boundaries. Tier 3 modules remain draft-only or recommendation-only until a physician approves them.
+
+See `MODULE_CATALOG.md` for the canonical module map.
+
 ## Architecture
 
 ```
@@ -101,25 +121,27 @@ agentic-ehr/
 
 ### Setup
 
-```bash
+```powershell
 # Clone the repo
-git clone https://github.com/impactmed/agentic-ehr.git
-cd agentic-ehr
+git clone https://github.com/mjrgman/AI-EHR.git
+cd AI-EHR
 
 # Install dependencies
 npm install
 
 # Create environment file (optional — runs in mock AI mode without it)
-cat > .env << 'EOF'
+@"
 PORT=3000
 AI_MODE=mock
 # AI_MODE=api
 # ANTHROPIC_API_KEY=sk-ant-...
-EOF
+"@ | Set-Content -Path .env
 
 # Start development server (frontend + backend)
 npm run dev
 ```
+
+If you skip `.env`, the app still runs in mock AI mode with default settings.
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
@@ -183,6 +205,7 @@ Additional documentation is included in the repo:
 
 | File | Description |
 |------|-------------|
+| `MODULE_CATALOG.md` | Canonical 9-module runtime map and safety boundaries |
 | `VISION.md` | System architecture and design philosophy |
 | `DEPLOYMENT.md` | Full deployment guide (local, Docker, cloud) |
 | `INTER_AGENT_COMMUNICATION.md` | Agent messaging protocol |

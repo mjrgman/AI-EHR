@@ -37,6 +37,24 @@ The physician talks. The MA talks. The patient calls. The agents listen, triage,
 
 The system operates through **nine specialized agents**, each mapped to a real human role or clinical function in the practice. Every agent has a defined scope of authority, escalation pathways, and a learning memory. The nine agents are: Phone Triage, Front Desk, MA, Physician (pre-visit), and Scribe, CDS, Orders, Coding, Quality (encounter pipeline).
 
+### Canonical Module Map
+
+The runtime should be understood as a 9-module clinical workflow system:
+
+| Module | Workflow band | Tier | Human counterpart | Core job |
+|---|---|---|---|---|
+| Phone Triage | Access | 1 | Phone triage / nurse intake | Turn inbound calls into documented urgency and routing decisions |
+| Front Desk | Access / Pre-visit | 1 | Front desk / scheduling | Handle scheduling, patient contact, and pre-visit prep |
+| MA | Protocol execution | 2 | Medical assistant | Execute refill, lab, and support workflows inside approved protocols |
+| Physician | Clinical governance | 3 | Physician | Own protocols, escalation handling, and final clinical authority |
+| Scribe | Encounter capture | 3 | Ambient scribe | Draft the SOAP note and structure encounter data |
+| CDS | Encounter support | 2 | Clinical decision support | Surface alerts, care gaps, and evidence-based suggestions |
+| Orders | Clinical execution | 3 | Ordering workflow | Assemble labs, imaging, referrals, and prescriptions for approval |
+| Coding | Revenue / documentation | 2 | Coding / billing review | Generate E&M support, ICD-10 mapping, and completeness feedback |
+| Quality | Oversight | 2 | Quality / compliance operations | Track care gaps, measures, and compliance readiness |
+
+Cross-cutting rule: patient-facing and patient-data-touching workflows must remain authenticated, auditable, and explicitly governed. Tier 3 modules never finalize care actions without physician approval.
+
 ### Agent 1: Phone Triage Agent
 
 **Role:** First point of contact. Answers incoming calls, triages information, and routes it into the chart.
@@ -113,7 +131,7 @@ The system operates through **nine specialized agents**, each mapped to a real h
 - **Protocol management:** Sets the rules that MA Agent and Phone Triage Agent follow. "For hypertension refills, approve if BP was <140/90 at last visit and patient is compliant." These protocols are the Physician Agent's directives.
 - **Escalation handling:** Receives questions from MA Agent that exceed protocol scope. Reviews context, makes decisions, sends directives back.
 - **Communication:** Sends letters to patients via portal, email, or text. Generates after-visit summaries. Writes referral letters to specialists.
-- **During-visit functions** (in coordination with Ambient Agent):
+- **During-visit functions** (in coordination with the Scribe Agent):
   - Real-time note editing as the visit progresses
   - Edits transcription output to match provider's preferred documentation style
   - Ensures diagnoses, treatment plans, and orders land in the correct SOAP note section
@@ -155,12 +173,12 @@ The system operates through **nine specialized agents**, each mapped to a real h
 - Feed extracted data to Physician Agent for real-time review and editing
 - Generate the draft SOAP note at encounter end
 
-**What the Ambient Agent does NOT do:**
+**What the Scribe Agent does NOT do:**
 - Make clinical decisions
 - Finalize the note (Physician Agent reviews and signs)
 - Send orders (Physician Agent authorizes)
 
-**Relationship with Physician Agent:** The Ambient Agent is the ears. The Physician Agent is the brain. The Ambient Agent captures everything; the Physician Agent shapes it into the provider's preferred documentation.
+**Relationship with Physician Agent:** The Scribe Agent is the ears. The Physician Agent is the brain. The Scribe Agent captures everything; the Physician Agent shapes it into the provider's preferred documentation.
 
 ---
 
@@ -178,7 +196,7 @@ The system operates through **nine specialized agents**, each mapped to a real h
 - Alert the Physician Agent to missing elements before note signing
 - Generate coding summary for billing staff
 
-**Runs after:** Ambient Agent and Physician Agent complete the note.
+**Runs after:** Scribe Agent and Physician Agent complete the note.
 
 ---
 
@@ -273,11 +291,11 @@ These only appear if they are still active and relevant. If the provider discont
 - Workflow state: Roomed → Vitals Recorded
 
 ### Step 3: Provider Enters
-- Ambient Agent activates (listening)
+- Scribe Agent activates (listening)
 - Provider reviews the pre-visit briefing (already prepared)
 - Provider begins the encounter — talking to the patient, examining, discussing plan
-- Ambient Agent transcribes everything in real time
-- Ambient Agent places content in the correct SOAP sections
+- Scribe Agent transcribes everything in real time
+- Scribe Agent places content in the correct SOAP sections
 - Physician Agent edits the note in real time according to provider style
 - Workflow state: Provider Examining
 
@@ -319,7 +337,7 @@ Phone Triage Agent ──→ MA Agent ──→ Physician Agent
   Front Desk Agent ←──────┘               │
          │                                │
          ▼                                ▼
-  Patient Contact              Ambient Agent (during visit)
+Patient Contact              Scribe Agent (during visit)
                                           │
                                           ▼
                                  Coding/Quality Agent
@@ -333,7 +351,7 @@ Phone Triage Agent ──→ MA Agent ──→ Physician Agent
 - `PATIENT_CONTACT` — Front Desk Agent → Patient (appointment confirmation)
 - `REFILL_REQUEST` — Phone Triage → MA Agent → Physician Agent (if outside protocol)
 - `ORDER_REQUEST` — Physician Agent → Lab/Pharmacy/Imaging (during or post-visit)
-- `NOTE_UPDATE` — Ambient Agent → Physician Agent (real-time transcription)
+- `NOTE_UPDATE` — Scribe Agent -> Physician Agent (real-time transcription)
 - `CODING_ALERT` — Coding Agent → Physician Agent (missing documentation)
 - `QUALITY_GAP` — Quality Agent → Physician Agent (care gap identified)
 - `PATIENT_LETTER` — Physician Agent → Patient (via portal/email/text)
@@ -403,7 +421,7 @@ This is not a stateless system. Every agent has persistent memory.
 - Base agent class with status tracking, timing, event emission
 - Orchestrator with dependency-aware parallel execution
 - Shared patient context schema
-- 5 initial agents operational (Scribe, CDS, Orders, Coding, Quality)
+- Encounter runtime operational (Scribe, CDS, Orders, Coding, Quality) as the foundation of the broader 9-module system
 
 **To be built:**
 - Phone Triage Agent (voice AI integration)
@@ -420,13 +438,13 @@ This is not a stateless system. Every agent has persistent memory.
 ## X. Development Phases
 
 **Phase 1 — Foundation (Complete)**
-Core EHR data model, workflow engine, CDS rule engine, audit logging, SOAP note generation, 5-agent pipeline.
+Core EHR data model, workflow engine, CDS rule engine, audit logging, SOAP note generation, and the encounter-centered runtime that later expanded into the full 9-module system.
 
 **Phase 2 — Agent Intelligence (Current)**
 Physician Agent learning engine, MA Agent protocol system, pre-visit briefing generator, inter-agent communication bus.
 
 **Phase 3 — Voice Pipeline**
-Production-grade ambient transcription, speaker diarization (distinguish provider vs. patient), real-time streaming to Ambient Agent.
+Production-grade ambient transcription, speaker diarization (distinguish provider vs. patient), real-time streaming to the Scribe module.
 
 **Phase 4 — Front Office**
 Phone Triage Agent (voice AI), Front Desk Agent (scheduling automation), patient contact automation (portal/email/text).

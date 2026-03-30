@@ -1,11 +1,14 @@
 /**
  * Agentic EHR Agent Orchestrator
- * Coordinates the 5-agent pipeline for each encounter.
+ * Coordinates the runtime module graph for each encounter.
  *
- * Execution order (respects dependencies):
- *   Phase 1 (parallel): Scribe Agent + CDS Agent
- *   Phase 2 (parallel): Orders Agent + Coding Agent (depend on Scribe + CDS)
- *   Phase 3: Quality Agent (depends on all above)
+ * Encounter execution order (respects dependencies):
+ *   Phase 1 (parallel): Scribe + CDS
+ *   Phase 2 (parallel): Orders + Coding
+ *   Phase 3: Quality
+ *
+ * The full system includes 9 workflow modules:
+ *   Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Orders, Coding, Quality
  *
  * The orchestrator:
  *   1. Builds shared PatientContext from the database

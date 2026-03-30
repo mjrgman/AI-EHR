@@ -95,8 +95,8 @@ context.maRequest = {
 {
   status: 'escalation_required',
   escalation_id: 'UUID',
-  from: 'ma_agent',
-  to: 'physician_agent',
+  from: 'ma',
+  to: 'physician',
   type: 'refill_request_no_protocol',
   ma_assessment: 'No refill protocol established for Medication X.'
 }
@@ -265,8 +265,8 @@ When MA Agent cannot handle a request, it escalates to Physician Agent with:
 {
   status: 'escalation_required',
   escalation_id: 'UUID',
-  from: 'ma_agent',
-  to: 'physician_agent',
+  from: 'ma',
+  to: 'physician',
   patient_id: 'PT001',
   patient_name: 'John Smith',
   type: 'patient_question_out_of_scope',
@@ -361,7 +361,7 @@ The Physician Agent learns and adapts to the provider's:
 {
   escalation: {
     escalation_id: string,
-    from: 'ma_agent',
+    from: 'ma',
     type: string,           // e.g., 'refill_request_no_protocol'
     patient_id: string,
     patient_name: string,
@@ -384,7 +384,7 @@ context.physicianRequest = {
   payload: {
     escalation: {
       escalation_id: 'ESC001',
-      from: 'ma_agent',
+      from: 'ma',
       type: 'refill_request_no_protocol',
       patient_id: 'PT001',
       patient_name: 'John Smith',
@@ -400,7 +400,7 @@ context.physicianRequest = {
   decision: 'auto_response_generated',
   directive_id: 'UUID',
   instructions: 'Approve refill for 90 days. Schedule follow-up in 3 months.',
-  to_agent: 'ma_agent'
+  to_agent: 'ma'
 }
 
 // Response (if needs physician review)

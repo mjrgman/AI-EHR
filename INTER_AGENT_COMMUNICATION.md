@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the inter-agent message bus and persistent memory system for the Agentic EHR 6-agent pipeline.
+This document describes the inter-agent message bus and persistent memory system for the Agentic EHR 9-module runtime.
 
 **Status:** ✅ Production-ready (all tests pass)
 
@@ -21,7 +21,7 @@ This document describes the inter-agent message bus and persistent memory system
 ### Purpose
 
 The **MessageBus** enables agents to communicate with each other without direct coupling. All inter-agent communication is:
-- **Typed** (11 defined message types from the vision doc)
+- **Typed** (13 defined message types from the vision doc)
 - **Persistent** (audit trail in SQLite)
 - **Priority-ordered** (1-5, higher priority first)
 - **Event-driven** (for WebSocket/real-time forwarding)
@@ -38,7 +38,7 @@ SCHEDULE_REQUEST  // Any → Front Desk Agent
 PATIENT_CONTACT   // Front Desk Agent → Patient
 REFILL_REQUEST    // Phone Triage → MA Agent → Physician Agent
 ORDER_REQUEST     // Physician Agent → Lab/Pharmacy/Imaging
-NOTE_UPDATE       // Ambient Agent → Physician Agent
+NOTE_UPDATE       // Scribe Agent -> Physician Agent
 CODING_ALERT      // Coding Agent → Physician Agent
 QUALITY_GAP       // Quality Agent → Physician Agent
 PATIENT_LETTER    // Physician Agent → Patient
@@ -55,8 +55,8 @@ const messageBus = orchestrator.getMessageBus();
 
 // MA Agent sends message to Physician Agent
 const msg = await messageBus.sendMessage(
-  'ma_agent',                      // from
-  'physician_agent',               // to
+  'ma',                            // from
+  'physician',                     // to
   MESSAGE_TYPES.ESCALATION,        // type
   {
     patientName: 'John Doe',
@@ -79,7 +79,7 @@ Send a message to all agents (e.g., "Pre-visit briefing ready"):
 
 ```javascript
 await messageBus.sendMessage(
-  'front_desk_agent',
+  'front_desk',
   'broadcast',                     // Special recipient for broadcast
   MESSAGE_TYPES.BRIEFING_READY,
   { briefingUrl: '/briefing/456' },
@@ -91,20 +91,20 @@ await messageBus.sendMessage(
 
 ```javascript
 // Get all messages for an agent
-const messages = await messageBus.getMessages('physician_agent');
+const messages = await messageBus.getMessages('physician');
 
 // Get only pending messages
-const pending = await messageBus.getMessages('physician_agent', {
+const pending = await messageBus.getMessages('physician', {
   status: 'pending'
 });
 
 // Get messages from specific sender
-const fromMA = await messageBus.getMessages('physician_agent', {
-  fromAgent: 'ma_agent'
+const fromMA = await messageBus.getMessages('physician', {
+  fromAgent: 'ma'
 });
 
 // Apply limit
-const recent = await messageBus.getMessages('physician_agent', {
+const recent = await messageBus.getMessages('physician', {
   limit: 10
 });
 ```
@@ -129,8 +129,8 @@ const msg = await messageBus.getHistory({ limit: 1 });
 // MA Agent sends a request and waits for response (with timeout)
 try {
   const response = await messageBus.sendRequest(
-    'ma_agent',                    // from
-    'physician_agent',             // to
+  'ma',                          // from
+  'physician',                   // to
     MESSAGE_TYPES.ESCALATION,      // request type
     { question: 'Refill authorization?' },
     { timeout: 30000 }             // wait up to 30 seconds
@@ -145,8 +145,8 @@ try {
 ```javascript
 // Physician Agent responds to the request
 await messageBus.sendResponse(
-  'physician_agent',               // from
-  'ma_agent',                      // to
+  'physician',                     // from
+  'ma',                            // to
   MESSAGE_TYPES.DIRECTIVE,         // response type
   { decision: 'Approved', refills: 3 },
   requestMessageId                 // link to original request
@@ -174,8 +174,8 @@ const escalations = await messageBus.getHistory({
 // Combined filters
 const history = await messageBus.getHistory({
   patientId: 123,
-  fromAgent: 'ma_agent',
-  toAgent: 'physician_agent',
+  fromAgent: 'ma',
+  toAgent: 'physician',
   messageType: MESSAGE_TYPES.REFILL_REQUEST,
   limit: 50
 });
@@ -222,7 +222,7 @@ PATIENT_NOTE // Agent-specific notes about patients (frequent caller, prefers ph
 #### Store a Memory
 
 ```javascript
-const memory = orchestrator.getAgentMemory('physician_agent');
+const memory = orchestrator.getAgentMemory('physician');
 
 const pref = await memory.remember(
   MEMORY_TYPES.PREFERENCE,         // type
@@ -349,7 +349,7 @@ const stats = await memory.getStats();
 //     { memory_type: 'PATTERN', count: 10, avg_confidence: 0.62 }
 //   ],
 //   highConfidenceCount: 12,  // >= 0.8
-//   agentName: 'physician_agent'
+//   agentName: 'physician'
 // }
 ```
 
@@ -424,7 +424,7 @@ const status = orchestrator.getMessageQueueStatus();
 
 ```javascript
 // Get memory instance for a specific agent
-const memory = orchestrator.getAgentMemory('physician_agent');
+const memory = orchestrator.getAgentMemory('physician');
 
 // Get stats for all agents
 const allStats = await orchestrator.getAllAgentMemoryStats();
@@ -544,8 +544,8 @@ Tests cover:
 ```javascript
 // 1. Phone Triage Agent receives call
 await messageBus.sendMessage(
-  'phone_triage_agent',
-  'ma_agent',
+  'phone_triage',
+  'ma',
   MESSAGE_TYPES.TRIAGE_RESULT,
   {
     patientName: 'John Doe',
@@ -563,8 +563,8 @@ const protocol = await memory.recall(
 
 // 3. MA Agent escalates to Physician
 const response = await messageBus.sendRequest(
-  'ma_agent',
-  'physician_agent',
+  'ma',
+  'physician',
   MESSAGE_TYPES.ESCALATION,
   {
     patientName: 'John Doe',
@@ -577,8 +577,8 @@ const response = await messageBus.sendRequest(
 
 // 4. Physician Agent responds
 await messageBus.sendResponse(
-  'physician_agent',
-  'ma_agent',
+  'physician',
+  'ma',
   MESSAGE_TYPES.DIRECTIVE,
   {
     decision: 'Approved',
@@ -601,7 +601,7 @@ await memory.remember(
 
 // 6. Physician Agent sends patient letter
 await messageBus.sendMessage(
-  'physician_agent',
+  'physician',
   'broadcast',  // or 'patient_portal_agent'
   MESSAGE_TYPES.PATIENT_LETTER,
   {
@@ -635,8 +635,8 @@ const history = await messageBus.getHistory({
 ```javascript
 try {
   const response = await messageBus.sendRequest(
-    'ma_agent',
-    'physician_agent',
+  'ma',
+  'physician',
     MESSAGE_TYPES.ESCALATION,
     { question: 'Can I refill?' },
     { timeout: 30000 }
@@ -673,4 +673,4 @@ try {
 
 ---
 
-**All tests pass. System is ready for integration with the 6-agent clinical pipeline.**
+**All tests pass. System is ready for integration with the 9-module clinical workflow.**
