@@ -92,6 +92,55 @@ The stress test validated these capabilities work correctly under load:
 
 ---
 
+---
+
+## Stress Test Scenario Inventory (Added 2026-04-05)
+
+**File:** `test/scenarios/stress-test-scenarios.json`
+**Source:** ONC certification requirements, FHIR test suites, multi-agent failure research (arxiv 2503.13657v3), AHRQ patient safety patterns, HIPAA penetration testing standards, ISMP medication safety alerts.
+**Total new scenarios:** 28
+
+### By Category
+
+| Category | Count | Scenario IDs | What It Exposes |
+|----------|-------|-------------|-----------------|
+| **Multi-Agent Coordination** | 4 | AGENT-DISAGREE-001, AGENT-LOOP-001, AGENT-HANDOFF-001, AGENT-STALL-001 | Agent conflict resolution, infinite loops, handoff data loss, timeout/stall detection |
+| **CDS Conflicts** | 3 | CDS-CASCADE-001, CDS-CONTRADICT-001, CDS-STALE-001 | Alert cascading (4+ alerts), contradictory recommendations, stale data alerts |
+| **Workflow State Machine** | 4 | WF-INTERRUPT-001, WF-CONCURRENT-001, WF-ORPHAN-001, DATA-CONCURRENT-001 | Pause/resume, wrong-patient isolation, LWBS, concurrent write conflicts |
+| **Security/HIPAA** | 2 | SEC-BREAKGLASS-001, SEC-ADOLESCENT-001 | VIP emergency access override, minor confidentiality (STI/billing leak) |
+| **Voice Capture** | 4 | VOICE-ACCENT-001, VOICE-HOMOPHONE-001, VOICE-CORRECTION-001, VOICE-INTERPRETER-001 | Southern accent + medical terms, Celebrex/Celexa disambiguation, mid-stream corrections, interpreter-mediated encounters |
+| **High Volume** | 2 | LOAD-MONDAY-001, LOAD-LABFLOOD-001 | 30 concurrent check-ins, 200 lab results in 5 minutes |
+| **Unusual Clinical** | 4 | CLIN-PEDS-001, CLIN-PSYCH-001, CLIN-HOSPICE-001, CLIN-SELFPAY-001 | Pediatric well-child, suicidal ideation crisis, hospice transition, uninsured patient |
+| **Revenue Cycle** | 2 | REV-SPLITBILL-001, REV-PRIORAUTH-001 | AWV + problem split-bill with modifier 25, prior auth timeout tracking |
+| **Interoperability** | 3 | INTEROP-CRITLAB-001, INTEROP-RXREJECT-001 | Critical lab value (K+ 6.8) immediate notification, pharmacy formulary rejection handling |
+
+### Priority Tiers
+
+**Tier 1 — Patient Safety + Legal Exposure (run first):**
+- CDS-CASCADE-001 (polypharmacy alert cascade)
+- CDS-CONTRADICT-001 (contradictory antibiotic recommendations)
+- WF-CONCURRENT-001 (wrong-patient context isolation)
+- SEC-BREAKGLASS-001 (VIP emergency access)
+- VOICE-HOMOPHONE-001 (Celebrex vs. Celexa)
+- CLIN-PSYCH-001 (suicidal ideation mandatory documentation)
+- INTEROP-CRITLAB-001 (critical K+ 6.8 notification chain)
+
+**Tier 2 — Operational Reliability:**
+- AGENT-DISAGREE-001, AGENT-LOOP-001, AGENT-HANDOFF-001, AGENT-STALL-001
+- WF-INTERRUPT-001, WF-ORPHAN-001
+- LOAD-MONDAY-001, LOAD-LABFLOOD-001
+- DATA-CONCURRENT-001
+- VOICE-ACCENT-001, VOICE-CORRECTION-001
+
+**Tier 3 — Feature Completeness:**
+- CLIN-PEDS-001, CLIN-HOSPICE-001, CLIN-SELFPAY-001
+- SEC-ADOLESCENT-001
+- REV-SPLITBILL-001, REV-PRIORAUTH-001
+- INTEROP-RXREJECT-001
+- VOICE-INTERPRETER-001
+
+---
+
 ## How to Run These Tests
 
 ```bash
@@ -106,4 +155,11 @@ node test/scenarios/run-scenario.js AWV-NEW-PATIENT-001
 
 # List all available scenarios
 node test/scenarios/run-scenario.js --list
+```
+
+### Stress Test Scenarios (requires runner update)
+```bash
+# Stress test scenarios are in a separate file:
+# test/scenarios/stress-test-scenarios.json
+# Runner integration pending — scenarios document expected behavior for manual/automated testing
 ```
