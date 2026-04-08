@@ -47,7 +47,7 @@
   "overrides": {
     "brace-expansion": ">=1.1.13",
     "minimatch": ">=3.1.4",
-    "path-to-regexp": "0.1.x || 0.2.x",
+    "path-to-regexp": ">=1.9.0",
     "picomatch": ">=2.3.2",
     "rollup": ">=4.59.0",
     "esbuild": ">=0.25.0"
