@@ -1030,6 +1030,54 @@ function calculateAge(dob) {
   return age;
 }
 
+// ==========================================
+// RXNORM-ENHANCED MEDICATION LOOKUP
+// ==========================================
+
+/**
+ * Look up a medication using RxNorm API first, falling back to COMMON_MEDICATIONS.
+ * Returns enriched drug data including RxCUI for canonical identification.
+ *
+ * @param {string} drugName - Drug name (brand or generic)
+ * @returns {Promise<{rxcui?: string, name: string, genericName?: string, doses?: string[], route?: string, freq?: string, indication?: string}>}
+ */
+async function lookupMedication(drugName) {
+  if (!drugName) return null;
+  const key = drugName.toLowerCase().trim();
+
+  // Check local knowledge first (instant, no network)
+  const localAlias = MEDICATION_ALIASES[key];
+  const localData = localAlias ? COMMON_MEDICATIONS[localAlias] : COMMON_MEDICATIONS[key];
+
+  // Try RxNorm for canonical identification
+  try {
+    const rxnorm = require('./pharma/rxnorm-service');
+    const enriched = await rxnorm.resolveAndEnrich(drugName);
+    if (enriched) {
+      return {
+        rxcui: enriched.rxcui,
+        name: enriched.name,
+        genericName: enriched.genericName,
+        brandNames: enriched.brandNames,
+        // Merge local dosing knowledge if available
+        doses: localData?.doses || [],
+        route: localData?.route || 'PO',
+        freq: localData?.freq || 'daily',
+        indication: localData?.indication || ''
+      };
+    }
+  } catch (err) {
+    // RxNorm unavailable — fall back to local data
+  }
+
+  // Fallback to local COMMON_MEDICATIONS
+  if (localData) {
+    return { name: drugName, ...localData };
+  }
+
+  return { name: drugName };
+}
+
 module.exports = {
   getMode,
   isClaudeEnabled,
@@ -1042,5 +1090,6 @@ module.exports = {
   extractPhysicalExam,
   extractClinicalData,
   generateSOAPNote,
+  lookupMedication,
   COMMON_MEDICATIONS
 };

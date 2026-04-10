@@ -28,7 +28,23 @@ const MESSAGE_TYPES = {
   QUALITY_GAP: 'QUALITY_GAP',             // Quality Agent → Physician Agent
   PATIENT_LETTER: 'PATIENT_LETTER',       // Physician Agent → Patient
   BRIEFING_READY: 'BRIEFING_READY',       // Front Desk Agent → Provider
-  PROTOCOL_UPDATE: 'PROTOCOL_UPDATE'      // Physician Agent → MA Agent
+  PROTOCOL_UPDATE: 'PROTOCOL_UPDATE',     // Physician Agent → MA Agent
+
+  // CATC Cross-Module Events
+  NOTE_SIGNED: 'NOTE_SIGNED',             // Scribe → MediVault Ingestion
+  ENCOUNTER_COMPLETED: 'ENCOUNTER_COMPLETED', // Physician → PatientLink (after-visit summary)
+  MEDS_RECONCILED: 'MEDS_RECONCILED',     // MediVault Reconciliation → CDS Engine
+  CARE_GAP_DETECTED: 'CARE_GAP_DETECTED', // Quality/PopHealth → MediVault Red Flag
+  TRANSLATION_READY: 'TRANSLATION_READY', // MediVault Translation → PatientLink
+  PATIENT_MESSAGE_SENT: 'PATIENT_MESSAGE_SENT', // PatientLink → MediVault (vault timeline)
+  PRIOR_AUTH_UPDATE: 'PRIOR_AUTH_UPDATE',  // AdminFlow → MediVault (vault timeline)
+  REFERRAL_STATUS: 'REFERRAL_STATUS',     // AdminFlow → MediVault (vault timeline)
+  DOCUMENT_INGESTED: 'DOCUMENT_INGESTED', // MediVault Ingestion → Dedup
+  DEDUP_COMPLETE: 'DEDUP_COMPLETE',       // MediVault Dedup → Reconciliation
+  RED_FLAG_ALERT: 'RED_FLAG_ALERT',       // MediVault Red Flag → Physician
+  SPECIALTY_PACKET_READY: 'SPECIALTY_PACKET_READY', // MediVault Packaging → Translation
+  PRESCRIPTION_CREATED: 'PRESCRIPTION_CREATED', // Orders → Event Bus (external webhook)
+  LAB_RESULTED: 'LAB_RESULTED'            // Lab → PatientLink + MediVault
 };
 
 // Message statuses
@@ -118,6 +134,11 @@ class MessageBus extends EventEmitter {
       } else {
         this.emit('message:broadcast', message);
       }
+
+      // Route to cross-module subscribers (non-blocking)
+      this._routeToSubscribers(message).catch(err =>
+        console.warn(`[MessageBus] Subscriber routing error: ${err.message}`)
+      );
 
       return message;
     } catch (err) {
@@ -353,6 +374,136 @@ class MessageBus extends EventEmitter {
         ? (this.messageQueue.reduce((sum, m) => sum + m.priority, 0) / this.messageQueue.length).toFixed(2)
         : 0
     };
+  }
+
+  // ──────────────────────────────────────────
+  // CROSS-MODULE ROUTING (CATC Data Flows)
+  // ──────────────────────────────────────────
+
+  /**
+   * Register a cross-module subscription.
+   * When a message of the given type is sent by any agent, the subscriber
+   * callback fires automatically. This enables CATC data flows without
+   * modules knowing about each other's internals.
+   *
+   * @param {string} subscriberModule - Module name subscribing
+   * @param {string|string[]} messageTypes - Message type(s) to subscribe to
+   * @param {function} handler - async (message) => void
+   * @returns {string} Subscription ID for unsubscribe
+   */
+  subscribe(subscriberModule, messageTypes, handler) {
+    const types = Array.isArray(messageTypes) ? messageTypes : [messageTypes];
+    const subId = `sub_${crypto.randomUUID()}`;
+
+    if (!this._subscriptions) this._subscriptions = new Map();
+
+    for (const type of types) {
+      if (!this._subscriptions.has(type)) {
+        this._subscriptions.set(type, []);
+      }
+      this._subscriptions.get(type).push({ id: subId, module: subscriberModule, handler });
+    }
+
+    return subId;
+  }
+
+  /**
+   * Remove a subscription by ID.
+   * @param {string} subscriptionId
+   */
+  unsubscribe(subscriptionId) {
+    if (!this._subscriptions) return;
+    for (const [type, subs] of this._subscriptions.entries()) {
+      this._subscriptions.set(type, subs.filter(s => s.id !== subscriptionId));
+    }
+  }
+
+  /**
+   * Route a message to all cross-module subscribers.
+   * Called internally after sendMessage persists the message.
+   * @param {Object} message - The persisted message object
+   */
+  async _routeToSubscribers(message) {
+    if (!this._subscriptions) return;
+    const subs = this._subscriptions.get(message.message_type) || [];
+    for (const sub of subs) {
+      try {
+        await sub.handler(message);
+      } catch (err) {
+        console.warn(`[MessageBus] Subscriber ${sub.module} failed on ${message.message_type}: ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Wire the default CATC data flows.
+   * Call once during server startup after all modules are loaded.
+   * Each flow is a subscription that routes events between CATC modules.
+   */
+  wireCATCDataFlows() {
+    // DocuScribe → MediVault: signed notes feed ingestion
+    this.subscribe('medivault_ingestion', 'NOTE_SIGNED', async (msg) => {
+      this.emit('catc:note_to_vault', msg);
+    });
+
+    // Physician/Encounter → PatientLink: completed encounters trigger after-visit summary
+    this.subscribe('patient_link', 'ENCOUNTER_COMPLETED', async (msg) => {
+      this.emit('catc:encounter_to_patientlink', msg);
+    });
+
+    // MediVault Reconciliation → CDS: reconciled med list feeds CDS engine
+    this.subscribe('cds', 'MEDS_RECONCILED', async (msg) => {
+      this.emit('catc:meds_to_cds', msg);
+    });
+
+    // Quality/PopHealth → MediVault Red Flag: care gaps feed red flag agent
+    this.subscribe('medivault_redflag', ['QUALITY_GAP', 'CARE_GAP_DETECTED'], async (msg) => {
+      this.emit('catc:gap_to_redflag', msg);
+    });
+
+    // MediVault Translation → PatientLink: translated content feeds voice interface
+    this.subscribe('patient_link', 'TRANSLATION_READY', async (msg) => {
+      this.emit('catc:translation_to_patientlink', msg);
+    });
+
+    // PatientLink → MediVault: communication history logged in vault timeline
+    this.subscribe('medivault_ingestion', 'PATIENT_MESSAGE_SENT', async (msg) => {
+      this.emit('catc:message_to_vault', msg);
+    });
+
+    // AdminFlow → MediVault: prior auth + referral status in vault timeline
+    this.subscribe('medivault_ingestion', ['PRIOR_AUTH_UPDATE', 'REFERRAL_STATUS'], async (msg) => {
+      this.emit('catc:admin_to_vault', msg);
+    });
+
+    // MediVault internal pipeline: Ingestion → Dedup → Reconciliation → Packaging → Translation
+    this.subscribe('medivault_dedup', 'DOCUMENT_INGESTED', async (msg) => {
+      this.emit('catc:ingest_to_dedup', msg);
+    });
+    this.subscribe('medivault_reconciliation', 'DEDUP_COMPLETE', async (msg) => {
+      this.emit('catc:dedup_to_reconcile', msg);
+    });
+    this.subscribe('medivault_packaging', 'MEDS_RECONCILED', async (msg) => {
+      this.emit('catc:reconcile_to_packaging', msg);
+    });
+    this.subscribe('medivault_translation', 'SPECIALTY_PACKET_READY', async (msg) => {
+      this.emit('catc:packaging_to_translation', msg);
+    });
+
+    // MediVault Red Flag → Physician: critical alerts require physician review
+    this.subscribe('physician', 'RED_FLAG_ALERT', async (msg) => {
+      this.emit('catc:redflag_to_physician', msg);
+    });
+
+    // Lab results → PatientLink + MediVault: new results trigger notifications
+    this.subscribe('patient_link', 'LAB_RESULTED', async (msg) => {
+      this.emit('catc:lab_to_patientlink', msg);
+    });
+    this.subscribe('medivault_ingestion', 'LAB_RESULTED', async (msg) => {
+      this.emit('catc:lab_to_vault', msg);
+    });
+
+    console.log('[MessageBus] CATC cross-module data flows wired');
   }
 
   /**

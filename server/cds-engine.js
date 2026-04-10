@@ -5,6 +5,14 @@
 
 const db = require('./database');
 
+// Pharmaceutical knowledge base (graceful fallback if unavailable)
+let drugSafetyService = null;
+try {
+  drugSafetyService = require('./pharma/drug-safety-service');
+} catch {
+  console.warn('[CDS] Drug safety service unavailable — using local rules only');
+}
+
 // ==========================================
 // RULE EVALUATION ENGINE
 // ==========================================
@@ -492,6 +500,58 @@ function evaluateHeartScoreProtocol(context) {
 }
 
 // ==========================================
+// RXNORM-BASED INTERACTION CHECKING
+// ==========================================
+
+/**
+ * Check drug interactions using NLM RxNorm API data.
+ * Supplements local rule-based checking with real pharmacological data.
+ * Returns CDS suggestions for any interactions found.
+ */
+async function evaluateRxNormInteractions(medications) {
+  if (!drugSafetyService || !medications || medications.length < 2) return [];
+
+  const suggestions = [];
+  const activeMeds = medications.filter(m => m.status === 'active');
+  const checked = new Set();
+
+  for (const med of activeMeds) {
+    const key = med.medication_name.toLowerCase();
+    if (checked.has(key)) continue;
+    checked.add(key);
+
+    const otherMeds = activeMeds.filter(m => m.medication_name.toLowerCase() !== key);
+    if (otherMeds.length === 0) continue;
+
+    try {
+      const interactions = await drugSafetyService.checkDrugInteractions(
+        med.medication_name, otherMeds
+      );
+      for (const interaction of interactions) {
+        const pairKey = [interaction.drug1, interaction.drug2].sort().join('|');
+        if (checked.has(pairKey)) continue;
+        checked.add(pairKey);
+
+        suggestions.push({
+          suggestion_type: 'interaction_alert',
+          category: interaction.severity === 'critical' ? 'urgent' : 'routine',
+          priority: interaction.severity === 'critical' ? 1 : interaction.severity === 'serious' ? 2 : 3,
+          title: `${interaction.drug1} ↔ ${interaction.drug2} (${interaction.severity})`,
+          description: interaction.description,
+          rationale: `Source: ${interaction.source}. Severity: ${interaction.severity}.`,
+          suggested_action: [],
+          source: 'rxnorm_api'
+        });
+      }
+    } catch (err) {
+      console.warn(`[CDS] RxNorm interaction check failed for ${med.medication_name}: ${err.message}`);
+    }
+  }
+
+  return suggestions;
+}
+
+// ==========================================
 // MAIN EVALUATION
 // ==========================================
 
@@ -506,6 +566,14 @@ async function evaluatePatientContext(encounterId, patientId, context) {
   suggestions.push(...evaluateScreeningRules(rules, context.problems, context.labs, context));
   suggestions.push(...evaluatePrescribingAdvisoryRules(rules, context.medications, context.chiefComplaint, context.transcript, context));
   suggestions.push(...evaluateHeartScoreProtocol(context));
+
+  // RxNorm-based interaction checking (supplements local rules)
+  try {
+    const rxnormSuggestions = await evaluateRxNormInteractions(context.medications);
+    suggestions.push(...rxnormSuggestions);
+  } catch (err) {
+    console.warn(`[CDS] RxNorm evaluation skipped: ${err.message}`);
+  }
 
   // Deduplicate by title
   const seen = new Set();

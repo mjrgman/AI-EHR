@@ -406,6 +406,12 @@ router.post('/Bundle', async (req, res) => {
 });
 
 // ──────────────────────────────────────────
+// FHIR WRITE ENDPOINTS (POST/PUT)
+// ──────────────────────────────────────────
+const fhirWrite = require('./inbound/fhir-write');
+router.use(fhirWrite);
+
+// ──────────────────────────────────────────
 // CATCH-ALL: unsupported resource types
 // ──────────────────────────────────────────
 

@@ -17,7 +17,11 @@ const { runMigrations } = require('./database-migrations');
 const billing = require('./billing-engine');
 const fhirRouter = require('./fhir/router');
 const { buildSmartConfiguration } = require('./fhir/smart/smart-config');
-const { tokenHandler, introspectHandler, authorizeHandler, launchHandler } = require('./fhir/smart/token');
+const { tokenHandler, introspectHandler, authorizeHandler, launchHandler, revokeHandler, registerClientHandler } = require('./fhir/smart/token');
+const cdsHooksRouter = require('./integrations/cds-hooks');
+const eventBusRouter = require('./integrations/event-bus').router;
+const patientVoiceRouter = require('./integrations/patient-voice').router;
+const patientPortalRouter = require('./routes/patient-portal');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -144,11 +148,18 @@ app.get('/smart/introspect', introspectHandler);
 app.post('/smart/introspect', introspectHandler);
 app.get('/smart/authorize', authorizeHandler);
 app.get('/smart/launch', auth.requireAuth, launchHandler);
+app.post('/smart/revoke', revokeHandler);
+app.post('/smart/register', registerClientHandler);
 
 // ==========================================
 // FHIR R4 TRANSLATION LAYER
 // ==========================================
 app.use('/fhir/R4', auth.requireAuth, fhirRouter);
+
+// ==========================================
+// CDS HOOKS (HL7 spec — vendor CDS integration)
+// ==========================================
+app.use('/cds-services', auth.requireAuth, cdsHooksRouter);
 
 // ==========================================
 // AUTHENTICATION & RBAC FOR ALL API ROUTES
@@ -167,6 +178,9 @@ app.use('/api/billing', rbac.requireResourceAccess('billing'));
 app.use('/api/charges', rbac.requireResourceAccess('billing'));
 app.use('/api/appointments', rbac.requireResourceAccess('encounters'));
 app.use('/api/scheduling', rbac.requireResourceAccess('encounters'));
+app.use('/api/webhooks', rbac.requireRole('admin'), eventBusRouter);
+app.use('/api/patient-portal', patientVoiceRouter);
+app.use('/api/patient-portal', patientPortalRouter);
 
 // ==========================================
 // PATIENT ENDPOINTS
@@ -2157,6 +2171,34 @@ async function startServer() {
     logger.warn('Preference decay on startup failed (non-fatal)', { error: err.message });
   }
 
+  // Wire CATC cross-module data flows (message bus subscriptions)
+  try {
+    const { MessageBus } = require('./agents/message-bus');
+    const messageBus = new MessageBus(db);
+    messageBus.wireCATCDataFlows();
+
+    // Bridge internal message bus → external event bus (webhooks)
+    const eventBus = require('./integrations/event-bus');
+    const EVENT_MAP = {
+      'NOTE_SIGNED': 'note.signed',
+      'ENCOUNTER_COMPLETED': 'encounter.completed',
+      'PRESCRIPTION_CREATED': 'prescription.created',
+      'LAB_RESULTED': 'lab.resulted',
+      'CARE_GAP_DETECTED': 'care_gap.detected',
+      'REFERRAL_STATUS': 'referral.created'
+    };
+    for (const [internal, external] of Object.entries(EVENT_MAP)) {
+      messageBus.subscribe('event_bus_bridge', internal, async (msg) => {
+        const payload = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
+        eventBus.emit(external, { ...payload, patient_id: msg.patient_id, encounter_id: msg.encounter_id });
+      });
+    }
+    app.locals.messageBus = messageBus;
+    logger.info('CATC cross-module data flows initialized');
+  } catch (err) {
+    logger.warn('CATC data flow init failed (non-fatal)', { error: err.message });
+  }
+
   const server = app.listen(PORT, () => {
     logger.info('Server started', {
       port: PORT,
@@ -2175,16 +2217,22 @@ async function startServer() {
 
   Modules Loaded:
     Database:          Connected (SQLite3 WAL mode)
-    CDS Engine:        25 clinical rules active
+    CDS Engine:        25 clinical rules + RxNorm integration
     Workflow Engine:    9-state machine ready
     Provider Learning:  Preference tracking enabled
     Speech Recognition: Ready (browser-based)
     Audit Logger:      Active (HIPAA compliance)
     Security Headers:  Helmet + CSP (nonce-based)
-    Authentication:    JWT + Refresh Tokens
+    Authentication:    JWT + Refresh Tokens + SMART-on-FHIR
     RBAC:              7 roles enforced
+    CDS Hooks:         HL7 spec (vendor CDS integration)
+    Event Bus:         Webhook subscriptions active
+    PatientLink:       Voice-first patient communication
+    MediVault:         Patient data governance (6 agents)
+    Pharma DB:         RxNorm + OpenFDA + DailyMed
 
-  API Endpoints: ~55 routes active
+  CATC Modules: 9/9 mapped (DocuScribe, ClinicalAssist, AdminFlow, PopHealth, QualityTrack, PatientLink, Patient App, MediVault, AI EHR)
+  API Endpoints: ~75 routes active
   Environment: ${process.env.NODE_ENV || 'development'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     `);

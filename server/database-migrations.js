@@ -42,6 +42,7 @@ async function runMigrations(db) {
     await createAppointmentsTable(db);
     await createChargesTable(db);
     await createFhirIngestTables(db);
+    await addRxNormColumns(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -783,6 +784,40 @@ function dbGetCompat(db, sql, params = []) {
 // ==========================================
 // EXPORTS
 // ==========================================
+// RXNORM COLUMNS
+// ==========================================
+
+/**
+ * Add rxnorm_cui column to medications and prescriptions tables.
+ * Enables canonical drug identification via NLM RxNorm API.
+ */
+async function addRxNormColumns(db) {
+  const tables = ['medications', 'prescriptions'];
+  for (const table of tables) {
+    try {
+      const cols = await new Promise((resolve, reject) => {
+        db.all(`PRAGMA table_info(${table})`, (err, rows) => {
+          if (err) reject(err); else resolve(rows);
+        });
+      });
+      if (!cols.some(c => c.name === 'rxnorm_cui')) {
+        await new Promise((resolve, reject) => {
+          db.run(`ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`, (err) => {
+            if (err) reject(err);
+            else {
+              console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
+              resolve();
+            }
+          });
+        });
+      }
+    } catch (err) {
+      console.warn(`[MIGRATIONS] rxnorm_cui migration for ${table}: ${err.message}`);
+    }
+  }
+}
+
+// ==========================================
 
 module.exports = {
   runMigrations,
@@ -797,5 +832,6 @@ module.exports = {
   migrateSuggestionTypes,
   createAppointmentsTable,
   createChargesTable,
-  createFhirIngestTables
+  createFhirIngestTables,
+  addRxNormColumns
 };

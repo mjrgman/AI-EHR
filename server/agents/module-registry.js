@@ -15,7 +15,10 @@ const MODULE_ORDER = [
   'cds',
   'orders',
   'coding',
-  'quality'
+  'quality',
+  'patient_link',
+  'patient_app',
+  'medivault'
 ];
 
 const MODULE_REGISTRY = Object.freeze({
@@ -126,6 +129,42 @@ const MODULE_REGISTRY = Object.freeze({
     primaryOutputs: ['quality gaps', 'measure status', 'compliance checks'],
     primaryHandoff: 'physician, ma, or quality operations',
     patientControlBoundary: 'Flags gaps and oversight concerns; does not auto-order care or override clinician judgment.'
+  }),
+  patient_link: Object.freeze({
+    key: 'patient_link',
+    displayName: 'PatientLink',
+    workflowBand: 'patient_communication',
+    humanCounterpart: 'patient communication coordinator',
+    autonomyTier: 2,
+    summary: 'Drafts patient-facing communications including after-visit summaries, care gap outreach, lab result notifications, and appointment reminders at a 6th-grade reading level.',
+    primaryInputs: ['encounter data', 'quality gaps', 'lab results', 'medication list', 'cds suggestions'],
+    primaryOutputs: ['after-visit summaries', 'care gap outreach messages', 'patient notifications', 'message status updates'],
+    primaryHandoff: 'physician approval and patient portal or messaging system',
+    patientControlBoundary: 'Drafts only — no message reaches the patient without physician review and approval. After-visit summaries are Tier 3 (physician-in-the-loop).'
+  }),
+  patient_app: Object.freeze({
+    key: 'patient_app',
+    displayName: 'Patient App',
+    workflowBand: 'patient_facing',
+    humanCounterpart: 'patient portal / kiosk',
+    autonomyTier: 1,
+    summary: 'Patient-facing portal for registration, scheduling, refill requests, lab results, secure messaging, and voice interaction.',
+    primaryInputs: ['patient identity', 'appointment data', 'lab results', 'medication list', 'patient messages'],
+    primaryOutputs: ['registrations', 'check-ins', 'refill requests', 'symptom reports', 'secure messages'],
+    primaryHandoff: 'patient_link (messages), ma (refills), front_desk (scheduling), phone_triage (symptoms)',
+    patientControlBoundary: 'Patient-initiated actions only. Clinical content (lab results, medication info) is read-only. Refill requests and symptom reports route through physician review.'
+  }),
+  medivault: Object.freeze({
+    key: 'medivault',
+    displayName: 'MediVault',
+    workflowBand: 'patient_data_governance',
+    humanCounterpart: 'health information management / patient records',
+    autonomyTier: 3,
+    summary: 'Patient-directed health data governance — ingests, deduplicates, reconciles, packages, translates, and monitors clinical records across sources.',
+    primaryInputs: ['signed notes', 'lab results', 'external documents', 'medication lists', 'care gaps', 'referral status'],
+    primaryOutputs: ['deduplicated timeline', 'reconciled med/allergy/problem lists', 'specialty packets', 'plain-language translations', 'red flag alerts'],
+    primaryHandoff: 'physician (red flags, translations), patient_link (translated content), cds (reconciled meds)',
+    patientControlBoundary: 'All clinical output is Tier 3 — physician reviews before any translated content reaches the patient. Data governance is patient-directed but clinician-validated.'
   })
 });
 

@@ -506,10 +506,19 @@ function initializeDatabase() {
       )`);
 
       db.run(`CREATE INDEX IF NOT EXISTS idx_fhir_id_map_lookup ON fhir_id_map(resource_type, external_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_fhir_ingest_items_job ON fhir_ingest_items(job_id)`, (err) => {
+      db.run(`CREATE INDEX IF NOT EXISTS idx_fhir_ingest_items_job ON fhir_ingest_items(job_id)`);
+
+      // ── Pharmaceutical Knowledge Base ──
+      db.run(`CREATE TABLE IF NOT EXISTS rxnorm_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        query_key TEXT NOT NULL UNIQUE,
+        response_json TEXT NOT NULL,
+        cached_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_rxnorm_cache_key ON rxnorm_cache(query_key)`, (err) => {
         if (err) reject(err);
         else {
-          console.log('Database schema initialized (22 tables + indexes)');
+          console.log('Database schema initialized (23 tables + indexes)');
           resolve();
         }
       });
