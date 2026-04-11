@@ -3608,6 +3608,164 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   }
 
   // ==========================================
+  // PHASE 3a — PeptideCalculator pure math
+  // ==========================================
+  // The PeptideCalculator component in the HRT/Peptide tab relies on a pure
+  // function to convert { dose_mg, concentration_mg_per_mL } into U-100 insulin
+  // syringe units. This is safety-critical: peptide dosing errors are the #1
+  // operator mistake in compounded-peptide protocols, and a U-100 syringe
+  // misread turns 0.5 mL into 50 units where "half a unit" was intended.
+  //
+  // The pure function lives in src/utils/peptide-math.js (CJS so both Node's
+  // require and Vite's default import work) and is imported lazily inside each
+  // test so a missing module only fails the peptide tests, not the whole run.
+  //
+  // Math contract:
+  //   volumeMl = doseMg / concentrationMgPerMl
+  //   units    = volumeMl * 100   (U-100 insulin syringe: 100 units = 1 mL)
+  //
+  // Rejects: zero/negative concentration, negative dose, non-numeric inputs.
+  // Accepts: dose=0 as a valid edge case (returns 0 units).
+
+  await test('Phase 3a: peptide-math — semaglutide 2.4 mg at 2.68 mg/mL -> ~89.6 U-100 units', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units(2.4, 2.68);
+    assertEqual(r.ok, true, `expected ok=true, got ${JSON.stringify(r)}`);
+    // 2.4 / 2.68 = 0.89552... mL -> 89.55 units
+    assert(Math.abs(r.units - 89.55) < 0.1, `expected ~89.55 units, got ${r.units}`);
+    assert(Math.abs(r.volumeMl - 0.8955) < 0.001, `expected ~0.8955 mL, got ${r.volumeMl}`);
+  });
+
+  await test('Phase 3a: peptide-math — tirzepatide 5 mg at 10 mg/mL -> 50 U-100 units', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units(5, 10);
+    assertEqual(r.ok, true);
+    assertEqual(r.units, 50);
+    assertEqual(r.volumeMl, 0.5);
+  });
+
+  await test('Phase 3a: peptide-math — zero concentration rejected (divide-by-zero guard)', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units(2.4, 0);
+    assertEqual(r.ok, false);
+    assert(/concentration/i.test(r.error),
+      `error should mention concentration, got: ${r.error}`);
+  });
+
+  await test('Phase 3a: peptide-math — negative concentration rejected', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units(2.4, -5);
+    assertEqual(r.ok, false);
+    assert(/concentration/i.test(r.error),
+      `error should mention concentration, got: ${r.error}`);
+  });
+
+  await test('Phase 3a: peptide-math — negative dose rejected', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units(-1, 10);
+    assertEqual(r.ok, false);
+    assert(/dose/i.test(r.error),
+      `error should mention dose, got: ${r.error}`);
+  });
+
+  await test('Phase 3a: peptide-math — non-numeric dose rejected', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units('foo', 10);
+    assertEqual(r.ok, false);
+    const r2 = calculateU100Units(null, 10);
+    assertEqual(r2.ok, false);
+  });
+
+  await test('Phase 3a: peptide-math — non-numeric concentration rejected', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units(2.4, 'bar');
+    assertEqual(r.ok, false);
+    const r2 = calculateU100Units(2.4, undefined);
+    assertEqual(r2.ok, false);
+  });
+
+  await test('Phase 3a: peptide-math — zero dose returns 0 units (valid edge case)', async () => {
+    const { calculateU100Units } = await import('../src/utils/peptide-math.mjs');
+    const r = calculateU100Units(0, 10);
+    assertEqual(r.ok, true);
+    assertEqual(r.units, 0);
+    assertEqual(r.volumeMl, 0);
+  });
+
+  // ==========================================
+  // Phase 3a: hrt-keywords — CDS suggestion filter for the HRT/Peptide tab
+  //
+  // HRTPanel uses isHrtRelevant() to pull hormone/peptide-related CDS +
+  // Domain Logic suggestions out of the shared suggestion stream. The filter
+  // is a simple keyword match over title/description/rule_type/category/
+  // suggestion_type, but the keyword list is load-bearing: miss a term and
+  // the suggestion never reaches the provider in the HRT tab. Phase 3b
+  // extracts this into a shared hook used by client-side voice routing, so
+  // correctness here ripples into the voice pipeline too.
+  // ==========================================
+
+  await test('Phase 3a: hrt-keywords — HRT_KEYWORDS is an array of lowercase strings', async () => {
+    const { HRT_KEYWORDS } = await import('../src/utils/hrt-keywords.mjs');
+    assertEqual(Array.isArray(HRT_KEYWORDS), true);
+    assertEqual(HRT_KEYWORDS.length > 0, true);
+    // Every keyword must be lowercase — the matcher lowercases the hay once,
+    // so any uppercase keyword would never match and silently suppress results.
+    for (const kw of HRT_KEYWORDS) {
+      assertEqual(typeof kw, 'string');
+      assertEqual(kw, kw.toLowerCase());
+    }
+  });
+
+  await test('Phase 3a: hrt-keywords — covers testosterone, estradiol, and GLP-1 (v1 scope)', async () => {
+    const { HRT_KEYWORDS } = await import('../src/utils/hrt-keywords.mjs');
+    // These three anchor the plan's v1 scope (testosterone + estradiol + GLP-1).
+    // If the list drops any of them, the HRT tab silently goes blind to the
+    // most common hormone/peptide orders — hard to catch later without a test.
+    assertEqual(HRT_KEYWORDS.includes('testosterone'), true);
+    assertEqual(HRT_KEYWORDS.includes('estradiol'), true);
+    assertEqual(HRT_KEYWORDS.includes('semaglutide'), true);
+    assertEqual(HRT_KEYWORDS.includes('tirzepatide'), true);
+  });
+
+  await test('Phase 3a: hrt-keywords — isHrtRelevant returns false for null/undefined/empty', async () => {
+    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    assertEqual(isHrtRelevant(null), false);
+    assertEqual(isHrtRelevant(undefined), false);
+    assertEqual(isHrtRelevant({}), false);
+    assertEqual(isHrtRelevant({ title: '', description: '', rule_type: '' }), false);
+  });
+
+  await test('Phase 3a: hrt-keywords — matches testosterone in title (case-insensitive)', async () => {
+    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const s = { title: 'Testosterone Replacement Initiation', description: '', rule_type: 'dosing' };
+    assertEqual(isHrtRelevant(s), true);
+  });
+
+  await test('Phase 3a: hrt-keywords — matches semaglutide in description', async () => {
+    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const s = { title: 'GLP-1 agonist', description: 'Start semaglutide 0.25 mg SC weekly', rule_type: 'prescribing' };
+    assertEqual(isHrtRelevant(s), true);
+  });
+
+  await test('Phase 3a: hrt-keywords — matches peptide in category field', async () => {
+    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const s = { title: 'Titration reminder', description: '', category: 'peptide-dosing' };
+    assertEqual(isHrtRelevant(s), true);
+  });
+
+  await test('Phase 3a: hrt-keywords — does NOT match unrelated hypertension suggestion', async () => {
+    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const s = { title: 'Blood pressure control', description: 'Consider lisinopril 10 mg daily', rule_type: 'prescribing' };
+    assertEqual(isHrtRelevant(s), false);
+  });
+
+  await test('Phase 3a: hrt-keywords — does NOT match diabetes without a GLP-1 keyword', async () => {
+    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const s = { title: 'Diabetes management', description: 'A1c elevated, consider metformin', rule_type: 'screening' };
+    assertEqual(isHrtRelevant(s), false);
+  });
+
+  // ==========================================
   // RESULTS
   // ==========================================
 

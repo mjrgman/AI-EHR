@@ -14,6 +14,7 @@ import VitalsDisplay from '../components/patient/VitalsDisplay';
 import LabResults from '../components/patient/LabResults';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import CDSSuggestionList from '../components/encounter/CDSSuggestionList';
+import HRTPanel, { isHrtRelevant } from '../components/encounter/HRTPanel';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
@@ -301,8 +302,15 @@ export default function EncounterPage() {
   // Modal state
   const [activeModal, setActiveModal] = useState(null); // 'rx' | 'lab' | 'imaging' | 'referral' | null
 
-  // Mobile tab state
-  const [mobileTab, setMobileTab] = useState('encounter'); // 'patient' | 'encounter' | 'cds'
+  // Mobile tab state — also doubles as the HRT-view toggle on desktop, since
+  // 'hrt' is the only value that overrides the 3-panel desktop layout.
+  const [mobileTab, setMobileTab] = useState('encounter'); // 'patient' | 'encounter' | 'cds' | 'hrt'
+
+  // Count of HRT/peptide-relevant pending suggestions — drives the tab badge.
+  const hrtPendingCount = useMemo(
+    () => (pending || []).filter(isHrtRelevant).length,
+    [pending]
+  );
 
   // --- Initialize from encounter data ---
   useEffect(() => {
@@ -927,12 +935,16 @@ export default function EncounterPage() {
         <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} compact />
       </div>
 
-      {/* Mobile Tab Switcher (visible < lg) */}
-      <div className="lg:hidden bg-white border-b border-gray-200 flex">
+      {/* Tab Switcher — visible on all screens so desktop users can access
+          the HRT view. Patient/Encounter/CDS tabs are no-ops on desktop
+          (all three panels stay visible); clicking 'HRT / Peptide' swaps the
+          entire body to the HRT panel regardless of screen size. */}
+      <div className="bg-white border-b border-gray-200 flex">
         {[
           { key: 'patient', label: 'Patient' },
           { key: 'encounter', label: 'Encounter' },
           { key: 'cds', label: 'CDS', badge: pending.length },
+          { key: 'hrt', label: 'HRT / Peptide', badge: hrtPendingCount },
         ].map(tab => (
           <button
             key={tab.key}
@@ -953,29 +965,36 @@ export default function EncounterPage() {
         ))}
       </div>
 
-      {/* Desktop: Three-Panel Layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* LEFT PANEL - desktop always visible, mobile conditional */}
-        <div className={`w-72 border-r border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
-          mobileTab === 'patient' ? 'block' : 'hidden'
-        } lg:block`}>
-          {leftPanel}
+      {/* Body: HRT tab takes over full width when active; otherwise show the
+          standard 3-panel layout (desktop: always 3 visible; mobile: one-of). */}
+      {mobileTab === 'hrt' ? (
+        <div className="flex-1 overflow-y-auto clinical-scroll bg-gray-50/50">
+          <HRTPanel regimens={[]} suggestions={suggestions} />
         </div>
+      ) : (
+        <div className="flex flex-1 overflow-hidden">
+          {/* LEFT PANEL - desktop always visible, mobile conditional */}
+          <div className={`w-72 border-r border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
+            mobileTab === 'patient' ? 'block' : 'hidden'
+          } lg:block`}>
+            {leftPanel}
+          </div>
 
-        {/* CENTER PANEL */}
-        <div className={`flex-1 overflow-y-auto clinical-scroll ${
-          mobileTab === 'encounter' ? 'block' : 'hidden'
-        } lg:block`}>
-          {centerPanel}
-        </div>
+          {/* CENTER PANEL */}
+          <div className={`flex-1 overflow-y-auto clinical-scroll ${
+            mobileTab === 'encounter' ? 'block' : 'hidden'
+          } lg:block`}>
+            {centerPanel}
+          </div>
 
-        {/* RIGHT PANEL */}
-        <div className={`w-80 border-l border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
-          mobileTab === 'cds' ? 'block' : 'hidden'
-        } lg:block`}>
-          {rightPanel}
+          {/* RIGHT PANEL */}
+          <div className={`w-80 border-l border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
+            mobileTab === 'cds' ? 'block' : 'hidden'
+          } lg:block`}>
+            {rightPanel}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ============================================================ */}
       {/* Order Modals */}
