@@ -6,13 +6,14 @@ Complete deployment guide for Agentic EHR, covering local development, single-se
 
 1. [Local Development](#local-development)
 2. [Docker Single-Server Deployment](#docker-single-server-deployment)
-3. [Cloud Deployment (AWS/GCP/Azure)](#cloud-deployment)
-4. [HIPAA Compliance Checklist](#hipaa-compliance-checklist)
-5. [Backup Strategy](#backup-strategy)
-6. [Encryption & Key Management](#encryption--key-management)
-7. [Network Security](#network-security)
-8. [Cost Estimates](#cost-estimates)
-9. [Troubleshooting](#troubleshooting)
+3. [LabCorp Sandbox Setup](#labcorp-sandbox-setup)
+4. [Cloud Deployment (AWS/GCP/Azure)](#cloud-deployment)
+5. [HIPAA Compliance Checklist](#hipaa-compliance-checklist)
+6. [Backup Strategy](#backup-strategy)
+7. [Encryption & Key Management](#encryption--key-management)
+8. [Network Security](#network-security)
+9. [Cost Estimates](#cost-estimates)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -239,6 +240,129 @@ docker-compose exec agentic-ehr bash -c "
   cp /data/agentic-ehr.db* /backups/agentic-ehr/$(date +%Y-%m-%d)/
 "
 ```
+
+---
+
+## LabCorp Sandbox Setup
+
+The LabCorp integration ships with two modes: a fully offline `mock`
+mode (the default, used by tests and local development) and an `api`
+mode that talks to LabCorp's developer sandbox or production endpoints.
+
+### Why a separate setup section
+
+LabCorp credentials are sensitive: a leaked client secret lets a third
+party submit lab orders against your account. Treat them like database
+credentials, not like API tokens you can paste in a Slack channel.
+
+### Step 1 — Sign up for the LabCorp developer portal
+
+1. Go to the LabCorp developer portal and request sandbox access.
+2. Provide your organization details and the use case (development /
+   testing of an EHR integration).
+3. Wait for approval — sandbox access is not always instant.
+4. Once approved, you will receive: a `client_id`, a `client_secret`, a
+   sandbox base URL, a production base URL, and the list of OAuth2
+   scopes you are entitled to use.
+
+### Step 2 — Configure environment variables
+
+Add the following to a non-committed `.env.local` (or equivalent
+secrets store — never the committed `.env`):
+
+```bash
+LABCORP_MODE=api
+LABCORP_CLIENT_ID=<your client id>
+LABCORP_CLIENT_SECRET=<your client secret>
+LABCORP_SANDBOX_URL=<sandbox base URL from the portal>
+LABCORP_PROD_URL=<production base URL from the portal>
+LABCORP_REDIRECT_URI=https://your-deployment.example.com/api/integrations/labcorp/oauth/callback
+```
+
+`LABCORP_REDIRECT_URI` must exactly match the redirect URI registered
+in the LabCorp developer portal — including scheme, host, port, and
+path.
+
+### Step 3 — Run the sandbox smoke test
+
+```bash
+node scripts/labcorp-sandbox-smoke.js
+```
+
+This script does **not** run in CI. It hits the real sandbox, exchanges
+credentials, fetches a small reference resource, and reports
+connectivity. It does not touch production. If it fails, the script
+prints actionable diagnostics (token endpoint reachable? scopes
+correct? redirect URI registered?).
+
+### Step 4 — OAuth2 first run
+
+The OAuth2 authorization-code flow requires a one-time interactive
+consent. With the server running, navigate to:
+
+```
+GET /api/integrations/labcorp/oauth/start
+```
+
+This redirects to the LabCorp consent page. After consent, LabCorp
+redirects back to your `LABCORP_REDIRECT_URI`, which the server
+handles by exchanging the code for an access token + refresh token and
+storing them encrypted in the `labcorp_tokens` table.
+
+Subsequent calls use the refresh token automatically; no further user
+interaction is required unless the refresh token is revoked or expires.
+
+### Step 5 — Submit a test order
+
+With the server running and credentials valid:
+
+```bash
+curl -X POST https://your-deployment.example.com/api/orders/<order-id>/submit-to-labcorp \
+  -H "Authorization: Bearer <your session JWT>" \
+  -H "Content-Type: application/json"
+```
+
+The route is RBAC-gated (physician role required) and audit-logged.
+Result polling happens automatically through `LabSynthesisAgent` once
+LabCorp returns results.
+
+### Optional: enable the labcorp-poller docker service
+
+`docker-compose.yml` includes a commented `labcorp-poller` service block
+that periodically calls `pollPendingOrders()` to fetch results without
+waiting for a webhook. To enable it:
+
+1. Open `docker-compose.yml` and uncomment the `labcorp-poller` service
+   stanza.
+2. Set the same `LABCORP_*` environment variables as above. The poller
+   shares the database with the main `agentic-ehr` service so it can
+   write parsed results into the `lab_orders` table.
+3. Bring it up: `docker-compose up -d labcorp-poller`.
+4. Watch the logs: `docker-compose logs -f labcorp-poller`. You should
+   see periodic poll cycles with the count of orders checked.
+
+The poller follows the same pattern as the main service — non-root
+user, restart unless stopped, JSON log rotation, health check.
+
+### Mock mode for tests and local development
+
+If you do not have LabCorp credentials yet, leave `LABCORP_MODE=mock`
+(or unset — that is the default). All offline tests pass in mock mode,
+and the parser is exercised against the same fixture set
+(`server/integrations/labcorp/mock-responses/`) that mirrors real
+LabCorp PDF/XML payloads. You can develop and test the entire CDS +
+Domain Logic + LabSynthesisAgent pipeline without ever talking to
+LabCorp.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Smoke test exits with `OAUTH_INVALID_CLIENT` | Wrong `LABCORP_CLIENT_ID` or `LABCORP_CLIENT_SECRET` | Verify against the developer portal |
+| Smoke test exits with `REDIRECT_URI_MISMATCH` | Registered URI ≠ `LABCORP_REDIRECT_URI` | Update one or the other so they match exactly |
+| `submit-to-labcorp` returns 403 | Caller is not a physician role | Use a physician account |
+| Parser logs `unknown_panel` warning | LabCorp returned a panel not in the alias table | Add the panel to `LAB_ALIASES` in `functional-med-engine.js` |
+| Result lands but no CDS alert fires | `LAB_RESULTED` event not subscribed | Check `wireCATCDataFlows()` in `server/agents/message-bus.js` |
 
 ---
 

@@ -19,3 +19,51 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------
+
+CLINICAL-USE DISCLAIMER
+
+This software is provided for educational, research, and demonstration
+purposes only. It is not FDA-cleared, not ONC-certified, and is not
+certified or validated for production clinical use.
+
+Agentic EHR is not a medical device. It does not provide medical advice,
+diagnosis, or treatment. The clinical decision support, dosing
+recommendations, functional-medicine rules, lab result interpretations,
+and any other clinical output produced by this software are illustrative
+only and must not be relied upon to make patient care decisions in any
+live clinical environment.
+
+Users who deploy, fork, modify, or otherwise use this software assume
+full and sole responsibility for ensuring compliance with all applicable
+laws and regulations, including but not limited to:
+
+- The Health Insurance Portability and Accountability Act (HIPAA) and the
+  HITECH Act, including the Privacy Rule, Security Rule, and Breach
+  Notification Rule
+- State medical-practice, licensure, and corporate-practice-of-medicine
+  laws
+- State and federal controlled-substance and prescribing regulations
+- FDA, ONC, CMS, and other applicable regulatory frameworks governing
+  clinical software and health IT
+- Institutional Review Board (IRB) and research-ethics requirements
+  when used in research contexts
+- All applicable data-protection and patient-privacy laws in
+  jurisdictions outside the United States
+
+Before using this software with any real patient data, live clinical
+workflow, or in any patient-facing capacity, users must obtain
+appropriate legal, regulatory, and compliance review, implement all
+required administrative, physical, and technical safeguards, and — where
+applicable — execute Business Associate Agreements with any downstream
+vendors, cloud providers, or integration partners.
+
+The authors and copyright holders make no representation or warranty
+that this software is suitable for any clinical, diagnostic, or
+treatment-related use, and expressly disclaim any liability for harm,
+injury, misdiagnosis, treatment error, privacy breach, or regulatory
+violation arising from the use or misuse of this software.
+
+This disclaimer does not limit the "AS IS" warranty disclaimer or the
+limitation of liability set forth above; it supplements them.
