@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LabCorpResult>
+  <orderId>LC-MOCK-THY001</orderId>
+  <orderedAt>2026-04-05T09:00:00Z</orderedAt>
+  <resultedAt>2026-04-05T16:00:00Z</resultedAt>
+  <patient>
+    <firstName>Sarah</firstName>
+    <lastName>Mitchell</lastName>
+    <dob>1968-03-22</dob>
+  </patient>
+  <results>
+    <result>
+      <code>TSH</code>
+      <displayName>Thyroid Stimulating Hormone</displayName>
+      <value>6.8</value>
+      <unit>uIU/mL</unit>
+      <refRange>0.45-4.5</refRange>
+      <flag>H</flag>
+    </result>
+    <result>
+      <code>Free T4</code>
+      <value>0.9</value>
+      <unit>ng/dL</unit>
+      <refRange>0.82-1.77</refRange>
+      <flag>N</flag>
+    </result>
+    <result>
+      <code>Free T3</code>
+      <value>2.6</value>
+      <unit>pg/mL</unit>
+      <refRange>2.0-4.4</refRange>
+      <flag>N</flag>
+    </result>
+    <result>
+      <code>Thyroid Peroxidase Antibody</code>
+      <displayName>TPO Ab</displayName>
+      <value>145</value>
+      <unit>IU/mL</unit>
+      <refRange>&lt;9</refRange>
+      <flag>H</flag>
+    </result>
+  </results>
+</LabCorpResult>

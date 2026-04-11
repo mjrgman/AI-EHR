@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LabCorpResult>
+  <orderId>LC-MOCK-DEFAULT</orderId>
+  <orderedAt>2026-04-05T09:00:00Z</orderedAt>
+  <resultedAt>2026-04-05T15:00:00Z</resultedAt>
+  <patient>
+    <firstName>Test</firstName>
+    <lastName>Patient</lastName>
+    <dob>1980-01-01</dob>
+  </patient>
+  <results>
+    <result>
+      <code>Placeholder Test</code>
+      <value>1.0</value>
+      <unit>unit</unit>
+      <refRange>0.0-2.0</refRange>
+      <flag>N</flag>
+    </result>
+  </results>
+</LabCorpResult>

@@ -1322,99 +1322,116 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
 
   // Spin up a minimal Express instance with the FHIR router on a random port.
   // NODE_ENV is not 'production' during tests, so auth.requireAuth passes through.
-  const http = require('http');
-  const expressHttp = require('express');
-  const fhirRouter = require('../server/fhir/router');
-  const fhirTestApp = expressHttp();
-  fhirTestApp.use(expressHttp.json());
-  fhirTestApp.use('/fhir/R4', fhirRouter);
-
-  const fhirTestServer = await new Promise((resolve) => {
-    const srv = fhirTestApp.listen(0, '127.0.0.1', () => resolve(srv));
-  });
-  const fhirPort = fhirTestServer.address().port;
-
-  function fhirGet(path) {
-    return new Promise((resolve, reject) => {
-      http.get(`http://127.0.0.1:${fhirPort}${path}`, (res) => {
-        let raw = '';
-        res.on('data', chunk => { raw += chunk; });
-        res.on('end', () => {
-          try {
-            resolve({ status: res.statusCode, body: JSON.parse(raw), headers: res.headers });
-          } catch {
-            resolve({ status: res.statusCode, body: raw, headers: res.headers });
-          }
-        });
-      }).on('error', reject);
+  //
+  // NOTE: a pre-existing path-to-regexp / express drift can cause the FHIR
+  // router require to throw synchronously at load time (`pathRegexp is not a
+  // function`). That failure is tracked separately and MUST NOT halt later
+  // test phases. Wrapped in try/catch so the suite continues if router load
+  // fails; the failure is still recorded as a visible FAIL in the report.
+  let _phase14LoadOk = true;
+  let http, expressHttp, fhirRouter, fhirTestApp, fhirTestServer, fhirPort;
+  try {
+    http = require('http');
+    expressHttp = require('express');
+    fhirRouter = require('../server/fhir/router');
+    fhirTestApp = expressHttp();
+    fhirTestApp.use(expressHttp.json());
+    fhirTestApp.use('/fhir/R4', fhirRouter);
+    fhirTestServer = await new Promise((resolve) => {
+      const srv = fhirTestApp.listen(0, '127.0.0.1', () => resolve(srv));
     });
+    fhirPort = fhirTestServer.address().port;
+  } catch (fhirLoadErr) {
+    _phase14LoadOk = false;
+    await test('Phase 14 FHIR HTTP: router load (pre-existing failure, tracked separately)', async () => {
+      throw new Error(`FHIR router failed to load: ${fhirLoadErr.message}`);
+    });
+    console.log('  ⚠ Phase 14 HTTP contract tests skipped due to load-time failure. Continuing.\n');
   }
 
-  await test('FHIR HTTP: GET /metadata returns 200 CapabilityStatement', async () => {
-    const { status, body } = await fhirGet('/fhir/R4/metadata');
-    assertEqual(status, 200);
-    assertEqual(body.resourceType, 'CapabilityStatement');
-    assertEqual(body.fhirVersion, '4.0.1');
-    assert(body.rest[0].resource.length >= 8, 'Should declare at least 8 resource types');
-  });
+  if (_phase14LoadOk) {
+    function fhirGet(path) {
+      return new Promise((resolve, reject) => {
+        http.get(`http://127.0.0.1:${fhirPort}${path}`, (res) => {
+          let raw = '';
+          res.on('data', chunk => { raw += chunk; });
+          res.on('end', () => {
+            try {
+              resolve({ status: res.statusCode, body: JSON.parse(raw), headers: res.headers });
+            } catch {
+              resolve({ status: res.statusCode, body: raw, headers: res.headers });
+            }
+          });
+        }).on('error', reject);
+      });
+    }
 
-  await test('FHIR HTTP: GET /Patient/:id returns 200 Patient resource', async () => {
-    const { status, body } = await fhirGet(`/fhir/R4/Patient/${sarahId}`);
-    assertEqual(status, 200);
-    assertEqual(body.resourceType, 'Patient');
-    assertEqual(body.id, String(sarahId));
-  });
+    await test('FHIR HTTP: GET /metadata returns 200 CapabilityStatement', async () => {
+      const { status, body } = await fhirGet('/fhir/R4/metadata');
+      assertEqual(status, 200);
+      assertEqual(body.resourceType, 'CapabilityStatement');
+      assertEqual(body.fhirVersion, '4.0.1');
+      assert(body.rest[0].resource.length >= 8, 'Should declare at least 8 resource types');
+    });
 
-  await test('FHIR HTTP: GET /Patient/:id with unknown ID returns 404 OperationOutcome', async () => {
-    const { status, body } = await fhirGet('/fhir/R4/Patient/99999');
-    assertEqual(status, 404);
-    assertEqual(body.resourceType, 'OperationOutcome');
-    assertEqual(body.issue[0].code, 'not-found');
-  });
+    await test('FHIR HTTP: GET /Patient/:id returns 200 Patient resource', async () => {
+      const { status, body } = await fhirGet(`/fhir/R4/Patient/${sarahId}`);
+      assertEqual(status, 200);
+      assertEqual(body.resourceType, 'Patient');
+      assertEqual(body.id, String(sarahId));
+    });
 
-  await test('FHIR HTTP: GET /Encounter without patient param returns 400 OperationOutcome', async () => {
-    const { status, body } = await fhirGet('/fhir/R4/Encounter');
-    assertEqual(status, 400);
-    assertEqual(body.resourceType, 'OperationOutcome');
-    assertEqual(body.issue[0].code, 'invalid');
-  });
+    await test('FHIR HTTP: GET /Patient/:id with unknown ID returns 404 OperationOutcome', async () => {
+      const { status, body } = await fhirGet('/fhir/R4/Patient/99999');
+      assertEqual(status, 404);
+      assertEqual(body.resourceType, 'OperationOutcome');
+      assertEqual(body.issue[0].code, 'not-found');
+    });
 
-  await test('FHIR HTTP: GET /Patient returns 200 searchset Bundle', async () => {
-    const { status, body } = await fhirGet('/fhir/R4/Patient');
-    assertEqual(status, 200);
-    assertEqual(body.resourceType, 'Bundle');
-    assertEqual(body.type, 'searchset');
-    assert(body.total >= 2, 'Should have at least 2 patients');
-  });
+    await test('FHIR HTTP: GET /Encounter without patient param returns 400 OperationOutcome', async () => {
+      const { status, body } = await fhirGet('/fhir/R4/Encounter');
+      assertEqual(status, 400);
+      assertEqual(body.resourceType, 'OperationOutcome');
+      assertEqual(body.issue[0].code, 'invalid');
+    });
 
-  await test('FHIR HTTP: GET /Patient?identifier=MRN returns matching patient', async () => {
-    const { status, body } = await fhirGet('/fhir/R4/Patient?identifier=2018-04792');
-    assertEqual(status, 200);
-    assertEqual(body.type, 'searchset');
-    assertEqual(body.total, 1);
-    assertEqual(body.entry[0].resource.id, String(sarahId));
-  });
+    await test('FHIR HTTP: GET /Patient returns 200 searchset Bundle', async () => {
+      const { status, body } = await fhirGet('/fhir/R4/Patient');
+      assertEqual(status, 200);
+      assertEqual(body.resourceType, 'Bundle');
+      assertEqual(body.type, 'searchset');
+      assert(body.total >= 2, 'Should have at least 2 patients');
+    });
 
-  await test('FHIR HTTP: GET /Observation without patient param returns 400 OperationOutcome', async () => {
-    const { status, body } = await fhirGet('/fhir/R4/Observation');
-    assertEqual(status, 400);
-    assertEqual(body.resourceType, 'OperationOutcome');
-  });
+    await test('FHIR HTTP: GET /Patient?identifier=MRN returns matching patient', async () => {
+      const { status, body } = await fhirGet('/fhir/R4/Patient?identifier=2018-04792');
+      assertEqual(status, 200);
+      assertEqual(body.type, 'searchset');
+      assertEqual(body.total, 1);
+      assertEqual(body.entry[0].resource.id, String(sarahId));
+    });
 
-  await test('FHIR HTTP: unsupported resource type returns 404 OperationOutcome', async () => {
-    const { status, body } = await fhirGet('/fhir/R4/DiagnosticReport');
-    assertEqual(status, 404);
-    assertEqual(body.resourceType, 'OperationOutcome');
-  });
+    await test('FHIR HTTP: GET /Observation without patient param returns 400 OperationOutcome', async () => {
+      const { status, body } = await fhirGet('/fhir/R4/Observation');
+      assertEqual(status, 400);
+      assertEqual(body.resourceType, 'OperationOutcome');
+    });
 
-  await test('FHIR HTTP: response includes X-FHIR-Version header', async () => {
-    const { status, headers } = await fhirGet('/fhir/R4/metadata');
-    assertEqual(status, 200);
-    assertEqual(headers['x-fhir-version'], '4.0.1');
-  });
+    await test('FHIR HTTP: unsupported resource type returns 404 OperationOutcome', async () => {
+      const { status, body } = await fhirGet('/fhir/R4/DiagnosticReport');
+      assertEqual(status, 404);
+      assertEqual(body.resourceType, 'OperationOutcome');
+    });
 
-  // Tear down Phase 14 test server
-  await new Promise(resolve => fhirTestServer.close(resolve));
+    await test('FHIR HTTP: response includes X-FHIR-Version header', async () => {
+      const { status, headers } = await fhirGet('/fhir/R4/metadata');
+      assertEqual(status, 200);
+      assertEqual(headers['x-fhir-version'], '4.0.1');
+    });
+
+    // Tear down Phase 14 test server
+    await new Promise(resolve => fhirTestServer.close(resolve));
+  }
 
   // ==========================================
   // PHASE 15: FHIR INBOUND INGESTION TESTS
@@ -2080,6 +2097,216 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   });
 
   await new Promise(resolve => p17Server.close(resolve));
+
+  // ==========================================
+  // PHASE 18: LABCORP INTEGRATION (Phase 2a scaffold)
+  // ==========================================
+
+  console.log('\n--- PHASE 18: LABCORP INTEGRATION (scaffold) ---\n');
+
+  // Force mock mode for the entire phase — never touch the network in tests
+  process.env.LABCORP_MODE = 'mock';
+
+  // Reset the singleton so mode change takes effect
+  const labcorpClientModule = require('../server/integrations/labcorp/client');
+  const labcorpParser = require('../server/integrations/labcorp/parser');
+  const labcorpFs = require('fs');
+  const labcorpPath = require('path');
+  const labcorpMockDir = labcorpPath.join(__dirname, '..', 'server', 'integrations', 'labcorp', 'mock-responses');
+
+  await test('LabCorp: parser rejects empty buffer without throwing', async () => {
+    const result = labcorpParser.parseXmlResult(Buffer.alloc(0));
+    assertEqual(result.ok, false, 'empty buffer should not be ok');
+    assert(result.warnings.includes('empty_or_invalid_buffer'), 'should warn about empty buffer');
+  });
+
+  await test('LabCorp: parser rejects non-buffer input without throwing', async () => {
+    const result = labcorpParser.parseXmlResult(null);
+    assertEqual(result.ok, false);
+  });
+
+  await test('LabCorp: parser rejects malformed XML without throwing', async () => {
+    const result = labcorpParser.parseXmlResult(Buffer.from('<LabCorpResult><broken'));
+    // fast-xml-parser is fairly lenient, so this may or may not error. The contract
+    // is that it returns a shape and doesn't throw.
+    assert(result && typeof result.ok === 'boolean', 'should return a result object');
+  });
+
+  await test('LabCorp: parser extracts CBC fixture with erythrocytosis flag', async () => {
+    const buffer = labcorpFs.readFileSync(labcorpPath.join(labcorpMockDir, 'cbc.xml'));
+    const result = labcorpParser.parseXmlResult(buffer);
+    assertEqual(result.ok, true);
+    assertEqual(result.source, 'labcorp_xml');
+    assertEqual(result.labOrderId, 'LC-MOCK-CBC001');
+    assert(result.results.length >= 5, 'CBC should have at least 5 results');
+    const hct = result.results.find(r => r.code === 'Hematocrit');
+    assert(hct, 'CBC should contain Hematocrit');
+    assertEqual(hct.value, 55.2);
+    assertEqual(hct.abnormalFlag, 'HH', 'Hematocrit should flag HH');
+    assertEqual(hct.unit, '%');
+  });
+
+  await test('LabCorp: parser extracts A1C fixture with HbA1c 8.2%', async () => {
+    const buffer = labcorpFs.readFileSync(labcorpPath.join(labcorpMockDir, 'a1c.xml'));
+    const result = labcorpParser.parseXmlResult(buffer);
+    assertEqual(result.ok, true);
+    const a1c = result.results.find(r => r.code === 'Hemoglobin A1c');
+    assert(a1c, 'A1C fixture should contain Hemoglobin A1c');
+    assertEqual(a1c.value, 8.2);
+    assertEqual(a1c.abnormalFlag, 'H');
+  });
+
+  await test('LabCorp: parser extracts testosterone fixture with low total T', async () => {
+    const buffer = labcorpFs.readFileSync(labcorpPath.join(labcorpMockDir, 'testosterone.xml'));
+    const result = labcorpParser.parseXmlResult(buffer);
+    assertEqual(result.ok, true);
+    const tt = result.results.find(r => r.code === 'Total Testosterone');
+    assert(tt, 'Testosterone fixture should contain Total Testosterone');
+    assertEqual(tt.value, 198);
+    assertEqual(tt.abnormalFlag, 'L');
+    assertEqual(tt.unit, 'ng/dL');
+  });
+
+  await test('LabCorp: parser extracts thyroid fixture with Hashimoto pattern', async () => {
+    const buffer = labcorpFs.readFileSync(labcorpPath.join(labcorpMockDir, 'thyroid.xml'));
+    const result = labcorpParser.parseXmlResult(buffer);
+    assertEqual(result.ok, true);
+    const tsh = result.results.find(r => r.code === 'TSH');
+    const tpo = result.results.find(r => r.code === 'Thyroid Peroxidase Antibody');
+    assert(tsh && tsh.abnormalFlag === 'H', 'TSH should be elevated');
+    assert(tpo && tpo.abnormalFlag === 'H', 'TPO Ab should be elevated');
+  });
+
+  await test('LabCorp: parser preserves raw test names for alias matching', async () => {
+    // The domain engine's LAB_ALIASES maps "hba1c" → ["a1c","hemoglobina1c", ...]
+    // The parser must NOT normalize "Hemoglobin A1c" to "hba1c" because then the
+    // alias lookup would miss it.
+    const buffer = labcorpFs.readFileSync(labcorpPath.join(labcorpMockDir, 'a1c.xml'));
+    const result = labcorpParser.parseXmlResult(buffer);
+    const a1c = result.results[0];
+    assertEqual(a1c.code, 'Hemoglobin A1c', 'raw test name must be preserved');
+  });
+
+  await test('LabCorp: parser normalizeDate handles ISO and MM/DD/YYYY', () => {
+    const { normalizeDate } = labcorpParser._internal;
+    assertEqual(normalizeDate('2026-04-05T09:00:00Z'), '2026-04-05T09:00:00Z');
+    assertEqual(normalizeDate('04/05/2026'), '2026-04-05');
+    assertEqual(normalizeDate('4/5/26'), '2026-04-05');
+    assertEqual(normalizeDate(''), null);
+    assertEqual(normalizeDate(null), null);
+  });
+
+  await test('LabCorp: parser tryParseResultLine handles pipe-delimited rows', () => {
+    const { tryParseResultLine } = labcorpParser._internal;
+    const row = tryParseResultLine('Total Testosterone | 198 | ng/dL | 264-916 | L');
+    assert(row, 'should parse pipe-delimited row');
+    assertEqual(row.code, 'Total Testosterone');
+    assertEqual(row.value, 198);
+    assertEqual(row.unit, 'ng/dL');
+    assertEqual(row.abnormalFlag, 'L');
+  });
+
+  await test('LabCorp: parser tryParseResultLine skips header rows', () => {
+    const { tryParseResultLine } = labcorpParser._internal;
+    assertEqual(tryParseResultLine('PATIENT NAME: John Doe'), null);
+    assertEqual(tryParseResultLine('--------------'), null);
+    assertEqual(tryParseResultLine('test | value | unit | range | flag'), null);
+  });
+
+  await test('LabCorp: client validates order shape', () => {
+    const { validateOrder } = labcorpClientModule._internal;
+    let threw = false;
+    try { validateOrder(null); } catch (err) { threw = true; }
+    assert(threw, 'null order should throw');
+    threw = false;
+    try { validateOrder({ tests: ['A1C'] }); } catch (err) { threw = true; }
+    assert(threw, 'missing patientId should throw');
+    threw = false;
+    try { validateOrder({ patientId: 1, tests: [] }); } catch (err) { threw = true; }
+    assert(threw, 'empty tests should throw');
+    validateOrder({ patientId: 1, tests: ['A1C'] }); // should not throw
+  });
+
+  await test('LabCorp: client resolveFixtureName picks correct fixture per panel', () => {
+    const { resolveFixtureName } = labcorpClientModule._internal;
+    assertEqual(resolveFixtureName('x', { tests: ['Hemoglobin A1c'] }), 'a1c.xml');
+    assertEqual(resolveFixtureName('x', { tests: ['CBC with diff'] }), 'cbc.xml');
+    assertEqual(resolveFixtureName('x', { tests: ['Total Testosterone'] }), 'testosterone.xml');
+    assertEqual(resolveFixtureName('x', { tests: ['Estradiol'] }), 'estradiol.xml');
+    assertEqual(resolveFixtureName('x', { tests: ['TSH', 'Free T4'] }), 'thyroid.xml');
+    assertEqual(resolveFixtureName('x', { tests: ['Lipid Panel'] }), 'lipid.xml');
+    assertEqual(resolveFixtureName('x', { tests: ['Unknown test'] }), 'default.xml');
+  });
+
+  await test('LabCorp: client submitOrder + fetchResults round-trip in mock mode', async () => {
+    // Reset singleton via module state — we set LABCORP_MODE above so a fresh
+    // getClient() call inside the module will create a mock-mode instance.
+    const { LabCorpClient } = labcorpClientModule;
+    const client = new LabCorpClient({ mode: 'mock' });
+
+    const order = await client.submitOrder({
+      patientId: 42,
+      tests: ['Hemoglobin A1c']
+    });
+    assertEqual(order.ok, true);
+    assert(order.externalOrderId.startsWith('LC-MOCK-'), 'mock order id should be deterministic');
+    assertEqual(order.status, 'submitted');
+
+    const result = await client.fetchResults(order.externalOrderId);
+    assertEqual(result.ok, true, 'mock fetch should return parsed result');
+    assertEqual(result.externalOrderId, order.externalOrderId);
+    const a1c = result.results.find(r => r.code === 'Hemoglobin A1c');
+    assert(a1c, 'fetch should return A1C result from fixture');
+  });
+
+  await test('LabCorp: client submitOrder produces deterministic IDs for same inputs', async () => {
+    const { LabCorpClient } = labcorpClientModule;
+    const client = new LabCorpClient({ mode: 'mock' });
+    const a = await client.submitOrder({ patientId: 99, tests: ['CBC'] });
+    const b = await client.submitOrder({ patientId: 99, tests: ['CBC'] });
+    assertEqual(a.externalOrderId, b.externalOrderId, 'same input should yield same ID');
+  });
+
+  await test('LabCorp: client pollPendingOrders returns array matching input order', async () => {
+    const { LabCorpClient } = labcorpClientModule;
+    const client = new LabCorpClient({ mode: 'mock' });
+    const o1 = await client.submitOrder({ patientId: 1, tests: ['CBC'] });
+    const o2 = await client.submitOrder({ patientId: 1, tests: ['Hemoglobin A1c'] });
+    const results = await client.pollPendingOrders([o1.externalOrderId, o2.externalOrderId]);
+    assertEqual(results.length, 2);
+    assertEqual(results[0].ok, true);
+    assertEqual(results[1].ok, true);
+  });
+
+  await test('LabCorp: client API mode throws explicit Phase 2b stub error', async () => {
+    const { LabCorpClient } = labcorpClientModule;
+    const client = new LabCorpClient({ mode: 'api' });
+    let threw = false;
+    try {
+      await client.submitOrder({ patientId: 1, tests: ['CBC'] });
+    } catch (err) {
+      threw = true;
+      assert(/Phase 2b/.test(err.message), 'API mode error should mention Phase 2b');
+    }
+    assert(threw, 'API mode submitOrder should throw');
+  });
+
+  await test('LabCorp: client getStatus reports current mode and credential state', () => {
+    const status = labcorpClientModule.getStatus();
+    assert(status.mode === 'mock', 'status should report mock mode');
+    assert(typeof status.hasCredentials === 'boolean');
+  });
+
+  await test('LabCorp: client pollPendingOrders reports per-order error on unknown id', async () => {
+    // An unknown ID in mock mode returns a graceful fixture-not-found warning,
+    // NOT an exception. The caller should be able to see ok=false + warnings.
+    const { LabCorpClient } = labcorpClientModule;
+    const client = new LabCorpClient({ mode: 'mock' });
+    const results = await client.pollPendingOrders(['LC-MOCK-UNKNOWN']);
+    assertEqual(results.length, 1);
+    // Should return a parser-shape result with ok=false
+    assertEqual(results[0].ok, false);
+  });
 
   // ==========================================
   // RESULTS

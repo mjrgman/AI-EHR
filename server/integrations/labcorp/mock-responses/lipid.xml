@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LabCorpResult>
+  <orderId>LC-MOCK-LIPID001</orderId>
+  <orderedAt>2026-04-05T09:00:00Z</orderedAt>
+  <resultedAt>2026-04-05T15:00:00Z</resultedAt>
+  <patient>
+    <firstName>Sarah</firstName>
+    <lastName>Mitchell</lastName>
+    <dob>1968-03-22</dob>
+  </patient>
+  <results>
+    <result>
+      <code>Total Cholesterol</code>
+      <value>245</value>
+      <unit>mg/dL</unit>
+      <refRange>&lt;200</refRange>
+      <flag>H</flag>
+    </result>
+    <result>
+      <code>Triglycerides</code>
+      <value>210</value>
+      <unit>mg/dL</unit>
+      <refRange>&lt;150</refRange>
+      <flag>H</flag>
+    </result>
+    <result>
+      <code>HDL Cholesterol</code>
+      <value>38</value>
+      <unit>mg/dL</unit>
+      <refRange>&gt;40</refRange>
+      <flag>L</flag>
+    </result>
+    <result>
+      <code>LDL Cholesterol</code>
+      <value>165</value>
+      <unit>mg/dL</unit>
+      <refRange>&lt;100</refRange>
+      <flag>H</flag>
+    </result>
+    <result>
+      <code>Non-HDL Cholesterol</code>
+      <value>207</value>
+      <unit>mg/dL</unit>
+      <refRange>&lt;130</refRange>
+      <flag>H</flag>
+    </result>
+  </results>
+</LabCorpResult>
