@@ -1,0 +1,130 @@
+{
+  "version": "1.0.0",
+  "description": "LabCorp end-to-end scenarios (Phase 2b — Chunk 7). Each scenario points to one of the fixtures under server/integrations/labcorp/mock-responses/ and declares the codes + abnormal flags the LabSynthesisAgent must surface. Consumed by run-tests.js LabCorp Chunk 7 tests — adding a scenario here extends the test suite automatically, no harness changes required.",
+  "contract": {
+    "fixture": "Filename (relative to server/integrations/labcorp/mock-responses/) — XML in the LabCorpResult envelope that parser.js recognizes.",
+    "external_order_id": "Opaque LabCorp-issued order id. Used only for traceability in logs and LAB_SYNTHESIS_READY payloads — does not drive fixture selection.",
+    "panel_label": "Human-readable panel name. Informational only.",
+    "expected.expected_codes": "Every code (or displayName) that MUST be present in the parsed output. Subset check — parser may return additional rows.",
+    "expected.abnormal_flags": "Map of code -> expected abnormalFlag ('H', 'HH', 'L', 'LL', 'N'). Strict equality check per row."
+  },
+  "scenarios": [
+    {
+      "id": "LAB-CBC-ERYTHRO-001",
+      "name": "CBC with erythrocytosis — polycythemia signal relevant to testosterone monitoring",
+      "fixture": "cbc.xml",
+      "external_order_id": "LC-MOCK-CBC001",
+      "panel_label": "Complete Blood Count with Differential",
+      "clinical_relevance": "Erythrocytosis (HCT > 54%) is the most common dose-limiting adverse event of testosterone replacement therapy. LabSynthesisAgent must surface this so DomainLogicAgent's hrt-tt-hct-high safety rule can block further titration.",
+      "expected": {
+        "expected_codes": [
+          "White Blood Cell Count",
+          "Red Blood Cell Count",
+          "Hemoglobin",
+          "Hematocrit",
+          "Platelet Count",
+          "Mean Corpuscular Volume"
+        ],
+        "abnormal_flags": {
+          "Red Blood Cell Count": "H",
+          "Hemoglobin": "H",
+          "Hematocrit": "HH",
+          "White Blood Cell Count": "N",
+          "Platelet Count": "N"
+        }
+      }
+    },
+    {
+      "id": "LAB-CMP-KIDNEY-001",
+      "name": "Comprehensive Metabolic Panel with kidney dysfunction signal",
+      "fixture": "cmp.xml",
+      "external_order_id": "LC-MOCK-CMP001",
+      "panel_label": "Comprehensive Metabolic Panel (14)",
+      "clinical_relevance": "BUN elevated, creatinine elevated, eGFR low — classic CKD stage 3a picture. Downstream CDS should flag renal dosing considerations before any medication adjustment.",
+      "expected": {
+        "expected_codes": [
+          "Glucose",
+          "Blood Urea Nitrogen",
+          "Creatinine",
+          "eGFR",
+          "Sodium",
+          "Potassium",
+          "ALT",
+          "AST"
+        ],
+        "abnormal_flags": {
+          "Glucose": "H",
+          "Blood Urea Nitrogen": "H",
+          "Creatinine": "H",
+          "eGFR": "L",
+          "Sodium": "N",
+          "Potassium": "N",
+          "ALT": "N",
+          "AST": "N"
+        }
+      }
+    },
+    {
+      "id": "LAB-TESTOSTERONE-LOW-001",
+      "name": "Low testosterone — male hormone workup ready for HRT rule evaluation",
+      "fixture": "testosterone.xml",
+      "external_order_id": "LC-MOCK-TEST001",
+      "panel_label": "Male Hormone Panel — Total T, Free T, SHBG, PSA",
+      "clinical_relevance": "Total testosterone 198 ng/dL, free testosterone 4.1 pg/mL — both below reference range. Feeds Phase 1b's hrt-tt-low-male rule, which proposes testosterone cypionate initiation gated by Tier 3 physician approval. Standard-of-care guardrail: Phase 1b DomainLogicAgent only proposes treatment if mainstream CDS raises no contraindication.",
+      "expected": {
+        "expected_codes": [
+          "Total Testosterone",
+          "Free Testosterone",
+          "Sex Hormone Binding Globulin",
+          "Prostate Specific Antigen"
+        ],
+        "abnormal_flags": {
+          "Total Testosterone": "L",
+          "Free Testosterone": "L",
+          "Sex Hormone Binding Globulin": "N",
+          "Prostate Specific Antigen": "N"
+        }
+      }
+    },
+    {
+      "id": "LAB-A1C-UNCONTROLLED-001",
+      "name": "Hemoglobin A1c — uncontrolled diabetes signal",
+      "fixture": "a1c.xml",
+      "external_order_id": "LC-MOCK-A1C001",
+      "panel_label": "Hemoglobin A1c + Estimated Average Glucose",
+      "clinical_relevance": "A1c 8.2% with eAG 189 mg/dL indicates suboptimal glycemic control. Relevant to both mainstream CDS (intensify antihyperglycemic regimen) and DomainLogicAgent's insulin-resistance functional-med rule.",
+      "expected": {
+        "expected_codes": [
+          "Hemoglobin A1c",
+          "Estimated Average Glucose"
+        ],
+        "abnormal_flags": {
+          "Hemoglobin A1c": "H",
+          "Estimated Average Glucose": "H"
+        }
+      }
+    },
+    {
+      "id": "LAB-THYROID-HASHIMOTO-001",
+      "name": "TSH elevated with positive TPO antibodies — Hashimoto pattern",
+      "fixture": "thyroid.xml",
+      "external_order_id": "LC-MOCK-THY001",
+      "panel_label": "Thyroid Panel — TSH, Free T4, Free T3, TPO Ab",
+      "clinical_relevance": "Subclinical hypothyroidism with positive TPO antibodies is the classic Hashimoto's presentation. Feeds the functional-med Hashimoto rule; mainstream CDS evaluates whether levothyroxine initiation is indicated per ATA guidance.",
+      "expected": {
+        "expected_codes": [
+          "TSH",
+          "Free T4",
+          "Free T3",
+          "Thyroid Peroxidase Antibody"
+        ],
+        "abnormal_flags": {
+          "TSH": "H",
+          "Free T4": "N",
+          "Free T3": "N",
+          "Thyroid Peroxidase Antibody": "H"
+        }
+      }
+    }
+  ]
+}

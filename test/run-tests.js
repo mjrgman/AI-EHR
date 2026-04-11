@@ -3456,6 +3456,150 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(synthesized[0].opts.patientId, 42);
   });
 
+  // ------------------------------------------
+  // End-to-end LabCorp scenarios (Chunk 7)
+  // ------------------------------------------
+  // These tests are DATA-DRIVEN: they read `test/scenarios/labcorp-scenarios.json`
+  // and exercise the Phase 2b pipeline for each scenario:
+  //
+  //   1. Load the raw XML fixture buffer from `mock-responses/<fixture>`.
+  //   2. Run LabSynthesisAgent.synthesizeRaw(buffer) — same path that fires
+  //      when LAB_RESULTED arrives on the message bus in production.
+  //   3. Assert expected_codes and abnormal_flags match the parser output.
+  //
+  // Keeping the scenarios in JSON (not inline in this file) means future
+  // chunks can add new lab panels without touching this harness — the loop
+  // below picks them up automatically. The JSON also doubles as living
+  // documentation of what LabCorp payloads the pipeline understands.
+  const labcorpScenariosPath = labcorpPath.join(__dirname, 'scenarios', 'labcorp-scenarios.json');
+
+  await test('LabCorp Chunk 7: labcorp-scenarios.json loads with >=4 scenarios and required fields', async () => {
+    assert(labcorpFs.existsSync(labcorpScenariosPath),
+      `labcorp-scenarios.json must exist at ${labcorpScenariosPath}`);
+    const raw = labcorpFs.readFileSync(labcorpScenariosPath, 'utf8');
+    const doc = JSON.parse(raw);
+    assert(doc && Array.isArray(doc.scenarios), 'scenarios array must be present');
+    assert(doc.scenarios.length >= 4, `expected >=4 scenarios, got ${doc.scenarios.length}`);
+    for (const sc of doc.scenarios) {
+      assert(sc.id, `scenario missing id: ${JSON.stringify(sc)}`);
+      assert(sc.fixture, `scenario ${sc.id} missing fixture`);
+      assert(sc.expected && typeof sc.expected === 'object',
+        `scenario ${sc.id} missing expected block`);
+      assert(Array.isArray(sc.expected.expected_codes),
+        `scenario ${sc.id} missing expected_codes`);
+    }
+  });
+
+  await test('LabCorp Chunk 7: every scenario fixture exists in mock-responses/', async () => {
+    const doc = JSON.parse(labcorpFs.readFileSync(labcorpScenariosPath, 'utf8'));
+    for (const sc of doc.scenarios) {
+      const fixturePath = labcorpPath.join(labcorpMockDir, sc.fixture);
+      assert(labcorpFs.existsSync(fixturePath),
+        `fixture ${sc.fixture} referenced by ${sc.id} not found at ${fixturePath}`);
+    }
+  });
+
+  await test('LabCorp Chunk 7: every scenario parses through LabSynthesisAgent with ok=true', async () => {
+    const { LabSynthesisAgent } = require('../server/agents/lab-synthesis-agent');
+    const agent = new LabSynthesisAgent();
+    const doc = JSON.parse(labcorpFs.readFileSync(labcorpScenariosPath, 'utf8'));
+    for (const sc of doc.scenarios) {
+      const fixturePath = labcorpPath.join(labcorpMockDir, sc.fixture);
+      const buffer = labcorpFs.readFileSync(fixturePath);
+      const result = await agent.synthesizeRaw({
+        contentType: 'application/xml',
+        buffer,
+        externalOrderId: sc.external_order_id,
+      });
+      assertEqual(result.ok, true,
+        `scenario ${sc.id} should synthesize successfully, got warnings: ${JSON.stringify(result.warnings || [])}`);
+      assert(Array.isArray(result.results) && result.results.length >= 1,
+        `scenario ${sc.id} should produce at least one result row`);
+    }
+  });
+
+  await test('LabCorp Chunk 7: scenario expected_codes appear in parser output', async () => {
+    const { LabSynthesisAgent } = require('../server/agents/lab-synthesis-agent');
+    const agent = new LabSynthesisAgent();
+    const doc = JSON.parse(labcorpFs.readFileSync(labcorpScenariosPath, 'utf8'));
+    for (const sc of doc.scenarios) {
+      const fixturePath = labcorpPath.join(labcorpMockDir, sc.fixture);
+      const buffer = labcorpFs.readFileSync(fixturePath);
+      const result = await agent.synthesizeRaw({
+        contentType: 'application/xml',
+        buffer,
+        externalOrderId: sc.external_order_id,
+      });
+      // Each expected code must appear verbatim in either `code` or `displayName`.
+      // We preserve raw LabCorp names (no normalization) per the parser contract.
+      const rowKeys = result.results.map(r => `${r.code}|${r.displayName || ''}`).join('\n');
+      for (const expected of sc.expected.expected_codes) {
+        const found = result.results.some(r =>
+          r.code === expected || r.displayName === expected
+        );
+        assert(found,
+          `scenario ${sc.id}: expected code "${expected}" not found in parser output. Available rows:\n${rowKeys}`);
+      }
+    }
+  });
+
+  await test('LabCorp Chunk 7: scenario abnormal_flags match parser output', async () => {
+    const { LabSynthesisAgent } = require('../server/agents/lab-synthesis-agent');
+    const agent = new LabSynthesisAgent();
+    const doc = JSON.parse(labcorpFs.readFileSync(labcorpScenariosPath, 'utf8'));
+    for (const sc of doc.scenarios) {
+      const expectedFlags = sc.expected.abnormal_flags || {};
+      if (Object.keys(expectedFlags).length === 0) continue;
+      const fixturePath = labcorpPath.join(labcorpMockDir, sc.fixture);
+      const buffer = labcorpFs.readFileSync(fixturePath);
+      const result = await agent.synthesizeRaw({
+        contentType: 'application/xml',
+        buffer,
+        externalOrderId: sc.external_order_id,
+      });
+      for (const [code, expectedFlag] of Object.entries(expectedFlags)) {
+        const row = result.results.find(r => r.code === code || r.displayName === code);
+        assert(row, `scenario ${sc.id}: no row found for abnormal-flag check on "${code}"`);
+        assertEqual(row.abnormalFlag, expectedFlag,
+          `scenario ${sc.id}: expected abnormal flag ${expectedFlag} for "${code}", got ${row.abnormalFlag}`);
+      }
+    }
+  });
+
+  await test('LabCorp Chunk 7: full LAB_RESULTED->LAB_SYNTHESIS_READY chain for a hormone scenario', async () => {
+    // Pick the hormone scenario — it's the one that matters for Phase 1b's
+    // HRT rules. Run the same wire-format path as production: LAB_RESULTED
+    // carries bufferBase64, subscriber re-parses, emits LAB_SYNTHESIS_READY.
+    const { LabSynthesisAgent } = require('../server/agents/lab-synthesis-agent');
+    const doc = JSON.parse(labcorpFs.readFileSync(labcorpScenariosPath, 'utf8'));
+    const hormoneScenario = doc.scenarios.find(s => /testosterone|hormone/i.test(s.id + ' ' + (s.name || '')));
+    assert(hormoneScenario, 'need at least one hormone scenario in labcorp-scenarios.json');
+
+    const fakeBus = makeFakeBus();
+    const agent = new LabSynthesisAgent();
+    agent.attachMessageBus(fakeBus);
+
+    const fixtureBuf = labcorpFs.readFileSync(labcorpPath.join(labcorpMockDir, hormoneScenario.fixture));
+    await fakeBus.sendMessage('labcorp_integration', 'broadcast', 'LAB_RESULTED', {
+      externalOrderId: hormoneScenario.external_order_id || 'LC-MOCK-HORMONE',
+      contentType: 'application/xml',
+      bufferBase64: fixtureBuf.toString('base64'),
+    }, { patientId: 42, encounterId: 999 });
+
+    const emitted = fakeBus.sent.filter(m => m.type === 'LAB_SYNTHESIS_READY');
+    assert(emitted.length >= 1,
+      `scenario ${hormoneScenario.id} should emit LAB_SYNTHESIS_READY, got: ${JSON.stringify(fakeBus.sent.map(s => s.type))}`);
+    const payload = emitted[0].payload;
+    assert(Array.isArray(payload.results) && payload.results.length >= 1,
+      `${hormoneScenario.id}: emitted payload should carry parsed results`);
+    // Every expected_code must show up in the emitted payload — this is the
+    // contract that downstream CDS/Domain Logic subscribers depend on.
+    for (const expected of hormoneScenario.expected.expected_codes) {
+      const found = payload.results.some(r => r.code === expected || r.displayName === expected);
+      assert(found, `${hormoneScenario.id}: emitted payload missing expected code "${expected}"`);
+    }
+  });
+
   // Restore PHI_ENCRYPTION_KEY to prior value so subsequent phases are unaffected
   if (_prevPhiKey === undefined) {
     delete process.env.PHI_ENCRYPTION_KEY;
