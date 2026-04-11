@@ -78,6 +78,51 @@ services:
         max-file: "3"
 
   # ==========================================
+  # LABCORP POLLER (optional, Phase 2c)
+  # ==========================================
+  # One-shot connectivity check against the LabCorp sandbox. Intentionally
+  # commented out so a fresh `docker-compose up` never reaches out to a
+  # third-party endpoint without operator intent.
+  #
+  # To enable:
+  #   1. Fill LABCORP_* values in .env (see .env.example — Phase 2b/2c section)
+  #   2. Confirm LABCORP_MODE=api and that LABCORP_SANDBOX_URL points at the sandbox
+  #   3. Uncomment the block below
+  #   4. Run:   docker-compose run --rm labcorp-poller
+  #
+  # Why a separate service (vs. running the script on the host):
+  #   - Exercises the sandbox from inside the container network, catching
+  #     egress firewall rules / DNS resolver quirks specific to the deployment.
+  #   - Keeps LabCorp credentials isolated to the same .env the main app reads,
+  #     so there's one place to rotate secrets.
+  #
+  # Hard safety rail: the smoke script refuses to run if any configured URL
+  # contains "prod" or "production". There is no auto-restart.
+  #
+  # labcorp-poller:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: agentic-ehr-labcorp-poller
+  #   restart: "no"                     # one-shot — no auto-restart
+  #   profiles: ["labcorp"]             # only runs when --profile labcorp is passed
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     NODE_ENV: production
+  #   command: ["node", "scripts/labcorp-sandbox-smoke.js", "--verbose"]
+  #   depends_on:
+  #     agentic-ehr:
+  #       condition: service_healthy
+  #   networks:
+  #     - ehr-internal
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+
+  # ==========================================
   # NGINX REVERSE PROXY WITH TLS
   # ==========================================
   nginx:
