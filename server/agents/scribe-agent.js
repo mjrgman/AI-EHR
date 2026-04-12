@@ -72,9 +72,14 @@ class ScribeAgent extends BaseAgent {
     const imagingOrders = aiClient.extractImagingOrders ? aiClient.extractImagingOrders(transcript) : [];
     const clinicalData = aiClient.extractClinicalData ? await aiClient.extractClinicalData(transcript, patient) : null;
 
+    // extractClinicalData returns { extracted, extraction_summary } — unwrap it.
+    // The `|| clinicalData` fallback handles a future flat-shape variant and the
+    // null case where ai-client doesn't expose the function at all.
+    const extracted = clinicalData?.extracted || clinicalData || {};
+
     // ROS and PE from clinical data or direct extraction
-    const ros = clinicalData?.ros || (aiClient.extractROS ? aiClient.extractROS(transcript) : {});
-    const physicalExam = clinicalData?.physical_exam || {};
+    const ros = extracted.ros || (aiClient.extractROS ? aiClient.extractROS(transcript) : {});
+    const physicalExam = extracted.physical_exam || {};
 
     // Merge extracted vitals with any existing vitals (existing take priority)
     // Spread order: extracted first, existing overwrites — no redundant loop needed (L2)
