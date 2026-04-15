@@ -11,7 +11,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node test/run-tests.js",
-    "setup": "node scripts/setup.js"
+    "setup": "node scripts/setup.js",
+    "create-user": "node scripts/create-user.js"
   },
   "keywords": [
     "EHR",

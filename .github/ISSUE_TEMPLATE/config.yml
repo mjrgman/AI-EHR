@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support
+    url: https://github.com/mjrgman/AI-EHR/blob/main/SUPPORT.md
+    about: Read setup, troubleshooting, and local account bootstrap guidance before opening an issue.
+  - name: Security Reporting
+    url: https://github.com/mjrgman/AI-EHR/blob/main/SECURITY.md
+    about: Follow the private reporting path for vulnerabilities and patient-safety defects.

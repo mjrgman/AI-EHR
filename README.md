@@ -172,6 +172,22 @@ If you skip `.env`, the app still runs in mock AI mode with default settings.
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
+### Bootstrap the first clinician login
+
+The clinician app now uses real JWT + refresh-token auth instead of the old demo role switcher. Create a local user before signing in:
+
+```bash
+npm run create-user -- \
+  --username dr.renner \
+  --password 'SecurePass!234' \
+  --full-name 'Dr. Michael Renner' \
+  --role physician \
+  --email dr.renner@example.com \
+  --npi-number 1234567890
+```
+
+Clinician sign-in lives at `/login`. The patient portal lives at `/portal` and uses a separate cookie-backed patient session.
+
 ### Production Build
 
 ```bash
@@ -190,6 +206,8 @@ docker-compose up -d
 ```bash
 npm test
 ```
+
+For support and public contribution policy, see [SUPPORT.md](./SUPPORT.md), [SECURITY.md](./SECURITY.md), and [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Environment Variables
 

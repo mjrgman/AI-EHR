@@ -13,6 +13,7 @@ const logger = require('./utils/logger');
 const { validate, schemas } = require('./utils/validate');
 const auth = require('./security/auth');
 const rbac = require('./security/rbac');
+const refreshTokens = require('./security/refresh-tokens');
 const { runMigrations } = require('./database-migrations');
 const billing = require('./billing-engine');
 const fhirRouter = require('./fhir/router');
@@ -20,7 +21,7 @@ const { buildSmartConfiguration } = require('./fhir/smart/smart-config');
 const { tokenHandler, introspectHandler, authorizeHandler, launchHandler, revokeHandler, registerClientHandler } = require('./fhir/smart/token');
 const cdsHooksRouter = require('./integrations/cds-hooks');
 const eventBusRouter = require('./integrations/event-bus').router;
-const patientVoiceRouter = require('./integrations/patient-voice').router;
+const { buildAuthRouter } = require('./routes/auth-routes');
 const patientPortalRouter = require('./routes/patient-portal');
 const { mountLabCorpRoutes } = require('./routes/labcorp-routes');
 const { mountMediVaultRoutes } = require('./routes/medivault-routes');
@@ -164,7 +165,14 @@ app.use('/fhir/R4', auth.requireAuth, fhirRouter);
 app.use('/cds-services', auth.requireAuth, cdsHooksRouter);
 
 // ==========================================
-// AUTHENTICATION & RBAC FOR ALL API ROUTES
+// PUBLIC API ROUTES (must precede the global /api auth wall)
+// ==========================================
+
+app.use('/api/auth', buildAuthRouter({ auth, db, logger, refreshTokens }));
+app.use('/api/patient-portal', patientPortalRouter);
+
+// ==========================================
+// AUTHENTICATION & RBAC FOR ALL OTHER API ROUTES
 // ==========================================
 
 // Require authentication on all API routes
@@ -181,8 +189,6 @@ app.use('/api/charges', rbac.requireResourceAccess('billing'));
 app.use('/api/appointments', rbac.requireResourceAccess('encounters'));
 app.use('/api/scheduling', rbac.requireResourceAccess('encounters'));
 app.use('/api/webhooks', rbac.requireRole('admin'), eventBusRouter);
-app.use('/api/patient-portal', patientVoiceRouter);
-app.use('/api/patient-portal', patientPortalRouter);
 
 // LabCorp integration routes (Phase 2b — Chunk 5).
 // mountLabCorpRoutes registers:
@@ -1802,61 +1808,6 @@ app.get('/api/audit/export', async (req, res) => {
 });
 
 // ==========================================
-// REFRESH TOKEN ENDPOINTS
-// ==========================================
-
-const refreshTokens = require('./security/refresh-tokens');
-
-app.post('/api/auth/refresh', async (req, res) => {
-  try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) {
-      return res.status(400).json({ error: 'refreshToken is required' });
-    }
-
-    const result = await refreshTokens.rotate(refreshToken);
-    if (!result) {
-      return res.status(401).json({ error: 'Invalid or expired refresh token' });
-    }
-
-    // We need the user_id from the validation step — get it from the new token's DB entry
-    const tokenInfo = await refreshTokens.validate(result.refreshToken);
-    if (!tokenInfo) {
-      return res.status(401).json({ error: 'Token rotation failed' });
-    }
-
-    const userRow = await db.dbGet('SELECT * FROM users WHERE id = ? AND is_active = 1', [tokenInfo.userId]);
-    if (!userRow) {
-      return res.status(401).json({ error: 'User not found or inactive' });
-    }
-
-    const accessToken = auth.signToken(userRow);
-
-    res.json({
-      token: accessToken,
-      refreshToken: result.refreshToken,
-      expiresAt: result.expiresAt,
-    });
-  } catch (error) {
-    logger.error('Refresh token error', { error: error.message });
-    res.status(500).json({ error: 'Token refresh failed' });
-  }
-});
-
-app.post('/api/auth/logout-all', async (req, res) => {
-  try {
-    if (!req.user || !req.user.sub) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-    await refreshTokens.revokeAllForUser(req.user.sub);
-    res.json({ message: 'All sessions revoked' });
-  } catch (error) {
-    logger.error('Logout-all error', { error: error.message });
-    res.status(500).json({ error: 'Failed to revoke sessions' });
-  }
-});
-
-// ==========================================
 // GLOBAL ERROR HANDLER (must be after all routes)
 // ==========================================
 
@@ -2172,94 +2123,68 @@ app.get('*', (req, res) => {
 // START SERVER
 // ==========================================
 
-async function startServer() {
-  // Wait for database to be ready
-  await db.ready;
+let initializationPromise = null;
+let serverInstance = null;
+let shutdownHandlersRegistered = false;
 
-  // Run all migrations (idempotent — safe on every start)
-  await runMigrations(db);
-
-  // Initialize auth (creates users table, seeds default admin if empty)
-  await auth.init(db);
-
-  // Initialize refresh token module
-  await refreshTokens.init(db);
-
-  // Run preference decay on startup
-  try {
-    await providerLearning.decayPreferences();
-  } catch (err) {
-    logger.warn('Preference decay on startup failed (non-fatal)', { error: err.message });
+async function initializeServerState() {
+  if (initializationPromise) {
+    return initializationPromise;
   }
 
-  // Wire CATC cross-module data flows (message bus subscriptions)
-  try {
-    const { MessageBus } = require('./agents/message-bus');
-    const messageBus = new MessageBus(db);
-    messageBus.wireCATCDataFlows();
+  initializationPromise = (async () => {
+    await db.ready;
+    await runMigrations(db);
+    await auth.init(db);
+    await refreshTokens.init(db);
 
-    // Bridge internal message bus → external event bus (webhooks)
-    const eventBus = require('./integrations/event-bus');
-    const EVENT_MAP = {
-      'NOTE_SIGNED': 'note.signed',
-      'ENCOUNTER_COMPLETED': 'encounter.completed',
-      'PRESCRIPTION_CREATED': 'prescription.created',
-      'LAB_RESULTED': 'lab.resulted',
-      'CARE_GAP_DETECTED': 'care_gap.detected',
-      'REFERRAL_STATUS': 'referral.created'
-    };
-    for (const [internal, external] of Object.entries(EVENT_MAP)) {
-      messageBus.subscribe('event_bus_bridge', internal, async (msg) => {
-        const payload = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
-        eventBus.emit(external, { ...payload, patient_id: msg.patient_id, encounter_id: msg.encounter_id });
-      });
+    try {
+      await providerLearning.decayPreferences();
+    } catch (err) {
+      logger.warn('Preference decay on startup failed (non-fatal)', { error: err.message });
     }
-    app.locals.messageBus = messageBus;
-    logger.info('CATC cross-module data flows initialized');
-  } catch (err) {
-    logger.warn('CATC data flow init failed (non-fatal)', { error: err.message });
+
+    try {
+      const { MessageBus } = require('./agents/message-bus');
+      const messageBus = new MessageBus(db);
+      messageBus.wireCATCDataFlows();
+
+      const eventBus = require('./integrations/event-bus');
+      const EVENT_MAP = {
+        'NOTE_SIGNED': 'note.signed',
+        'ENCOUNTER_COMPLETED': 'encounter.completed',
+        'PRESCRIPTION_CREATED': 'prescription.created',
+        'LAB_RESULTED': 'lab.resulted',
+        'CARE_GAP_DETECTED': 'care_gap.detected',
+        'REFERRAL_STATUS': 'referral.created'
+      };
+      for (const [internal, external] of Object.entries(EVENT_MAP)) {
+        messageBus.subscribe('event_bus_bridge', internal, async (msg) => {
+          const payload = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;
+          eventBus.emit(external, { ...payload, patient_id: msg.patient_id, encounter_id: msg.encounter_id });
+        });
+      }
+      app.locals.messageBus = messageBus;
+      logger.info('CATC cross-module data flows initialized');
+    } catch (err) {
+      logger.warn('CATC data flow init failed (non-fatal)', { error: err.message });
+    }
+  })();
+
+  try {
+    await initializationPromise;
+  } catch (error) {
+    initializationPromise = null;
+    throw error;
+  }
+}
+
+function registerGracefulShutdown(server) {
+  if (shutdownHandlersRegistered) {
+    return;
   }
 
-  const server = app.listen(PORT, () => {
-    logger.info('Server started', {
-      port: PORT,
-      ai_mode: aiClient.getMode(),
-      claude_enabled: aiClient.isClaudeEnabled(),
-      node_env: process.env.NODE_ENV || 'development',
-    });
-    console.log(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  MJR-EHR Intelligent Clinical Agent System
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  Server running on: http://localhost:${PORT}
-  AI Mode: ${aiClient.getMode()}
-  Claude API: ${aiClient.isClaudeEnabled() ? 'Enabled' : 'Disabled (using pattern matching)'}
-
-  Modules Loaded:
-    Database:          Connected (SQLite3 WAL mode)
-    CDS Engine:        25 clinical rules + RxNorm integration
-    Workflow Engine:    9-state machine ready
-    Provider Learning:  Preference tracking enabled
-    Speech Recognition: Ready (browser-based)
-    Audit Logger:      Active (HIPAA compliance)
-    Security Headers:  Helmet + CSP (nonce-based)
-    Authentication:    JWT + Refresh Tokens + SMART-on-FHIR
-    RBAC:              7 roles enforced
-    CDS Hooks:         HL7 spec (vendor CDS integration)
-    Event Bus:         Webhook subscriptions active
-    PatientLink:       Voice-first patient communication
-    MediVault:         Patient data governance (6 agents)
-    Pharma DB:         RxNorm + OpenFDA + DailyMed
-
-  CATC Modules: 9/9 mapped (DocuScribe, ClinicalAssist, AdminFlow, PopHealth, QualityTrack, PatientLink, Patient App, MediVault, AI EHR)
-  API Endpoints: ~75 routes active
-  Environment: ${process.env.NODE_ENV || 'development'}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    `);
-  });
-
-  // Graceful shutdown
+  shutdownHandlersRegistered = true;
   const gracefulShutdown = (signal) => {
     logger.info(`${signal} received, shutting down gracefully...`);
     server.close(() => {
@@ -2267,7 +2192,7 @@ async function startServer() {
       db.close();
       process.exit(0);
     });
-    // Force exit if graceful shutdown takes too long
+
     setTimeout(() => {
       logger.error('Forced shutdown after timeout');
       process.exit(1);
@@ -2278,9 +2203,40 @@ async function startServer() {
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
-startServer().catch(err => {
-  logger.fatal('Server failed to start', { error: err.message, stack: err.stack });
-  process.exit(1);
-});
+async function startServer() {
+  if (serverInstance) {
+    return serverInstance;
+  }
 
-module.exports = app;
+  await initializeServerState();
+
+  serverInstance = app.listen(PORT, () => {
+    logger.info('Server started', {
+      port: PORT,
+      ai_mode: aiClient.getMode(),
+      claude_enabled: aiClient.isClaudeEnabled(),
+      node_env: process.env.NODE_ENV || 'development',
+    });
+    console.log('[MJR-EHR] Server running on http://localhost:' + PORT);
+  });
+
+  serverInstance.on('close', () => {
+    serverInstance = null;
+  });
+
+  registerGracefulShutdown(serverInstance);
+  return serverInstance;
+}
+
+if (require.main === module) {
+  startServer().catch(err => {
+    logger.fatal('Server failed to start', { error: err.message, stack: err.stack });
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  app,
+  initializeServerState,
+  startServer,
+};

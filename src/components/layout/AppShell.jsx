@@ -1,28 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/client';
 
 const ROLE_COLORS = {
-  reception: { bg: 'bg-blue-700', hover: 'hover:bg-blue-600', badge: 'bg-blue-500' },
-  ma: { bg: 'bg-purple-700', hover: 'hover:bg-purple-600', badge: 'bg-purple-500' },
-  provider: { bg: 'bg-emerald-700', hover: 'hover:bg-emerald-600', badge: 'bg-emerald-500' },
+  reception: { bg: 'bg-blue-700', badge: 'bg-blue-400' },
+  ma: { bg: 'bg-purple-700', badge: 'bg-purple-400' },
+  provider: { bg: 'bg-emerald-700', badge: 'bg-emerald-400' },
 };
 
 export default function AppShell({ children }) {
-  const { currentRole, providerName, roleConfig, switchRole, roles } = useAuth();
+  const { currentRole, providerName, roleConfig, logout, user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [roleMenuOpen, setRoleMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [queueCounts, setQueueCounts] = useState({});
   const [queueError, setQueueError] = useState(false);
   const [clock, setClock] = useState(new Date());
+  const [loggingOut, setLoggingOut] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const colors = ROLE_COLORS[currentRole];
+  const colors = ROLE_COLORS[currentRole] || ROLE_COLORS.provider;
 
   useEffect(() => {
-    const iv = setInterval(() => setClock(new Date()), 30000);
-    return () => clearInterval(iv);
+    const interval = setInterval(() => setClock(new Date()), 30000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -31,166 +32,142 @@ export default function AppShell({ children }) {
         const data = await api.getDashboard();
         setQueueCounts(data.queue_counts || {});
         setQueueError(false);
-      } catch (e) { setQueueError(true); }
+      } catch {
+        setQueueError(true);
+      }
     }
+
     fetchCounts();
-    const iv = setInterval(fetchCounts, 15000);
-    return () => clearInterval(iv);
+    const interval = setInterval(fetchCounts, 15000);
+    return () => clearInterval(interval);
   }, []);
 
   const totalActive = Object.entries(queueCounts)
-    .filter(([k]) => k !== 'checked-out')
-    .reduce((s, [, v]) => s + v, 0);
+    .filter(([key]) => key !== 'checked-out')
+    .reduce((sum, [, value]) => sum + value, 0);
 
-  const formatTime = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  const formatDate = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const formatTime = (date) => date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const formatDate = (date) => date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  async function handleLogout() {
+    setLoggingOut(true);
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } finally {
+      setLoggingOut(false);
+      setMenuOpen(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Top Navigation Bar */}
-      <header className={`${colors.bg} text-white sticky top-0 z-50 shadow-lg transition-colors duration-300`}>
-        <div className="flex items-center justify-between px-4 h-14">
-          {/* Left: Menu + Logo */}
+      <header className={`${colors.bg} sticky top-0 z-50 text-white shadow-lg`}>
+        <div className="flex h-14 items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 rounded-lg hover:bg-white/10 transition-colors lg:hidden">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <button
+              onClick={() => setSidebarOpen((open) => !open)}
+              className="rounded-lg p-2 transition-colors hover:bg-white/10 lg:hidden"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigate('/')}>
-              <span className="text-xl">🩺</span>
-              <div>
+            <button className="flex items-center gap-2" onClick={() => navigate('/')}>
+              <span className="rounded-full bg-white/10 px-2 py-1 text-xs font-semibold tracking-[0.2em]">AI</span>
+              <div className="text-left">
                 <h1 className="text-base font-bold leading-tight tracking-tight">MJR-EHR</h1>
-                <p className="text-[10px] opacity-75 leading-tight hidden sm:block">Intelligent Clinical Agent</p>
+                <p className="hidden text-[10px] leading-tight opacity-75 sm:block">Intelligent Clinical Agent</p>
               </div>
-            </div>
+            </button>
           </div>
 
-          {/* Center: Queue Status */}
-          <div className="hidden md:flex items-center gap-3 text-sm">
-            {queueError && (
-              <div className="flex items-center gap-1.5 bg-red-500/20 rounded-lg px-3 py-1.5 text-xs">
-                <span className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-red-200 font-medium">Queue unavailable</span>
+          <div className="hidden items-center gap-3 text-sm md:flex">
+            {queueError ? (
+              <div className="rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-medium text-red-100">
+                Queue unavailable
               </div>
-            )}
-            {!queueError && totalActive > 0 && (
-              <div className="flex items-center gap-3 bg-white/10 rounded-lg px-3 py-1.5">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="font-medium">{totalActive} active</span>
-                </span>
-                {queueCounts['checked-in'] > 0 && (
-                  <span className="text-xs opacity-80 border-l border-white/20 pl-3">
-                    {queueCounts['checked-in']} in lobby
-                  </span>
-                )}
-                {(queueCounts['roomed'] || 0) + (queueCounts['vitals-recorded'] || 0) > 0 && (
-                  <span className="text-xs opacity-80 border-l border-white/20 pl-3">
-                    {(queueCounts['roomed'] || 0) + (queueCounts['vitals-recorded'] || 0)} roomed
-                  </span>
-                )}
-              </div>
-            )}
-            {!queueError && totalActive === 0 && (
-              <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5 text-xs opacity-80">
-                <span className="w-2 h-2 rounded-full bg-gray-400" />
-                No active encounters
+            ) : (
+              <div className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium">
+                {totalActive > 0 ? `${totalActive} active encounters` : 'No active encounters'}
               </div>
             )}
           </div>
 
-          {/* Right: Clock + Role + Provider */}
           <div className="flex items-center gap-3">
-            <div className="hidden sm:block text-right text-xs opacity-80 leading-tight">
+            <div className="hidden text-right text-xs leading-tight opacity-80 sm:block">
               <div className="font-medium">{formatTime(clock)}</div>
               <div>{formatDate(clock)}</div>
             </div>
 
-            {/* Role Switcher */}
             <div className="relative">
-              <button onClick={() => setRoleMenuOpen(!roleMenuOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-sm">
-                <span className={`w-2 h-2 rounded-full ${colors.badge}`} />
-                <span className="font-medium hidden sm:inline">{roleConfig.label}</span>
-                <svg className="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <button
+                onClick={() => setMenuOpen((open) => !open)}
+                className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-sm transition-colors hover:bg-white/20"
+              >
+                <span className={`h-2 w-2 rounded-full ${colors.badge}`} />
+                <span className="hidden font-medium sm:inline">{roleConfig.label}</span>
+                <svg className="h-3 w-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-              {roleMenuOpen && (
+
+              {menuOpen ? (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setRoleMenuOpen(false)} />
-                  <div className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50 min-w-[200px] animate-scale-in">
-                    <div className="px-4 py-2 border-b border-gray-50">
-                      <p className="text-xs text-gray-400 uppercase tracking-wider">Switch Role</p>
+                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+                  <div className="absolute right-0 top-full z-50 mt-1 min-w-[220px] rounded-xl border border-gray-100 bg-white py-2 text-slate-900 shadow-xl">
+                    <div className="border-b border-gray-100 px-4 pb-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">Session</p>
                     </div>
-                    {Object.entries(roles).map(([key, role]) => (
-                      <button key={key} onClick={() => { switchRole(key); setRoleMenuOpen(false); }}
-                        className={`w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3 transition-colors ${currentRole === key ? 'font-semibold text-gray-900 bg-gray-50/50' : 'text-gray-600'}`}>
-                        <span className={`w-2.5 h-2.5 rounded-full ${ROLE_COLORS[key].badge}`} />
-                        <span className="flex-1">{role.label}</span>
-                        {currentRole === key && <span className="text-emerald-500 text-xs">✓</span>}
+                    <div className="px-4 py-3">
+                      <p className="text-sm font-semibold text-slate-900">{providerName}</p>
+                      <p className="text-xs text-slate-500">{user?.username}</p>
+                    </div>
+                    <div className="border-t border-gray-100 px-4 pt-3">
+                      <button
+                        onClick={handleLogout}
+                        disabled={loggingOut}
+                        className="w-full rounded-lg border border-red-100 px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {loggingOut ? 'Signing out...' : 'Sign out'}
                       </button>
-                    ))}
-                    <div className="border-t border-gray-100 mt-1 px-4 py-2.5">
-                      <p className="text-xs text-gray-500 font-medium">{providerName}</p>
                     </div>
                   </div>
                 </>
-              )}
+              ) : null}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
+      {sidebarOpen ? (
         <>
-          <div className="fixed inset-0 bg-black/30 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed left-0 top-14 bottom-0 w-72 bg-white z-50 shadow-xl border-r border-gray-100 lg:hidden overflow-y-auto animate-slide-in-right">
+          <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setSidebarOpen(false)} />
+          <aside className="fixed bottom-0 left-0 top-14 z-50 w-72 overflow-y-auto border-r border-gray-100 bg-white shadow-xl lg:hidden">
             <nav className="p-3">
-              <button onClick={() => { navigate('/'); setSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  location.pathname === '/' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
-                }`}>
-                <span>🏠</span>
-                <span>Dashboard</span>
-              </button>
-              <button onClick={() => { navigate('/schedule'); setSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  location.pathname === '/schedule' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
-                }`}>
-                <span>📅</span>
-                <span>Schedule</span>
-              </button>
-              <button onClick={() => { navigate('/audit'); setSidebarOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                  location.pathname === '/audit' ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
-                }`}>
-                <span>📋</span>
-                <span>Audit Log</span>
-              </button>
+              {[
+                { path: '/', label: 'Dashboard' },
+                { path: '/schedule', label: 'Schedule' },
+                { path: '/audit', label: 'Audit Log' },
+              ].map((item) => (
+                <button
+                  key={item.path}
+                  onClick={() => {
+                    navigate(item.path);
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${
+                    location.pathname === item.path ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
             </nav>
-            {/* Queue summary */}
-            {Object.entries(queueCounts).some(([k, v]) => v > 0 && k !== 'checked-out') && (
-              <div className="p-3 border-t border-gray-100">
-                <p className="section-header">Active Queue</p>
-                <div className="space-y-1">
-                  {Object.entries(queueCounts).filter(([k, v]) => v > 0 && k !== 'checked-out').map(([state, count]) => (
-                    <div key={state} className="flex items-center justify-between text-sm text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50">
-                      <span className="capitalize">{state.replace(/-/g, ' ')}</span>
-                      <span className="bg-gray-100 rounded-full px-2 py-0.5 text-xs font-semibold">{count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </aside>
         </>
-      )}
+      ) : null}
 
-      {/* Main Content */}
       <main className="flex-1 overflow-auto">{children}</main>
     </div>
   );

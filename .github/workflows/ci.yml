@@ -6,9 +6,65 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  lint-and-test:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      full_suite: ${{ steps.filter.outputs.full_suite }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            full_suite:
+              - 'server/**'
+              - 'src/api/**'
+              - 'src/context/**'
+              - 'src/hooks/**'
+              - 'src/pages/**'
+              - 'src/components/layout/**'
+              - 'src/components/patient/**'
+              - 'src/components/workflow/**'
+              - 'test/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'Dockerfile'
+              - '.github/workflows/**'
+
+  fast-checks:
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check (all server files)
+        run: |
+          find server -name '*.js' -exec node -c {} +
+
+      - name: Build application
+        run: npm run build
+
+  full-matrix-tests:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.full_suite == 'true'
     strategy:
       matrix:
         node-version: [18, 20, 22]
@@ -28,20 +84,17 @@ jobs:
         run: |
           find server -name '*.js' -exec node -c {} +
 
-      - name: Run tests
+      - name: Run full test suite
         run: npm test
         env:
           NODE_ENV: test
           JWT_SECRET: ci-test-secret-not-for-production
           PHI_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=high
-        continue-on-error: true
-
   security-scan:
     runs-on: ubuntu-latest
-    needs: lint-and-test
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.full_suite == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -54,9 +107,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check for secrets in code
+      - name: Check for hardcoded secrets
         run: |
-          # Fail if any hardcoded secrets are found
           ! grep -rn 'password\s*=\s*["\x27][^"\x27]*["\x27]' server/ --include='*.js' \
             | grep -v 'password_hash' \
             | grep -v '\.example' \
@@ -64,12 +116,13 @@ jobs:
             | grep -v 'req\.body\.password' \
             | grep -v 'newPassword' || echo "No hardcoded secrets found"
 
-      - name: Dependency audit (strict)
+      - name: Dependency audit
         run: npm audit --audit-level=moderate
 
   docker-build:
     runs-on: ubuntu-latest
-    needs: lint-and-test
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.full_suite == 'true'
     steps:
       - uses: actions/checkout@v4
 

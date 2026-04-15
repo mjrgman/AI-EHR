@@ -12,6 +12,9 @@ const fs = require('fs');
 process.env.DATABASE_PATH = path.join(__dirname, '../data/test-mjr-ehr.db');
 process.env.AI_MODE = 'mock';
 process.env.PROVIDER_NAME = 'Dr. Test Provider';
+process.env.PORT = process.env.PORT || '3310';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-suite-secret-not-for-production';
+process.env.PHI_ENCRYPTION_KEY = process.env.PHI_ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 console.log('  MJR-EHR INTELLIGENT AGENT - TEST SUITE');
@@ -4345,6 +4348,287 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   }
 
   // ==========================================
+  // PHASE 9: AUTH + PATIENT PORTAL HTTP TESTS
+  // ==========================================
+
+  console.log('\nPHASE 9: AUTH + PATIENT PORTAL HTTP TESTS\n');
+  console.log('â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n');
+
+  const authModule = require('../server/security/auth');
+  const { startServer } = require('../server/server');
+  const httpBase = `http://127.0.0.1:${process.env.PORT}`;
+  const appServer = await startServer();
+
+  const testUser = await authModule.createUser(
+    'test.clinician',
+    'SecurePass!234',
+    'Dr. Test Clinician',
+    'physician',
+    'test.clinician@example.com',
+    null,
+    '1234567890'
+  );
+  const sarahPatient = await db.getPatientById(sarahId);
+
+  async function httpRequest(routePath, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (options.token) {
+      headers.Authorization = `Bearer ${options.token}`;
+    }
+    if (options.cookie) {
+      headers.Cookie = options.cookie;
+    }
+    if (options.body !== undefined && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    const res = await fetch(`${httpBase}${routePath}`, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body !== undefined
+        ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body))
+        : undefined,
+    });
+
+    const raw = await res.text();
+    let parsed = null;
+    try {
+      parsed = raw ? JSON.parse(raw) : null;
+    } catch {
+      parsed = raw;
+    }
+
+    return {
+      status: res.status,
+      headers: res.headers,
+      body: parsed,
+      raw,
+    };
+  }
+
+  function extractCookie(response) {
+    const setCookie = response.headers.get('set-cookie');
+    return setCookie ? setCookie.split(';')[0] : '';
+  }
+
+  await test('Auth HTTP: POST /api/auth/login returns access and refresh tokens', async () => {
+    const res = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    assertEqual(res.status, 200, `expected 200, got ${res.status}`);
+    assert(res.body.token, 'login should return an access token');
+    assert(res.body.refreshToken, 'login should return a refresh token');
+    assertEqual(res.body.user.id, testUser.id, 'login response should identify the created user');
+  });
+
+  await test('Auth HTTP: GET /api/auth/me returns current clinician identity', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    const res = await httpRequest('/api/auth/me', { token: login.body.token });
+    assertEqual(res.status, 200, `expected 200, got ${res.status}`);
+    assertEqual(res.body.username, 'test.clinician', 'me endpoint should return the clinician username');
+    assertEqual(res.body.role, 'physician', 'me endpoint should return the clinician role');
+  });
+
+  await test('Auth HTTP: POST /api/auth/logout revokes the current access token', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    const logout = await httpRequest('/api/auth/logout', {
+      method: 'POST',
+      token: login.body.token,
+    });
+    assertEqual(logout.status, 200, `expected 200 logout, got ${logout.status}`);
+
+    const meAfterLogout = await httpRequest('/api/auth/me', { token: login.body.token });
+    assertEqual(meAfterLogout.status, 401, 'revoked access token should no longer authenticate');
+  });
+
+  await test('Auth HTTP: POST /api/auth/refresh rotates refresh tokens', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+
+    const refresh = await httpRequest('/api/auth/refresh', {
+      method: 'POST',
+      body: { refreshToken: login.body.refreshToken }
+    });
+    assertEqual(refresh.status, 200, `expected 200 refresh, got ${refresh.status}`);
+    assert(refresh.body.token, 'refresh should return a new access token');
+    assert(refresh.body.refreshToken, 'refresh should return a rotated refresh token');
+
+    const replay = await httpRequest('/api/auth/refresh', {
+      method: 'POST',
+      body: { refreshToken: login.body.refreshToken }
+    });
+    assertEqual(replay.status, 401, 'old refresh token should be invalid after rotation');
+  });
+
+  await test('Auth HTTP: POST /api/auth/logout-all revokes refresh sessions for the user', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+
+    const logoutAll = await httpRequest('/api/auth/logout-all', {
+      method: 'POST',
+      token: login.body.token,
+    });
+    assertEqual(logoutAll.status, 200, `expected 200 logout-all, got ${logoutAll.status}`);
+
+    const refreshAfterRevoke = await httpRequest('/api/auth/refresh', {
+      method: 'POST',
+      body: { refreshToken: login.body.refreshToken }
+    });
+    assertEqual(refreshAfterRevoke.status, 401, 'logout-all should revoke outstanding refresh sessions');
+  });
+
+  await test('Patient Portal HTTP: GET /api/patient-portal/session requires a verified portal session', async () => {
+    const res = await httpRequest('/api/patient-portal/session');
+    assertEqual(res.status, 401, `expected 401, got ${res.status}`);
+  });
+
+  await test('Patient Portal HTTP: POST /api/patient-portal/verify establishes a cookie-backed patient session', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+      }
+    });
+    assertEqual(verify.status, 200, `expected 200 verify, got ${verify.status}`);
+    const cookie = extractCookie(verify);
+    assert(cookie.startsWith('portal_session='), 'verify should return a portal_session cookie');
+
+    const session = await httpRequest('/api/patient-portal/session', { cookie });
+    assertEqual(session.status, 200, `expected 200 session, got ${session.status}`);
+    assertEqual(session.body.patient.id, sarahId, 'session endpoint should bind to the verified patient');
+  });
+
+  await test('Patient Portal HTTP: appointments use the normalized appointment schema columns', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+      }
+    });
+    const cookie = extractCookie(verify);
+    const res = await httpRequest('/api/patient-portal/appointments', { cookie });
+    assertEqual(res.status, 200, `expected 200 appointments, got ${res.status}`);
+    assert(Array.isArray(res.body.appointments), 'appointments endpoint should return an appointments array');
+    if (res.body.appointments.length > 0) {
+      const appointment = res.body.appointments[0];
+      assert(appointment.appointment_date, 'appointment_date should be present');
+      assert(appointment.appointment_time, 'appointment_time should be present');
+      assert(appointment.provider_name, 'provider_name should be present');
+    }
+  });
+
+  await test('Patient Portal HTTP: secure messages persist to patient_messages', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+      }
+    });
+    const cookie = extractCookie(verify);
+    const before = await db.dbGet('SELECT COUNT(*) AS count FROM patient_messages WHERE patient_id = ?', [sarahId]);
+
+    const res = await httpRequest('/api/patient-portal/message', {
+      method: 'POST',
+      cookie,
+      body: {
+        subject: 'Portal test message',
+        message: 'Checking secure message persistence from the regression suite.',
+      }
+    });
+    assertEqual(res.status, 201, `expected 201 message create, got ${res.status}`);
+
+    const after = await db.dbGet('SELECT COUNT(*) AS count FROM patient_messages WHERE patient_id = ?', [sarahId]);
+    assert(after.count > before.count, 'message submission should create a patient_messages row');
+  });
+
+  await test('Patient Portal HTTP: symptom triage persists and returns routed urgency', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+      }
+    });
+    const cookie = extractCookie(verify);
+
+    const res = await httpRequest('/api/patient-portal/symptom-triage', {
+      method: 'POST',
+      cookie,
+      body: {
+        symptoms: 'Chest tightness with dizziness',
+        severity: 8,
+        onset: 'Started 20 minutes ago',
+        notes: 'Regression test submission',
+      }
+    });
+    assertEqual(res.status, 201, `expected 201 triage create, got ${res.status}`);
+    assertEqual(res.body.routed_to, 'phone_triage', 'high-severity symptoms should route to phone triage');
+    assertEqual(res.body.urgency, 'stat', 'severity 8 should be marked stat');
+  });
+
+  await test('Patient Portal HTTP: voice intent can answer appointment requests with an active portal session', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+      }
+    });
+    const cookie = extractCookie(verify);
+
+    const res = await httpRequest('/api/patient-portal/voice-intent', {
+      method: 'POST',
+      cookie,
+      body: { transcript: 'What are my upcoming appointments?' }
+    });
+    assertEqual(res.status, 200, `expected 200 voice intent, got ${res.status}`);
+    assert(res.body.response || res.body.text, 'voice intent should return a spoken response');
+  });
+
+  await test('Access boundary: portal session cannot access clinician APIs', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+      }
+    });
+    const cookie = extractCookie(verify);
+
+    const res = await httpRequest('/api/patients', { cookie });
+    assertEqual(res.status, 401, 'portal cookie must not authenticate clinician APIs');
+  });
+
+  await test('Access boundary: clinician bearer token cannot impersonate a portal session', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    const res = await httpRequest('/api/patient-portal/session', { token: login.body.token });
+    assertEqual(res.status, 401, 'clinician bearer token must not grant portal session access');
+  });
+
+  // ==========================================
   // RESULTS
   // ==========================================
 
@@ -4366,6 +4650,9 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   // Clean up
+  if (appServer) {
+    await new Promise((resolve) => appServer.close(resolve));
+  }
   await db.close();
 
   if (fs.existsSync(testDbPath)) {

@@ -36,6 +36,8 @@ async function runMigrations(db) {
     await createSafetyEventsTable(db);
     await createPhysicianOverridesTable(db);
     await createLoginAttemptsTable(db);
+    await createPatientMessagesTable(db);
+    await createPatientPortalSessionsTable(db);
     await createIndexes(db);
     await migrateCdsRules(db);
     await migrateSuggestionTypes(db);
@@ -305,6 +307,46 @@ async function createLoginAttemptsTable(db) {
   `);
 }
 
+async function createPatientMessagesTable(db) {
+  return dbRun(db, `
+    CREATE TABLE IF NOT EXISTS patient_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL,
+      message_type TEXT NOT NULL CHECK(message_type IN (
+        'general','refill_notification','lab_result','triage'
+      )) DEFAULT 'general',
+      subject TEXT,
+      content TEXT NOT NULL,
+      plain_language_content TEXT,
+      status TEXT NOT NULL CHECK(status IN (
+        'draft','submitted','physician_review','approved','sent','read','closed'
+      )) DEFAULT 'draft',
+      tier INTEGER NOT NULL DEFAULT 2,
+      sent_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+}
+
+async function createPatientPortalSessionsTable(db) {
+  return dbRun(db, `
+    CREATE TABLE IF NOT EXISTS patient_portal_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_hash TEXT NOT NULL UNIQUE,
+      patient_id INTEGER NOT NULL,
+      expires_at DATETIME NOT NULL,
+      last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+      revoked BOOLEAN DEFAULT 0,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+}
+
 // ==========================================
 // INDEXES
 // ==========================================
@@ -358,7 +400,16 @@ async function createIndexes(db) {
     'CREATE INDEX IF NOT EXISTS idx_login_username ON login_attempts(username)',
     'CREATE INDEX IF NOT EXISTS idx_login_ip ON login_attempts(ip_address)',
     'CREATE INDEX IF NOT EXISTS idx_login_timestamp ON login_attempts(timestamp)',
-    'CREATE INDEX IF NOT EXISTS idx_login_success ON login_attempts(success)'
+    'CREATE INDEX IF NOT EXISTS idx_login_success ON login_attempts(success)',
+
+    // patient_messages table
+    'CREATE INDEX IF NOT EXISTS idx_patient_messages_patient ON patient_messages(patient_id, created_at DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_patient_messages_status ON patient_messages(status)',
+
+    // patient_portal_sessions table
+    'CREATE INDEX IF NOT EXISTS idx_portal_sessions_hash ON patient_portal_sessions(session_hash)',
+    'CREATE INDEX IF NOT EXISTS idx_portal_sessions_patient ON patient_portal_sessions(patient_id, revoked)',
+    'CREATE INDEX IF NOT EXISTS idx_portal_sessions_expiry ON patient_portal_sessions(expires_at)'
   ];
 
   // All indexes are independent — create in parallel to minimize startup latency.
@@ -911,6 +962,8 @@ module.exports = {
   createSafetyEventsTable,
   createPhysicianOverridesTable,
   createLoginAttemptsTable,
+  createPatientMessagesTable,
+  createPatientPortalSessionsTable,
   createIndexes,
   migrateCdsRules,
   migrateSuggestionTypes,

@@ -392,6 +392,48 @@ function initializeDatabase() {
       db.run(`CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action)`);
 
       // ==========================================
+      // PATIENT PORTAL TABLES
+      // ==========================================
+
+      db.run(`CREATE TABLE IF NOT EXISTS patient_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        patient_id INTEGER NOT NULL,
+        message_type TEXT NOT NULL CHECK(message_type IN (
+          'general','refill_notification','lab_result','triage'
+        )) DEFAULT 'general',
+        subject TEXT,
+        content TEXT NOT NULL,
+        plain_language_content TEXT,
+        status TEXT NOT NULL CHECK(status IN (
+          'draft','submitted','physician_review','approved','sent','read','closed'
+        )) DEFAULT 'draft',
+        tier INTEGER NOT NULL DEFAULT 2,
+        sent_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+      )`);
+
+      db.run(`CREATE TABLE IF NOT EXISTS patient_portal_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_hash TEXT NOT NULL UNIQUE,
+        patient_id INTEGER NOT NULL,
+        expires_at DATETIME NOT NULL,
+        last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+        revoked BOOLEAN DEFAULT 0,
+        ip_address TEXT,
+        user_agent TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+      )`);
+
+      db.run(`CREATE INDEX IF NOT EXISTS idx_patient_messages_patient ON patient_messages(patient_id, created_at DESC)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_patient_messages_status ON patient_messages(status)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_portal_sessions_hash ON patient_portal_sessions(session_hash)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_portal_sessions_patient ON patient_portal_sessions(patient_id, revoked)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_portal_sessions_expiry ON patient_portal_sessions(expires_at)`);
+
+      // ==========================================
       // SCHEDULING TABLE
       // ==========================================
 
@@ -518,7 +560,7 @@ function initializeDatabase() {
       db.run(`CREATE INDEX IF NOT EXISTS idx_rxnorm_cache_key ON rxnorm_cache(query_key)`, (err) => {
         if (err) reject(err);
         else {
-          console.log('Database schema initialized (23 tables + indexes)');
+          console.log('Database schema initialized (patient, clinical, portal, audit, and integration tables + indexes)');
           resolve();
         }
       });

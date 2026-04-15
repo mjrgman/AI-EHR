@@ -65,6 +65,16 @@ The test harness runs in mock mode (`AI_MODE=mock`, `LABCORP_MODE=mock`) and
 creates an isolated `data/test-mjr-ehr.db` SQLite file. No real network or
 API keys required.
 
+If you want to test clinician login locally, create a user first:
+
+```bash
+npm run create-user -- --help
+```
+
+Public repo governance documents live in [`SECURITY.md`](./SECURITY.md),
+[`SUPPORT.md`](./SUPPORT.md), and [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
+Protected areas are owned through [`.github/CODEOWNERS`](./.github/CODEOWNERS).
+
 ---
 
 ## Code style

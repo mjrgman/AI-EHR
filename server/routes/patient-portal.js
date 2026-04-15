@@ -1,311 +1,224 @@
 'use strict';
 
-/**
- * Patient Portal API Routes
- *
- * Patient-facing endpoints for self-service: registration, appointments,
- * medications, lab results, messaging, symptom triage, and refill requests.
- *
- * CATC Three-Tier Autonomy:
- *   Tier 1 (Full Autonomy)  — read-only lookups, check-in, registration
- *   Tier 2 (Supervised)     — refill requests, lab explanations, symptom triage, messaging
- */
-
 const express = require('express');
-const router = express.Router();
-const { dbRun, dbGet, dbAll, generateMRN } = require('../database');
+const repository = require('../repositories/patient-portal-repository');
+const { processVoiceIntent, verifyPatient } = require('../integrations/patient-voice');
+const {
+  attachSessionCookie,
+  clearSessionCookie,
+  createSession,
+  requirePortalSession,
+  revokeSession,
+} = require('../services/portal-session-service');
 
-// Try to load toPlainLanguage from PatientLink agent for lab explanations
 let toPlainLanguage;
 try {
   const patientLink = require('../agents/patientlink-agent');
   toPlainLanguage = patientLink.toPlainLanguage;
-} catch (err) {
-  // Fallback: return text as-is if PatientLink agent is unavailable
+} catch {
   toPlainLanguage = (text) => text || '';
 }
 
-// ==========================================
-// POST /register — Patient self-registration
-// Tier 1 (Full Autonomy)
-// ==========================================
+const router = express.Router();
+const REQUIRE_MRN_IN_PRODUCTION =
+  process.env.PATIENT_PORTAL_REQUIRE_MRN === 'true'
+  || (process.env.NODE_ENV === 'production' && process.env.PATIENT_PORTAL_REQUIRE_MRN !== 'false');
 
-router.post('/register', async (req, res) => {
+function buildLabExplanation(lab) {
+  const plainName = toPlainLanguage(lab.test_name);
+  let explanation = '';
+  let flagLevel = 'normal';
+
+  if (lab.abnormal_flag) {
+    const flag = String(lab.abnormal_flag).toUpperCase();
+    if (flag === 'H' || flag === 'HIGH') {
+      flagLevel = 'abnormal';
+      explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is higher than the normal range (${lab.reference_range || 'N/A'}). Your doctor will review this with you.`;
+    } else if (flag === 'L' || flag === 'LOW') {
+      flagLevel = 'abnormal';
+      explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is lower than the normal range (${lab.reference_range || 'N/A'}). Your doctor will review this with you.`;
+    } else {
+      flagLevel = 'borderline';
+      explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is outside the expected range (${lab.reference_range || 'N/A'}).`;
+    }
+  } else {
+    explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is within the normal range${lab.reference_range ? ` (${lab.reference_range})` : ''}.`;
+  }
+
+  return {
+    ...lab,
+    plain_name: plainName,
+    explanation,
+    flag_level: flagLevel,
+  };
+}
+
+router.post('/verify', async (req, res) => {
   try {
-    const { first_name, last_name, dob, email, phone, insurance_provider, insurance_id } = req.body;
+    const { first_name, last_name, dob, mrn } = req.body || {};
 
     if (!first_name || !last_name || !dob) {
       return res.status(400).json({ error: 'first_name, last_name, and dob are required' });
     }
-
-    // Check for existing patient by name + DOB match (prevents duplicates)
-    const existing = await dbGet(
-      `SELECT id, mrn FROM patients
-       WHERE first_name = ? AND last_name = ? AND dob = ?`,
-      [first_name, last_name, dob]
-    );
-
-    if (existing) {
-      return res.json({
-        patient_id: existing.id,
-        mrn: existing.mrn,
-        status: 'already_registered'
-      });
+    if (REQUIRE_MRN_IN_PRODUCTION && !mrn) {
+      return res.status(400).json({ error: 'mrn is required for patient portal verification in production' });
     }
 
-    // Generate MRN and create patient record
-    const mrn = generateMRN();
-    const result = await dbRun(
-      `INSERT INTO patients (mrn, first_name, last_name, dob, email, phone, insurance_carrier, insurance_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [mrn, first_name, last_name, dob, email || null, phone || null,
-       insurance_provider || null, insurance_id || null]
-    );
+    const patient = await verifyPatient(first_name, last_name, dob, mrn);
+    if (!patient) {
+      return res.status(401).json({ error: 'Could not verify your identity. Please check your information and try again.' });
+    }
 
-    res.status(201).json({
-      patient_id: result.lastID,
-      mrn,
-      status: 'registered'
+    const session = await createSession(patient.id, req);
+    attachSessionCookie(res, session.cookie);
+
+    return res.json({
+      verified: true,
+      patient: {
+        id: patient.id,
+        mrn: patient.mrn,
+        name: patient.name,
+      },
+      expiresAt: session.expiresAt,
     });
-  } catch (err) {
-    console.error('[PatientPortal] Registration error:', err.message);
-    res.status(500).json({ error: 'Registration failed' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
-// ==========================================
-// GET /appointments/:patientId — Upcoming appointments
-// Tier 1 (Full Autonomy)
-// ==========================================
-
-router.get('/appointments/:patientId', async (req, res) => {
+router.post('/logout', async (req, res) => {
   try {
-    const { patientId } = req.params;
-
-    const appointments = await dbAll(
-      `SELECT a.id, a.provider_name, a.appointment_date, a.appointment_time,
-              a.duration_minutes, a.appointment_type, a.status, a.chief_complaint, a.notes
-       FROM appointments a
-       WHERE a.patient_id = ?
-         AND a.appointment_date >= date('now')
-         AND a.status NOT IN ('cancelled', 'no-show')
-       ORDER BY a.appointment_date ASC, a.appointment_time ASC`,
-      [patientId]
-    );
-
-    res.json({ appointments });
-  } catch (err) {
-    console.error('[PatientPortal] Appointments fetch error:', err.message);
-    res.status(500).json({ error: 'Failed to load appointments' });
+    await revokeSession(req);
+    res.setHeader('Set-Cookie', clearSessionCookie());
+    return res.json({ message: 'Patient portal session ended' });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
-// ==========================================
-// POST /appointments/:patientId/checkin — Self check-in
-// Tier 1 (Full Autonomy)
-// ==========================================
+router.use(requirePortalSession);
 
-router.post('/appointments/:patientId/checkin', async (req, res) => {
+router.get('/session', async (req, res) => {
+  const patient = await repository.getPatientSessionProfile(req.portalPatient.id);
+  return res.json({
+    authenticated: true,
+    patient,
+    expiresAt: req.portalSession.expires_at,
+  });
+});
+
+router.get('/appointments', async (req, res) => {
   try {
-    const { patientId } = req.params;
-    const { appointment_id } = req.body;
+    const appointments = await repository.getUpcomingAppointments(req.portalPatient.id);
+    return res.json({ appointments });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to load appointments' });
+  }
+});
 
+router.post('/appointments/checkin', async (req, res) => {
+  try {
+    const { appointment_id } = req.body || {};
     if (!appointment_id) {
       return res.status(400).json({ error: 'appointment_id is required' });
     }
 
-    // Verify appointment belongs to this patient and is today
-    const appt = await dbGet(
-      `SELECT id, status, appointment_date FROM appointments
-       WHERE id = ? AND patient_id = ?`,
-      [appointment_id, patientId]
-    );
-
-    if (!appt) {
+    const result = await repository.checkInAppointment(req.portalPatient.id, appointment_id);
+    if (!result) {
       return res.status(404).json({ error: 'Appointment not found' });
     }
-
-    if (appt.status === 'checked-in') {
-      return res.json({ status: 'already_checked_in', appointment_id });
+    if (result.invalidStatus) {
+      return res.status(400).json({ error: `Cannot check in - appointment status is '${result.appointment.status}'` });
     }
 
-    if (appt.status !== 'scheduled' && appt.status !== 'confirmed') {
-      return res.status(400).json({
-        error: `Cannot check in — appointment status is '${appt.status}'`
-      });
-    }
-
-    await dbRun(
-      `UPDATE appointments SET status = 'checked-in', updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [appointment_id]
-    );
-
-    // Also update workflow_state if an encounter exists
-    await dbRun(
-      `UPDATE workflow_state SET current_state = 'checked-in', check_in_time = CURRENT_TIMESTAMP
-       WHERE encounter_id = (SELECT encounter_id FROM appointments WHERE id = ?)`,
-      [appointment_id]
-    ).catch(() => {}); // Silently skip if no workflow_state row
-
-    res.json({ status: 'checked_in', appointment_id });
-  } catch (err) {
-    console.error('[PatientPortal] Check-in error:', err.message);
-    res.status(500).json({ error: 'Check-in failed' });
+    return res.json({ status: 'checked_in', appointment_id });
+  } catch (error) {
+    return res.status(500).json({ error: 'Check-in failed' });
   }
 });
 
-// ==========================================
-// POST /refill-request — Request medication refill
-// Tier 2 (Supervised — physician review required)
-// ==========================================
+router.get('/medications', async (req, res) => {
+  try {
+    const medications = await repository.getActiveMedications(req.portalPatient.id);
+    return res.json({ medications });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to load medications' });
+  }
+});
+
+router.get('/labs', async (req, res) => {
+  try {
+    const labs = await repository.getLabResults(req.portalPatient.id);
+    return res.json({ labs: labs.map(buildLabExplanation) });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to load lab results' });
+  }
+});
+
+router.get('/messages', async (req, res) => {
+  try {
+    const messages = await repository.getMessages(req.portalPatient.id);
+    return res.json({ messages });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to load messages' });
+  }
+});
+
+router.post('/message', async (req, res) => {
+  try {
+    const { subject, message } = req.body || {};
+    if (!message) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    const created = await repository.createMessage(req.portalPatient.id, {
+      message_type: 'general',
+      subject: subject || 'Message from Patient Portal',
+      content: message,
+      status: 'submitted',
+      tier: 2,
+      sent_at: new Date().toISOString(),
+    });
+
+    return res.status(201).json({
+      message_id: created.id,
+      status: 'sent'
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Message send failed' });
+  }
+});
 
 router.post('/refill-request', async (req, res) => {
   try {
-    const { patient_id, medication_id, medication_name, notes } = req.body;
-
-    if (!patient_id || !medication_name) {
-      return res.status(400).json({ error: 'patient_id and medication_name are required' });
+    const { medication_id, medication_name, notes } = req.body || {};
+    if (!medication_name) {
+      return res.status(400).json({ error: 'medication_name is required' });
     }
 
-    // Verify patient exists
-    const patient = await dbGet('SELECT id, first_name, last_name FROM patients WHERE id = ?', [patient_id]);
-    if (!patient) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
+    const created = await repository.createMessage(req.portalPatient.id, {
+      message_type: 'refill_notification',
+      subject: `Refill Request: ${medication_name}`,
+      content: `Patient ${req.portalPatient.first_name} ${req.portalPatient.last_name} is requesting a refill for ${medication_name}.${medication_id ? ` (Medication ID: ${medication_id})` : ''}${notes ? `\n\nPatient notes: ${notes}` : ''}`,
+      plain_language_content: `Your refill request for ${medication_name} has been sent to your care team for review.`,
+      status: 'physician_review',
+      tier: 2,
+    });
 
-    const subject = `Refill Request: ${medication_name}`;
-    const content = `Patient ${patient.first_name} ${patient.last_name} is requesting a refill for ${medication_name}.${
-      medication_id ? ` (Medication ID: ${medication_id})` : ''
-    }${notes ? `\n\nPatient notes: ${notes}` : ''}`;
-
-    const result = await dbRun(
-      `INSERT INTO patient_messages (patient_id, message_type, subject, content, status, tier)
-       VALUES (?, 'refill_notification', ?, ?, 'physician_review', 2)`,
-      [patient_id, subject, content]
-    );
-
-    res.status(201).json({
-      request_id: result.lastID,
+    return res.status(201).json({
+      request_id: created.id,
       status: 'submitted'
     });
-  } catch (err) {
-    console.error('[PatientPortal] Refill request error:', err.message);
-    res.status(500).json({ error: 'Refill request failed' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Refill request failed' });
   }
 });
-
-// ==========================================
-// GET /labs/:patientId — Lab results with plain-language explanations
-// Tier 2 (Supervised)
-// ==========================================
-
-router.get('/labs/:patientId', async (req, res) => {
-  try {
-    const { patientId } = req.params;
-
-    const labs = await dbAll(
-      `SELECT id, test_name, result_value, reference_range, units, result_date,
-              status, abnormal_flag, notes
-       FROM labs
-       WHERE patient_id = ?
-       ORDER BY result_date DESC`,
-      [patientId]
-    );
-
-    // Enhance each result with plain-language explanation and abnormal flag
-    const enriched = labs.map(lab => {
-      const plainName = toPlainLanguage(lab.test_name);
-      let explanation = '';
-      let flagLevel = 'normal'; // normal | borderline | abnormal
-
-      if (lab.abnormal_flag) {
-        const flag = lab.abnormal_flag.toUpperCase();
-        if (flag === 'H' || flag === 'HIGH') {
-          flagLevel = 'abnormal';
-          explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is higher than the normal range (${lab.reference_range || 'N/A'}). Your doctor will review this with you.`;
-        } else if (flag === 'L' || flag === 'LOW') {
-          flagLevel = 'abnormal';
-          explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is lower than the normal range (${lab.reference_range || 'N/A'}). Your doctor will review this with you.`;
-        } else if (flag === 'A' || flag === 'ABNORMAL') {
-          flagLevel = 'abnormal';
-          explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is outside the normal range (${lab.reference_range || 'N/A'}). Your doctor will review this with you.`;
-        } else {
-          flagLevel = 'borderline';
-          explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is slightly outside the expected range (${lab.reference_range || 'N/A'}).`;
-        }
-      } else {
-        explanation = `Your ${plainName} result (${lab.result_value} ${lab.units || ''}) is within the normal range${lab.reference_range ? ` (${lab.reference_range})` : ''}.`;
-      }
-
-      return {
-        ...lab,
-        plain_name: plainName,
-        explanation,
-        flag_level: flagLevel
-      };
-    });
-
-    res.json({ labs: enriched });
-  } catch (err) {
-    console.error('[PatientPortal] Labs fetch error:', err.message);
-    res.status(500).json({ error: 'Failed to load lab results' });
-  }
-});
-
-// ==========================================
-// GET /medications/:patientId — Active medications
-// Tier 1 (Full Autonomy)
-// ==========================================
-
-router.get('/medications/:patientId', async (req, res) => {
-  try {
-    const { patientId } = req.params;
-
-    const medications = await dbAll(
-      `SELECT m.id, m.medication_name, m.generic_name, m.dose, m.route, m.frequency,
-              m.start_date, m.end_date, m.status, m.prescriber
-       FROM medications m
-       WHERE m.patient_id = ? AND m.status = 'active'
-       ORDER BY m.medication_name ASC`,
-      [patientId]
-    );
-
-    // Check for recent refill requests per medication
-    const enriched = await Promise.all(medications.map(async (med) => {
-      const lastRefill = await dbGet(
-        `SELECT created_at, status FROM patient_messages
-         WHERE patient_id = ? AND message_type = 'refill_notification'
-           AND content LIKE ?
-         ORDER BY created_at DESC LIMIT 1`,
-        [patientId, `%${med.medication_name}%`]
-      );
-
-      return {
-        ...med,
-        last_refill_request: lastRefill ? lastRefill.created_at : null,
-        refill_status: lastRefill ? lastRefill.status : null
-      };
-    }));
-
-    res.json({ medications: enriched });
-  } catch (err) {
-    console.error('[PatientPortal] Medications fetch error:', err.message);
-    res.status(500).json({ error: 'Failed to load medications' });
-  }
-});
-
-// ==========================================
-// POST /symptom-triage — Submit symptoms for triage
-// Tier 2 (Supervised — routes to appropriate module)
-// ==========================================
 
 router.post('/symptom-triage', async (req, res) => {
   try {
-    const { patient_id, symptoms, severity, onset, notes } = req.body;
-
-    if (!patient_id || !symptoms) {
-      return res.status(400).json({ error: 'patient_id and symptoms are required' });
+    const { symptoms, severity, onset, notes } = req.body || {};
+    if (!symptoms) {
+      return res.status(400).json({ error: 'symptoms are required' });
     }
 
     const severityNum = parseInt(severity, 10) || 5;
@@ -313,113 +226,65 @@ router.post('/symptom-triage', async (req, res) => {
       return res.status(400).json({ error: 'severity must be between 1 and 10' });
     }
 
-    // Verify patient exists
-    const patient = await dbGet('SELECT id, first_name, last_name FROM patients WHERE id = ?', [patient_id]);
-    if (!patient) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-
-    // Determine routing based on severity
-    // 1-3: low — MA can handle (vitals recheck, patient education)
-    // 4-6: moderate — phone triage by nurse/MA
-    // 7-10: high — urgent phone triage, may need same-day visit
-    let routeTo, urgency;
-    if (severityNum <= 3) {
-      routeTo = 'ma';
-      urgency = 'routine';
-    } else if (severityNum <= 6) {
-      routeTo = 'phone_triage';
-      urgency = 'urgent';
-    } else {
+    let routeTo = 'ma';
+    let urgency = 'routine';
+    if (severityNum >= 7) {
       routeTo = 'phone_triage';
       urgency = 'stat';
+    } else if (severityNum >= 4) {
+      routeTo = 'phone_triage';
+      urgency = 'urgent';
     }
 
-    const subject = `Symptom Report (Severity ${severityNum}/10) — ${patient.first_name} ${patient.last_name}`;
-    const content = [
-      `Symptoms: ${symptoms}`,
-      `Severity: ${severityNum}/10`,
-      onset ? `Onset: ${onset}` : null,
-      notes ? `Patient notes: ${notes}` : null,
-      `\nRouted to: ${routeTo} (${urgency})`
-    ].filter(Boolean).join('\n');
+    const created = await repository.createMessage(req.portalPatient.id, {
+      message_type: 'triage',
+      subject: `Symptom Report (Severity ${severityNum}/10)`,
+      content: [
+        `Symptoms: ${symptoms}`,
+        `Severity: ${severityNum}/10`,
+        onset ? `Onset: ${onset}` : null,
+        notes ? `Patient notes: ${notes}` : null,
+        `Routed to: ${routeTo} (${urgency})`
+      ].filter(Boolean).join('\n'),
+      plain_language_content: 'Your symptoms have been sent to the care team for review.',
+      status: 'physician_review',
+      tier: 2,
+    });
 
-    const result = await dbRun(
-      `INSERT INTO patient_messages (patient_id, message_type, subject, content, status, tier)
-       VALUES (?, 'general', ?, ?, 'physician_review', 2)`,
-      [patient_id, subject, content]
-    );
-
-    res.status(201).json({
-      triage_id: result.lastID,
+    return res.status(201).json({
+      triage_id: created.id,
       severity: severityNum,
       routed_to: routeTo,
       urgency,
       status: 'submitted'
     });
-  } catch (err) {
-    console.error('[PatientPortal] Symptom triage error:', err.message);
-    res.status(500).json({ error: 'Symptom submission failed' });
+  } catch (error) {
+    return res.status(500).json({ error: 'Symptom submission failed' });
   }
 });
 
-// ==========================================
-// POST /message — Send secure message to care team
-// Tier 2 (Supervised)
-// ==========================================
-
-router.post('/message', async (req, res) => {
-  try {
-    const { patient_id, subject, message } = req.body;
-
-    if (!patient_id || !message) {
-      return res.status(400).json({ error: 'patient_id and message are required' });
-    }
-
-    // Verify patient exists
-    const patient = await dbGet('SELECT id FROM patients WHERE id = ?', [patient_id]);
-    if (!patient) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-
-    const result = await dbRun(
-      `INSERT INTO patient_messages (patient_id, message_type, subject, content, status, tier)
-       VALUES (?, 'general', ?, ?, 'draft', 2)`,
-      [patient_id, subject || 'Message from Patient Portal', message]
-    );
-
-    res.status(201).json({
-      message_id: result.lastID,
-      status: 'sent'
-    });
-  } catch (err) {
-    console.error('[PatientPortal] Message send error:', err.message);
-    res.status(500).json({ error: 'Message send failed' });
-  }
+router.get('/visit-prep', async (req, res) => {
+  return res.json({
+    checklist: [
+      'Bring your insurance card and a photo ID.',
+      'Bring a list of medications, vitamins, and supplements.',
+      'Write down your questions or symptoms ahead of time.',
+      'Bring any outside records or test results you want reviewed.',
+    ]
+  });
 });
 
-// ==========================================
-// GET /messages/:patientId — Get patient messages (for portal display)
-// Tier 1
-// ==========================================
-
-router.get('/messages/:patientId', async (req, res) => {
+router.post('/voice-intent', async (req, res) => {
   try {
-    const { patientId } = req.params;
+    const { transcript } = req.body || {};
+    if (!transcript) {
+      return res.status(400).json({ error: 'transcript is required' });
+    }
 
-    const messages = await dbAll(
-      `SELECT id, message_type, subject, content, plain_language_content,
-              status, tier, created_at, sent_at
-       FROM patient_messages
-       WHERE patient_id = ?
-       ORDER BY created_at DESC`,
-      [patientId]
-    );
-
-    res.json({ messages });
-  } catch (err) {
-    console.error('[PatientPortal] Messages fetch error:', err.message);
-    res.status(500).json({ error: 'Failed to load messages' });
+    const result = await processVoiceIntent(req.portalPatient.id, transcript);
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 

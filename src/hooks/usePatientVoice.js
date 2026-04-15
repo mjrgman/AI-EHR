@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { portalApi } from '../api/client';
 
 const SILENCE_TIMEOUT_MS = 2000;
-const API_BASE = '/api/patient-portal';
 
 export default function usePatientVoice() {
   const [isListening, setIsListening] = useState(false);
@@ -14,15 +14,32 @@ export default function usePatientVoice() {
 
   const recognitionRef = useRef(null);
   const silenceTimerRef = useRef(null);
-  const patientIdRef = useRef(null);
   const shouldListenRef = useRef(false);
 
-  // Feature detection and SpeechRecognition setup
+  const bootstrapPortalSession = useCallback(async () => {
+    try {
+      const session = await portalApi.getSession();
+      const name = session?.patient?.name || [session?.patient?.first_name, session?.patient?.last_name].filter(Boolean).join(' ');
+      if (name) {
+        setPatientName(name);
+      }
+      setIsAuthenticated(Boolean(session?.authenticated));
+      return true;
+    } catch {
+      setIsAuthenticated(false);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    bootstrapPortalSession();
+  }, [bootstrapPortalSession]);
+
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       setError('Speech recognition not supported in this browser');
-      return;
+      return undefined;
     }
 
     const recognition = new SR();
@@ -34,7 +51,7 @@ export default function usePatientVoice() {
       let finalText = '';
       let hasNewFinal = false;
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         if (result.isFinal) {
           finalText += result[0].transcript;
@@ -43,9 +60,8 @@ export default function usePatientVoice() {
       }
 
       if (hasNewFinal) {
-        setTranscript(prev => {
-          const updated = prev + (prev ? ' ' : '') + finalText.trim();
-          // Reset silence timer on each final result — process after 2s pause
+        setTranscript((previous) => {
+          const updated = `${previous}${previous ? ' ' : ''}${finalText.trim()}`.trim();
           clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = setTimeout(() => {
             processTranscript(updated);
@@ -56,20 +72,19 @@ export default function usePatientVoice() {
     };
 
     recognition.onerror = (event) => {
-      const msg = event.error || 'unknown';
-      if (msg === 'no-speech' || msg === 'aborted') return;
-      setError(`Speech recognition error: ${msg}`);
+      const message = event.error || 'unknown';
+      if (message === 'no-speech' || message === 'aborted') return;
+      setError(`Speech recognition error: ${message}`);
       setIsListening(false);
       shouldListenRef.current = false;
     };
 
     recognition.onend = () => {
-      // Browser auto-stops recognition; restart if we should still be listening
       if (shouldListenRef.current) {
         try {
           recognition.start();
-        } catch (_) {
-          // already started or no permission
+        } catch {
+          // Browser already restarted the recognition stream.
         }
       } else {
         setIsListening(false);
@@ -83,67 +98,58 @@ export default function usePatientVoice() {
       clearTimeout(silenceTimerRef.current);
       try {
         recognition.stop();
-      } catch (_) {
-        // ok
+      } catch {
+        // Ignore shutdown failures from browsers that already stopped.
       }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- SpeechSynthesis ---
   const speak = useCallback((text) => {
     if (!text || !window.speechSynthesis) return;
+
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.95;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
+    utterance.pitch = 1;
+    utterance.volume = 1;
     utterance.lang = 'en-US';
 
-    // Prefer a clear English voice when available
     const voices = window.speechSynthesis.getVoices();
-    const preferred = voices.find(
-      v => v.lang.startsWith('en') && v.name.includes('Google')
-    ) || voices.find(v => v.lang.startsWith('en'));
-    if (preferred) utterance.voice = preferred;
+    const preferred = voices.find((voice) => voice.lang.startsWith('en') && voice.name.includes('Google'))
+      || voices.find((voice) => voice.lang.startsWith('en'));
+    if (preferred) {
+      utterance.voice = preferred;
+    }
 
     window.speechSynthesis.speak(utterance);
   }, []);
 
-  // --- API: process transcript ---
   const processTranscript = useCallback(async (text) => {
-    if (!text || !text.trim() || !patientIdRef.current) return;
+    if (!text || !text.trim()) return;
+
     setIsProcessing(true);
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/voice-intent`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          patient_id: patientIdRef.current,
-          transcript: text.trim()
-        })
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || `Request failed (${res.status})`);
+      if (!isAuthenticated) {
+        const hasSession = await bootstrapPortalSession();
+        if (!hasSession) {
+          throw new Error('Please verify your identity before sending a voice request.');
+        }
       }
 
-      const data = await res.json();
+      const data = await portalApi.processVoiceIntent(text.trim());
       const responseText = data.response || data.text || 'I received your request.';
       setResponse(responseText);
       speak(responseText);
     } catch (err) {
-      const msg = err.message || 'Failed to process your request';
-      setError(msg);
       setResponse('');
+      setError(err.message || 'Failed to process your request');
     } finally {
       setIsProcessing(false);
     }
-  }, [speak]);
+  }, [bootstrapPortalSession, isAuthenticated, speak]);
 
-  // --- Controls ---
   const startListening = useCallback(() => {
     if (!recognitionRef.current) return;
     setError(null);
@@ -153,8 +159,8 @@ export default function usePatientVoice() {
     try {
       recognitionRef.current.start();
       setIsListening(true);
-    } catch (_) {
-      // already started
+    } catch {
+      // SpeechRecognition throws if already started; ignore.
     }
   }, []);
 
@@ -163,55 +169,49 @@ export default function usePatientVoice() {
     clearTimeout(silenceTimerRef.current);
     try {
       recognitionRef.current?.stop();
-    } catch (_) {
-      // ok
+    } catch {
+      // Ignore browser stop errors.
     }
     setIsListening(false);
   }, []);
 
-  // --- Patient verification ---
   const verifyPatient = useCallback(async (firstName, lastName, dob, mrn) => {
     setIsProcessing(true);
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: firstName,
-          last_name: lastName,
-          date_of_birth: dob,
-          mrn: mrn || undefined
-        })
+      const data = await portalApi.verify({
+        first_name: firstName,
+        last_name: lastName,
+        dob,
+        ...(mrn ? { mrn } : {}),
       });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.message || 'Verification failed');
-      }
-
-      const data = await res.json();
-      patientIdRef.current = data.patient_id || data.id;
-      setPatientName(`${firstName} ${lastName}`);
+      const name = data?.patient?.name || `${firstName} ${lastName}`.trim();
+      setPatientName(name);
       setIsAuthenticated(true);
       setResponse('');
       setTranscript('');
       return true;
     } catch (err) {
-      setError(err.message || 'Could not verify identity');
       setIsAuthenticated(false);
+      setError(err.message || 'Could not verify identity');
       return false;
     } finally {
       setIsProcessing(false);
     }
   }, []);
 
-  // Reset session (for "End Session")
-  const resetSession = useCallback(() => {
+  const resetSession = useCallback(async () => {
     stopListening();
     window.speechSynthesis?.cancel();
-    patientIdRef.current = null;
+
+    try {
+      await portalApi.logout();
+    } catch {
+      // Ignore logout failures; local state should still clear.
+    }
+
     setIsAuthenticated(false);
     setPatientName('');
     setTranscript('');
@@ -221,7 +221,6 @@ export default function usePatientVoice() {
   }, [stopListening]);
 
   return {
-    // State
     isListening,
     transcript,
     response,
@@ -229,12 +228,12 @@ export default function usePatientVoice() {
     error,
     isAuthenticated,
     patientName,
-    // Actions
     startListening,
     stopListening,
     speak,
     processTranscript,
     verifyPatient,
-    resetSession
+    resetSession,
+    bootstrapPortalSession,
   };
 }

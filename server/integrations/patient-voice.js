@@ -1,19 +1,15 @@
 'use strict';
 
 /**
- * Patient Voice Interface — Backend
+ * Patient Voice Interface backend helpers.
  *
- * Processes patient speech input, extracts intent, routes to appropriate
- * EHR module, and generates plain-language responses at 6th-grade reading level.
- *
- * Voice-first design: patient speaks → system processes → system speaks back.
+ * This module classifies patient requests and produces plain-language
+ * responses for the portal voice assistant. Route handling lives in
+ * server/routes/patient-portal.js so portal session enforcement is
+ * centralized in one place.
  */
 
 const db = require('../database');
-
-// ──────────────────────────────────────────
-// INTENT CLASSIFICATION
-// ──────────────────────────────────────────
 
 const INTENT_PATTERNS = [
   {
@@ -53,23 +49,18 @@ const INTENT_PATTERNS = [
   },
   {
     intent: 'general_question',
-    patterns: [/.*/], // Catch-all
+    patterns: [/.*/],
     tier: 1
   }
 ];
 
-/**
- * Classify patient speech into an intent.
- * @param {string} text - Transcribed patient speech
- * @returns {{intent: string, tier: number, confidence: number}}
- */
 function classifyIntent(text) {
   if (!text || text.trim().length === 0) {
     return { intent: 'general_question', tier: 1, confidence: 0 };
   }
 
   for (const entry of INTENT_PATTERNS) {
-    if (entry.intent === 'general_question') continue; // Skip catch-all
+    if (entry.intent === 'general_question') continue;
     for (const pattern of entry.patterns) {
       if (pattern.test(text)) {
         return { intent: entry.intent, tier: entry.tier, confidence: 0.8 };
@@ -80,26 +71,33 @@ function classifyIntent(text) {
   return { intent: 'general_question', tier: 1, confidence: 0.3 };
 }
 
-// ──────────────────────────────────────────
-// INTENT HANDLERS
-// ──────────────────────────────────────────
-
 async function handleCheckAppointments(patientId) {
   const appointments = await db.dbAll(
-    `SELECT * FROM appointments WHERE patient_id = ? AND start_time > datetime('now')
-     ORDER BY start_time ASC LIMIT 5`,
+    `SELECT id, provider_name, appointment_date, appointment_time, appointment_type, status
+     FROM appointments
+     WHERE patient_id = ?
+       AND appointment_date >= date('now')
+       AND status NOT IN ('cancelled', 'no-show')
+     ORDER BY appointment_date ASC, appointment_time ASC
+     LIMIT 5`,
     [patientId]
   );
 
   if (appointments.length === 0) {
-    return { text: 'You don\'t have any upcoming appointments right now. Would you like to schedule one?', data: [] };
+    return { text: 'You do not have any upcoming appointments right now. Would you like to schedule one?', data: [] };
   }
 
-  const lines = appointments.map(a => {
-    const date = new Date(a.start_time);
-    const friendly = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-    const time = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    return `${friendly} at ${time} with ${a.provider || 'your provider'} — ${a.appointment_type || 'general visit'}`;
+  const lines = appointments.map((appointment) => {
+    const friendly = new Date(`${appointment.appointment_date}T00:00:00`).toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+    });
+    const time = new Date(`1970-01-01T${appointment.appointment_time}`).toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return `${friendly} at ${time} with ${appointment.provider_name || 'your provider'} - ${appointment.appointment_type || 'general visit'}`;
   });
 
   const response = appointments.length === 1
@@ -116,42 +114,39 @@ async function handleRequestRefill(patientId, text) {
   );
 
   if (medications.length === 0) {
-    return { text: 'I don\'t see any active medications on your record. Please speak with your care team.', data: [], requiresReview: true };
+    return {
+      text: 'I do not see any active medications on your record. Please speak with your care team.',
+      data: [],
+      requiresReview: true
+    };
   }
 
-  // Try to match the medication they mentioned
-  const mentioned = medications.find(m =>
-    text.toLowerCase().includes(m.medication_name.toLowerCase())
+  const mentioned = medications.find((medication) =>
+    text.toLowerCase().includes(medication.medication_name.toLowerCase())
   );
 
   if (mentioned) {
-    // Create a refill request message
-    try {
-      await db.dbRun(
-        `INSERT INTO patient_messages (patient_id, message_type, subject, content, plain_language_content, status, tier)
-         VALUES (?, 'refill_notification', ?, ?, ?, 'physician_review', 2)`,
-        [
-          patientId,
-          `Refill Request: ${mentioned.medication_name}`,
-          `Patient requested a refill of ${mentioned.medication_name} ${mentioned.dose || ''} ${mentioned.frequency || ''} via voice interface.`,
-          `Your refill request for ${mentioned.medication_name} has been sent to your care team for review. They will get back to you soon.`
-        ]
-      );
-    } catch {
-      // patient_messages table may not exist yet — handled gracefully
-    }
+    await db.dbRun(
+      `INSERT INTO patient_messages (patient_id, message_type, subject, content, plain_language_content, status, tier)
+       VALUES (?, 'refill_notification', ?, ?, ?, 'physician_review', 2)`,
+      [
+        patientId,
+        `Refill Request: ${mentioned.medication_name}`,
+        `Patient requested a refill of ${mentioned.medication_name} ${mentioned.dose || ''} ${mentioned.frequency || ''} via voice interface.`,
+        `Your refill request for ${mentioned.medication_name} has been sent to your care team for review. They will get back to you soon.`
+      ]
+    );
 
     return {
-      text: `I've sent a refill request for your ${mentioned.medication_name} to your care team. They'll review it and get back to you.`,
+      text: `I have sent a refill request for your ${mentioned.medication_name} to your care team. They will review it and get back to you.`,
       data: { medication: mentioned.medication_name },
       requiresReview: true
     };
   }
 
-  // List medications so patient can specify
-  const medList = medications.map(m => m.medication_name).join(', ');
+  const medicationList = medications.map((medication) => medication.medication_name).join(', ');
   return {
-    text: `Your active medications are: ${medList}. Which one do you need a refill for?`,
+    text: `Your active medications are: ${medicationList}. Which one do you need a refill for?`,
     data: medications,
     followUp: true
   };
@@ -159,24 +154,26 @@ async function handleRequestRefill(patientId, text) {
 
 async function handleCheckLabResults(patientId) {
   const labs = await db.dbAll(
-    `SELECT * FROM labs WHERE patient_id = ? AND status IN ('resulted','final')
-     ORDER BY result_date DESC LIMIT 10`,
+    `SELECT * FROM labs
+     WHERE patient_id = ? AND status IN ('resulted','final')
+     ORDER BY result_date DESC
+     LIMIT 10`,
     [patientId]
   );
 
   if (labs.length === 0) {
-    return { text: 'I don\'t see any recent lab results in your record.', data: [] };
+    return { text: 'I do not see any recent lab results in your record.', data: [] };
   }
 
-  const lines = labs.slice(0, 5).map(l => {
-    const abnormal = l.abnormal_flag ? ' — please discuss with your doctor' : '';
-    return `${l.test_name}: ${l.result_value} ${l.units || ''}${abnormal}`;
+  const lines = labs.slice(0, 5).map((lab) => {
+    const abnormal = lab.abnormal_flag ? ' - please discuss with your doctor' : '';
+    return `${lab.test_name}: ${lab.result_value} ${lab.units || ''}${abnormal}`;
   });
 
   return {
     text: `Here are your most recent lab results. ${lines.join('. ')}. For questions about what these mean, please talk to your doctor at your next visit.`,
     data: labs,
-    requiresReview: labs.some(l => l.abnormal_flag)
+    requiresReview: labs.some((lab) => lab.abnormal_flag)
   };
 }
 
@@ -187,11 +184,11 @@ async function handleCheckMedications(patientId) {
   );
 
   if (medications.length === 0) {
-    return { text: 'You don\'t have any active medications on record.', data: [] };
+    return { text: 'You do not have any active medications on record.', data: [] };
   }
 
-  const lines = medications.map(m =>
-    `${m.medication_name} ${m.dose || ''}, ${m.frequency || ''}`
+  const lines = medications.map((medication) =>
+    `${medication.medication_name} ${medication.dose || ''}, ${medication.frequency || ''}`
   );
 
   return {
@@ -200,23 +197,34 @@ async function handleCheckMedications(patientId) {
   };
 }
 
-async function handleVisitPrep(patientId) {
+async function handleVisitPrep() {
   return {
-    text: 'For your next visit, please bring: your insurance card, a photo ID, a list of any medications you take including vitamins and supplements, and any questions you\'d like to discuss with your doctor. If you have new symptoms, try to note when they started and what makes them better or worse.',
+    text: 'For your next visit, please bring your insurance card, a photo ID, a list of all medications and supplements, and any questions you would like to discuss with your doctor.',
     data: {}
   };
 }
 
 async function handleSymptomReport(patientId, text) {
+  await db.dbRun(
+    `INSERT INTO patient_messages (patient_id, message_type, subject, content, plain_language_content, status, tier)
+     VALUES (?, 'triage', ?, ?, ?, 'physician_review', 2)`,
+    [
+      patientId,
+      'Voice Symptom Report',
+      text,
+      'Your symptoms have been sent to the care team for review.'
+    ]
+  );
+
   return {
-    text: 'I\'ve noted your symptoms. For non-emergency concerns, please call our office during business hours. If you are experiencing a medical emergency, please call 911 immediately.',
+    text: 'I have noted your symptoms. For non-emergency concerns, your care team will review this and follow up. If you are having a medical emergency, call 911 right away.',
     data: { reportedText: text },
     requiresReview: true,
     tier: 3
   };
 }
 
-async function handleGeneralQuestion(patientId, text) {
+async function handleGeneralQuestion() {
   return {
     text: 'I can help you with appointments, medication refills, lab results, and visit preparation. What would you like to know about?',
     data: {},
@@ -224,17 +232,6 @@ async function handleGeneralQuestion(patientId, text) {
   };
 }
 
-// ──────────────────────────────────────────
-// MAIN PROCESSING
-// ──────────────────────────────────────────
-
-/**
- * Process patient voice input and return a response.
- *
- * @param {number} patientId - Authenticated patient ID
- * @param {string} transcript - Transcribed patient speech
- * @returns {Promise<{intent: string, text: string, data: any, requiresReview?: boolean, tier?: number}>}
- */
 async function processVoiceIntent(patientId, transcript) {
   const { intent, tier } = classifyIntent(transcript);
 
@@ -253,7 +250,10 @@ async function processVoiceIntent(patientId, transcript) {
       response = await handleCheckMedications(patientId);
       break;
     case 'send_records':
-      response = { text: 'To send your records to another provider, please visit our front desk or call our office. We\'ll help you get your records where they need to go.', data: {} };
+      response = {
+        text: 'To send your records to another provider, please contact our office and we will help route them securely.',
+        data: {}
+      };
       break;
     case 'visit_prep':
       response = await handleVisitPrep(patientId);
@@ -263,6 +263,7 @@ async function processVoiceIntent(patientId, transcript) {
       break;
     default:
       response = await handleGeneralQuestion(patientId, transcript);
+      break;
   }
 
   return {
@@ -272,20 +273,10 @@ async function processVoiceIntent(patientId, transcript) {
   };
 }
 
-// ──────────────────────────────────────────
-// PATIENT AUTHENTICATION
-// ──────────────────────────────────────────
-
-/**
- * Verify patient identity using name + DOB + MRN.
- * Returns patient record if verified, null otherwise.
- */
 async function verifyPatient(firstName, lastName, dob, mrn) {
   if (!firstName || !lastName || !dob) return null;
 
-  const patients = await db.dbAll('SELECT * FROM patients', []);
-
-  // Match against decrypted patient data
+  const patients = await db.getAllPatients();
   for (const patient of patients) {
     const nameMatch = patient.first_name?.toLowerCase() === firstName.toLowerCase()
       && patient.last_name?.toLowerCase() === lastName.toLowerCase();
@@ -293,51 +284,19 @@ async function verifyPatient(firstName, lastName, dob, mrn) {
     const mrnMatch = !mrn || patient.mrn === mrn;
 
     if (nameMatch && dobMatch && mrnMatch) {
-      return { id: patient.id, mrn: patient.mrn, name: `${patient.first_name} ${patient.last_name}` };
+      return {
+        id: patient.id,
+        mrn: patient.mrn,
+        name: `${patient.first_name} ${patient.last_name}`.trim()
+      };
     }
   }
 
   return null;
 }
 
-// ──────────────────────────────────────────
-// EXPRESS ROUTER
-// ──────────────────────────────────────────
-
-const express = require('express');
-const router = express.Router();
-
-// POST /api/patient-portal/voice-intent — process voice input
-router.post('/voice-intent', async (req, res) => {
-  try {
-    const { patient_id, transcript } = req.body;
-    if (!patient_id || !transcript) {
-      return res.status(400).json({ error: 'Required: patient_id, transcript' });
-    }
-    const result = await processVoiceIntent(patient_id, transcript);
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/patient-portal/verify — verify patient identity
-router.post('/verify', async (req, res) => {
-  try {
-    const { first_name, last_name, dob, mrn } = req.body;
-    const patient = await verifyPatient(first_name, last_name, dob, mrn);
-    if (!patient) {
-      return res.status(401).json({ error: 'Could not verify your identity. Please check your information and try again.' });
-    }
-    res.json({ verified: true, patient_id: patient.id, name: patient.name });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 module.exports = {
-  processVoiceIntent,
   classifyIntent,
-  verifyPatient,
-  router
+  processVoiceIntent,
+  verifyPatient
 };

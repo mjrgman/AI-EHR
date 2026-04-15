@@ -1,0 +1,13 @@
+* @mjrgman
+
+/server/security/ @mjrgman
+/server/fhir/ @mjrgman
+/server/agents/ @mjrgman
+/server/routes/ @mjrgman
+/server/database.js @mjrgman
+/server/database-migrations.js @mjrgman
+/src/api/ @mjrgman
+/src/context/ @mjrgman
+/src/hooks/ @mjrgman
+/test/ @mjrgman
+/docs/evals/ @mjrgman
