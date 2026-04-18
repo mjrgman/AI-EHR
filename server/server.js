@@ -289,7 +289,8 @@ mountMediVaultRoutes(app, { db });
 app.get('/api/patients', async (req, res) => {
   try {
     const patients = await db.getAllPatients();
-    res.json(patients);
+    const role = getRequestRole(req);
+    res.json(patients.map((patient) => rbac.filterPHI(role, patient)));
   } catch (error) {
     console.error('Error fetching patients:', error);
     res.status(500).json({ error: 'Failed to fetch patients' });
@@ -309,6 +310,9 @@ app.get('/api/patients/:id', async (req, res) => {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
+    const role = getRequestRole(req);
+    const visiblePatient = rbac.filterPHI(role, patient);
+
     const [problems, medications, allergies, labs, vitals] = await Promise.all([
       db.getPatientProblems(id),
       db.getPatientMedications(id),
@@ -318,7 +322,7 @@ app.get('/api/patients/:id', async (req, res) => {
     ]);
 
     res.json(filterPatientBundleForRole(req, {
-      ...patient,
+      ...visiblePatient,
       age: db.calculateAge(patient.dob),
       problems,
       medications,
