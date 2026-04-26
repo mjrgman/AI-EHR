@@ -3,6 +3,7 @@
 const express = require('express');
 const repository = require('../repositories/patient-portal-repository');
 const { processVoiceIntent, verifyPatient } = require('../integrations/patient-voice');
+const { FrontDeskAgent } = require('../agents/front-desk-agent');
 const {
   attachSessionCookie,
   clearSessionCookie,
@@ -134,6 +135,101 @@ router.post('/appointments/checkin', async (req, res) => {
     return res.json({ status: 'checked_in', appointment_id });
   } catch (error) {
     return res.status(500).json({ error: 'Check-in failed' });
+  }
+});
+
+// ------------------------------------------------------------------
+// Patient self-service appointment booking.
+//
+// Both endpoints sit behind requirePortalSession (registered at line 99) so
+// req.portalPatient.id is always the authenticated patient — never trusted
+// from a body field. Status semantics mirror the refill flow: bookings enter
+// status='scheduled' (not auto-confirmed). Front-desk staff confirm via the
+// existing clinician schedule UI.
+//
+// CSRF: these endpoints inherit the existing portal-wide CSRF gap
+// (HttpOnly + SameSite=Lax cookies only — no CSRF token validation). The
+// gap predates this change and is tracked separately for follow-up.
+// ------------------------------------------------------------------
+
+function getFrontDeskAgent() {
+  // Per-request instantiation. In SCHEDULER_MODE=db all state lives in the
+  // appointments table, so no shared instance is needed. In mock mode each
+  // request gets a fresh in-memory list — acceptable for dev because mock
+  // mode is for scenario testing, not multi-user portal traffic.
+  return new FrontDeskAgent();
+}
+
+router.post('/appointments/find-slots', async (req, res) => {
+  try {
+    const { appointmentType, dateRangeStart, dateRangeEnd } = req.body || {};
+    const agent = getFrontDeskAgent();
+    const slotsResult = await agent.process(
+      {
+        patient: { id: req.portalPatient.id },
+        requestInfo: {
+          action: 'find_slots',
+          appointmentType: appointmentType || 'follow_up',
+          dateRangeStart: dateRangeStart ? new Date(dateRangeStart) : undefined,
+          dateRangeEnd: dateRangeEnd ? new Date(dateRangeEnd) : undefined,
+        },
+      },
+      {},
+    );
+    return res.json({
+      slots: slotsResult.slots || [],
+      slotsFound: slotsResult.slotsFound || 0,
+      dateRange: slotsResult.dateRange || null,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to find appointment slots' });
+  }
+});
+
+router.post('/appointments/request', async (req, res) => {
+  try {
+    const { slotId, appointmentType, reason, chief_complaint } = req.body || {};
+    if (!slotId) {
+      return res.status(400).json({ error: 'slotId is required' });
+    }
+    if (!appointmentType) {
+      return res.status(400).json({ error: 'appointmentType is required' });
+    }
+
+    const agent = getFrontDeskAgent();
+    const result = await agent.process(
+      {
+        patient: {
+          id: req.portalPatient.id,
+          first_name: req.portalPatient.first_name,
+          last_name: req.portalPatient.last_name,
+        },
+        requestInfo: {
+          action: 'schedule',
+          slotId,
+          appointmentType,
+          reason: reason || 'Patient-requested appointment',
+          chief_complaint: chief_complaint || null,
+        },
+      },
+      {},
+    );
+
+    if (result.status === 'error') {
+      return res.status(400).json({ error: result.message });
+    }
+
+    return res.status(201).json({
+      appointment_id: result.appointment?.persistedId ?? result.appointmentId,
+      status: 'scheduled',
+      dateTime: result.appointment?.dateTime,
+      dateTimeFormatted: result.appointment?.dateTimeFormatted,
+      duration_minutes: result.appointment?.duration,
+      confirmationMessage: 'Your appointment request has been submitted. ' +
+                           'Our front desk will confirm shortly.',
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to request appointment' });
   }
 });
 

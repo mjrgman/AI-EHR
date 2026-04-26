@@ -329,6 +329,14 @@ export const portalApi = {
     method: 'POST',
     body: JSON.stringify({ appointment_id: appointmentId }),
   }),
+  findAppointmentSlots: (payload) => portalRequest('/appointments/find-slots', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
+  requestAppointment: (payload) => portalRequest('/appointments/request', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   getMedications: () => portalRequest('/medications'),
   getLabs: () => portalRequest('/labs'),
   getMessages: () => portalRequest('/messages'),

@@ -1,4 +1,23 @@
 #!/usr/bin/env node
+/**
+ * Agentic EHR — Setup / Key rotation
+ *
+ * Default (no args):
+ *     Bootstrap. Creates data/ dir, generates .env if missing, sanity-checks.
+ *     Leaves existing .env alone.
+ *
+ * --regen-keys:
+ *     In-place rotation of JWT_SECRET. Preserves all other .env settings.
+ *     Safe: only effect is current JWT sessions invalidate (users log in again).
+ *     Never rotates PHI_ENCRYPTION_KEY unless --include-phi is also set.
+ *
+ * --regen-keys --include-phi --i-accept-phi-data-loss:
+ *     Also rotates PHI_ENCRYPTION_KEY. DANGEROUS: any data encrypted with the
+ *     old key becomes unreadable. The three flags are required together to
+ *     make accidental data loss effectively impossible.
+ *     Prints current data/*.db file sizes as a last warning.
+ */
+
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -7,23 +26,110 @@ const ROOT = path.resolve(__dirname, '..');
 const ENV_FILE = path.join(ROOT, '.env');
 const DATA_DIR = path.join(ROOT, 'data');
 
-console.log('Agentic EHR — Setup');
-console.log('====================\n');
+const args = new Set(process.argv.slice(2));
+const FLAG_REGEN = args.has('--regen-keys');
+const FLAG_INCLUDE_PHI = args.has('--include-phi');
+const FLAG_ACCEPT_PHI_LOSS = args.has('--i-accept-phi-data-loss');
 
-// 1. Create data directory
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  console.log('[OK] Created data/ directory');
-} else {
-  console.log('[OK] data/ directory exists');
+function randomHex(bytes) {
+  return crypto.randomBytes(bytes).toString('hex');
 }
 
-// 2. Generate .env if missing
-if (!fs.existsSync(ENV_FILE)) {
-  const jwtSecret = crypto.randomBytes(64).toString('hex');
-  const phiKey = crypto.randomBytes(32).toString('hex');
+function replaceOrAppendEnvLine(content, key, value) {
+  const re = new RegExp(`^${key}=.*$`, 'm');
+  const line = `${key}=${value}`;
+  if (re.test(content)) {
+    return content.replace(re, line);
+  }
+  return content.endsWith('\n') ? content + line + '\n' : content + '\n' + line + '\n';
+}
 
-  const envContent = `# Agentic EHR Environment Configuration
+function firstChars(value, n) {
+  return value ? String(value).slice(0, n) : '';
+}
+
+function readEnvKey(content, key) {
+  const m = new RegExp(`^${key}=(.*)$`, 'm').exec(content);
+  return m ? m[1] : '';
+}
+
+function doRegen() {
+  if (!fs.existsSync(ENV_FILE)) {
+    console.log('[ERROR] --regen-keys requires an existing .env. Run without args first to bootstrap.');
+    process.exit(1);
+  }
+
+  const before = fs.readFileSync(ENV_FILE, 'utf8');
+  let after = before;
+
+  // Always rotate JWT_SECRET when --regen-keys is set.
+  const newJwt = randomHex(64);
+  const oldJwt = readEnvKey(before, 'JWT_SECRET');
+  after = replaceOrAppendEnvLine(after, 'JWT_SECRET', newJwt);
+
+  let phiRotated = false;
+  let oldPhi = '';
+  let newPhi = '';
+  if (FLAG_INCLUDE_PHI) {
+    if (!FLAG_ACCEPT_PHI_LOSS) {
+      // List data files so the user sees what's at risk.
+      const files = fs.existsSync(DATA_DIR)
+        ? fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.db'))
+        : [];
+      console.log('[ABORT] --include-phi requires --i-accept-phi-data-loss.');
+      console.log('        Rotating PHI_ENCRYPTION_KEY without re-encrypting existing records will');
+      console.log('        make encrypted fields unreadable. Files at risk in data/:');
+      for (const f of files) {
+        const sz = fs.statSync(path.join(DATA_DIR, f)).size;
+        console.log(`          ${f}  (${(sz / (1024 * 1024)).toFixed(1)} MB)`);
+      }
+      console.log('        If you truly want to proceed, re-run with the --i-accept-phi-data-loss flag.');
+      console.log('        (Better: use server/security/phi-encryption.js reencryptWithNewKey to migrate records first.)');
+      process.exit(1);
+    }
+    newPhi = randomHex(32);
+    oldPhi = readEnvKey(before, 'PHI_ENCRYPTION_KEY');
+    after = replaceOrAppendEnvLine(after, 'PHI_ENCRYPTION_KEY', newPhi);
+    phiRotated = true;
+  }
+
+  // Atomic-ish write: write to temp then rename.
+  const tmp = ENV_FILE + '.tmp';
+  fs.writeFileSync(tmp, after);
+  fs.renameSync(tmp, ENV_FILE);
+
+  console.log('Agentic EHR — Key rotation');
+  console.log('==========================');
+  console.log(`[OK] JWT_SECRET rotated: ${firstChars(oldJwt, 8)}... -> ${firstChars(newJwt, 8)}...`);
+  if (phiRotated) {
+    console.log(`[OK] PHI_ENCRYPTION_KEY rotated: ${firstChars(oldPhi, 8)}... -> ${firstChars(newPhi, 8)}...`);
+    console.log('[WARN] Any records encrypted with the OLD key are now unreadable unless you re-encrypt');
+    console.log('       via server/security/phi-encryption.js:reencryptWithNewKey before rotation.');
+  } else {
+    console.log('[SKIP] PHI_ENCRYPTION_KEY: untouched (pass --include-phi --i-accept-phi-data-loss to rotate).');
+  }
+  console.log('\nRestart the server (Ctrl+C, then `npm run dev`) and log back in.');
+  return;
+}
+
+function doBootstrap() {
+  console.log('Agentic EHR — Setup');
+  console.log('====================\n');
+
+  // 1. Create data directory
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    console.log('[OK] Created data/ directory');
+  } else {
+    console.log('[OK] data/ directory exists');
+  }
+
+  // 2. Generate .env if missing
+  if (!fs.existsSync(ENV_FILE)) {
+    const jwtSecret = randomHex(64);
+    const phiKey = randomHex(32);
+
+    const envContent = `# Agentic EHR Environment Configuration
 # Generated by scripts/setup.js on ${new Date().toISOString()}
 
 PORT=3000
@@ -46,38 +152,44 @@ DATABASE_PATH=./data/ehr.db
 PROVIDER_NAME=Dr. Provider
 `;
 
-  fs.writeFileSync(ENV_FILE, envContent);
-  console.log('[OK] Generated .env with secure random keys');
-  console.log('     JWT_SECRET: (generated)');
-  console.log('     PHI_ENCRYPTION_KEY: (generated)');
-} else {
-  console.log('[OK] .env file exists');
+    fs.writeFileSync(ENV_FILE, envContent);
+    console.log('[OK] Generated .env with secure random keys');
+    console.log('     JWT_SECRET: (generated)');
+    console.log('     PHI_ENCRYPTION_KEY: (generated)');
+  } else {
+    console.log('[OK] .env file exists');
 
-  // Check for required keys
-  const envContent = fs.readFileSync(ENV_FILE, 'utf8');
-  const missing = [];
-  if (!envContent.includes('JWT_SECRET=') || envContent.includes('JWT_SECRET=\n')) missing.push('JWT_SECRET');
-  if (!envContent.includes('PHI_ENCRYPTION_KEY=') || envContent.includes('PHI_ENCRYPTION_KEY=\n')) missing.push('PHI_ENCRYPTION_KEY');
+    const envContent = fs.readFileSync(ENV_FILE, 'utf8');
+    const missing = [];
+    if (!envContent.includes('JWT_SECRET=') || /^JWT_SECRET=\s*$/m.test(envContent)) missing.push('JWT_SECRET');
+    if (!envContent.includes('PHI_ENCRYPTION_KEY=') || /^PHI_ENCRYPTION_KEY=\s*$/m.test(envContent)) missing.push('PHI_ENCRYPTION_KEY');
 
-  if (missing.length > 0) {
-    console.log(`[WARN] Missing keys in .env: ${missing.join(', ')}`);
-    console.log('       Run this script with --regen-keys to generate them');
+    if (missing.length > 0) {
+      console.log(`[WARN] Missing keys in .env: ${missing.join(', ')}`);
+      console.log('       Run this script with --regen-keys to generate them.');
+    }
   }
+
+  // 3. Check Node version
+  const nodeVersion = parseInt(process.version.slice(1), 10);
+  if (nodeVersion < 18) {
+    console.log(`[WARN] Node.js ${process.version} detected. Node 18+ is required.`);
+  } else {
+    console.log(`[OK] Node.js ${process.version}`);
+  }
+
+  // 4. Check for node_modules
+  if (!fs.existsSync(path.join(ROOT, 'node_modules'))) {
+    console.log('[INFO] node_modules not found. Run: npm install');
+  } else {
+    console.log('[OK] node_modules exists');
+  }
+
+  console.log('\nSetup complete. Run `npm run dev` to start the development server.');
 }
 
-// 3. Check Node version
-const nodeVersion = parseInt(process.version.slice(1));
-if (nodeVersion < 18) {
-  console.log(`[WARN] Node.js ${process.version} detected. Node 18+ is required.`);
+if (FLAG_REGEN) {
+  doRegen();
 } else {
-  console.log(`[OK] Node.js ${process.version}`);
+  doBootstrap();
 }
-
-// 4. Check for node_modules
-if (!fs.existsSync(path.join(ROOT, 'node_modules'))) {
-  console.log('[INFO] node_modules not found. Run: npm install');
-} else {
-  console.log('[OK] node_modules exists');
-}
-
-console.log('\nSetup complete. Run `npm run dev` to start the development server.');

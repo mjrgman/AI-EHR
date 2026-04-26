@@ -13,6 +13,20 @@ const db = require('../database');
 
 const INTENT_PATTERNS = [
   {
+    // request_appointment must come BEFORE check_appointments — both match on
+    // /appointment/i and /schedule/i, but the verb-based patterns here are
+    // narrower (book/request/make/new) so we route them before the broader
+    // upcoming-visits check.
+    intent: 'request_appointment',
+    patterns: [
+      /(?:book|schedule|make|set\s*up|need|request|want).*?(?:appointment|visit)/i,
+      /(?:appointment|visit).*?(?:please|can you|i need|i want)/i,
+      /new\s+appointment/i,
+      /come\s+in\s+(?:for|to)/i,
+    ],
+    tier: 1
+  },
+  {
     intent: 'check_appointments',
     patterns: [/appointment/i, /when.*(?:see|visit|come in)/i, /schedule/i, /next visit/i, /upcoming/i],
     tier: 1
@@ -69,6 +83,23 @@ function classifyIntent(text) {
   }
 
   return { intent: 'general_question', tier: 1, confidence: 0.3 };
+}
+
+async function handleRequestAppointment() {
+  // The voice path returns guidance only — actual booking happens via the
+  // POST /api/patient-portal/appointments/request endpoint, which carries
+  // the slotId selection from the UI. Booking via voice without a UI slot
+  // picker would require parsing dates/times from natural language, which
+  // is a separate effort.
+  return {
+    text: 'I can help you schedule an appointment. Please use the Appointments tab in your portal ' +
+          'to pick a time that works — I will route the request to our front desk for confirmation.',
+    data: {
+      next_action: 'open_appointments_tab',
+      endpoint: '/api/patient-portal/appointments/find-slots',
+    },
+    followUp: true,
+  };
 }
 
 async function handleCheckAppointments(patientId) {
@@ -237,6 +268,9 @@ async function processVoiceIntent(patientId, transcript) {
 
   let response;
   switch (intent) {
+    case 'request_appointment':
+      response = await handleRequestAppointment();
+      break;
     case 'check_appointments':
       response = await handleCheckAppointments(patientId);
       break;

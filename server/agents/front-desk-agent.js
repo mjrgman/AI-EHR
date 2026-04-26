@@ -8,8 +8,23 @@
  *   - Patient contact management (confirmations, reminders, notifications)
  *   - Check-in workflow support
  *
- * The agent works in "mock mode" without requiring a real scheduling system.
- * It generates synthetic provider availability and schedules appointments.
+ * Scheduling backend is selected by SCHEDULER_MODE env (or `repository` option):
+ *   mock  — synthetic provider availability, in-memory appointment list
+ *   db    — appointments persisted to the SQLite `appointments` table via
+ *           server/repositories/scheduling-repository.js
+ *
+ * Slot-ID determinism: slot IDs are generated in this agent (not the
+ * repository) so mock and db modes produce identical IDs from the same input
+ * date — `_findSlotById` re-generates the grid and matches on slotId, so this
+ * contract must be preserved.
+ *
+ * NOTE (latent issue, flagged in CLAUDE.md plan §Safety): the pre-visit
+ * briefing this agent generates contains medications/labs/problems, but the
+ * `front_desk` RBAC role only has `phiScope: ['demographics']`. There is no
+ * current internal route that exposes the briefing to front-desk staff, so
+ * this is latent — but a future "share briefing with front desk" route MUST
+ * use a role with broader phiScope (physician/NP) or apply field-level
+ * filtering before exposing the briefing.
  */
 
 const { BaseAgent } = require('./base-agent');
@@ -47,6 +62,18 @@ class FrontDeskAgent extends BaseAgent {
     this.appointmentTypes = APPOINTMENT_TYPES;
     this.providerHours = options.providerHours || PROVIDER_HOURS;
     this.bookedAppointments = []; // In-memory appointment list for mock mode
+
+    // Repository injection. Explicit option wins (used by tests). Otherwise read
+    // SCHEDULER_MODE: 'db' loads the persistence repository, anything else
+    // (default 'mock') keeps in-memory state and leaves repository null.
+    if (options.repository !== undefined) {
+      this.repository = options.repository;
+    } else if (process.env.SCHEDULER_MODE === 'db') {
+      this.repository = require('../repositories/scheduling-repository');
+    } else {
+      this.repository = null;
+    }
+    this.providerName = options.providerName || process.env.PROVIDER_NAME || 'Dr. Provider';
   }
 
   /**
@@ -82,13 +109,44 @@ class FrontDeskAgent extends BaseAgent {
   }
 
   /**
-   * Find available appointment slots.
+   * Build a unified "booked appointments" list that _isSlotAvailable can iterate.
+   * In mock mode, returns the in-memory array. In db mode, queries the
+   * scheduling repository for the date window and normalizes to the same shape.
    */
-  _findAvailableSlots(context, requestInfo) {
+  async _getBookedAppointments(dateRangeStart, dateRangeEnd) {
+    if (!this.repository) return this.bookedAppointments;
+
+    const startStr = dateRangeStart.toISOString().slice(0, 10);
+    const endStr = dateRangeEnd.toISOString().slice(0, 10);
+    const rows = await this.repository.findBookedSlots(this.providerName, {
+      startDate: startStr,
+      endDate: endStr,
+    });
+    // _scheduleAppointment writes appointment_date/appointment_time using the
+    // UTC components of the slot's ISO string (slice(0,10) and slice(11,19)).
+    // The Z suffix on read forces UTC interpretation so the round-tripped
+    // dateTime byte-matches the slot grid's getTime() — without Z, the Date
+    // constructor would reinterpret as local time and shift by the offset.
+    return rows.map((r) => ({
+      dateTime: new Date(`${r.date}T${r.time}Z`).toISOString(),
+      duration: r.duration_minutes,
+    }));
+  }
+
+  /**
+   * Find available appointment slots.
+   * Async because in db mode we query the scheduling repository for booked rows.
+   * Slot IDs are generated from the slot's UTC start time so mock and db
+   * modes produce identical IDs from the same input date — _findSlotById
+   * relies on this contract.
+   */
+  async _findAvailableSlots(context, requestInfo) {
     const appointmentType = requestInfo.appointmentType || 'follow_up';
     const duration = this.appointmentTypes[appointmentType]?.duration || 20;
     const dateRangeStart = requestInfo.dateRangeStart || new Date();
     const dateRangeEnd = requestInfo.dateRangeEnd || new Date(dateRangeStart.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days out
+
+    const booked = await this._getBookedAppointments(dateRangeStart, dateRangeEnd);
 
     const slots = [];
     const current = new Date(dateRangeStart);
@@ -107,7 +165,7 @@ class FrontDeskAgent extends BaseAgent {
             slotTime.setHours(hour, minute, 0, 0);
             const slotEndTime = new Date(slotTime.getTime() + duration * 60000);
 
-            if (this._isSlotAvailable(slotTime, slotEndTime)) {
+            if (this._isSlotAvailable(slotTime, slotEndTime, booked)) {
               slots.push({
                 slotId: `slot_${slotTime.getTime()}`,
                 dateTime: slotTime.toISOString(),
@@ -149,16 +207,20 @@ class FrontDeskAgent extends BaseAgent {
 
   /**
    * Schedule an appointment.
+   * In db mode the appointment is persisted via the scheduling repository and
+   * the returned `appointmentId` reflects the persisted row id (`appt_<id>`).
+   * In mock mode the appointment is appended to in-memory state with a
+   * timestamp-derived id.
    */
-  _scheduleAppointment(context, requestInfo) {
-    const appointmentId = `appt_${Date.now()}`;
+  async _scheduleAppointment(context, requestInfo) {
     const patientId = context.patient?.id;
     const appointmentType = requestInfo.appointmentType || 'follow_up';
     const slotId = requestInfo.slotId;
     const reason = requestInfo.reason || 'Follow-up';
+    const chiefComplaint = requestInfo.chief_complaint || requestInfo.chiefComplaint || null;
 
     // Find the slot
-    const slot = this._findSlotById(slotId);
+    const slot = await this._findSlotById(slotId);
     if (!slot) {
       return {
         status: 'error',
@@ -166,12 +228,37 @@ class FrontDeskAgent extends BaseAgent {
       };
     }
 
+    let appointmentId = `appt_${Date.now()}`;
+    let persistedId = null;
+
+    if (this.repository) {
+      if (!patientId) {
+        return { status: 'error', message: 'patient_id is required for db-mode scheduling' };
+      }
+      const slotDate = new Date(slot.dateTime);
+      const persisted = await this.repository.insertAppointment({
+        patient_id: patientId,
+        provider_name: this.providerName,
+        appointment_date: slotDate.toISOString().slice(0, 10),
+        appointment_time: slotDate.toISOString().slice(11, 19), // HH:MM:SS in UTC
+        duration_minutes: slot.duration,
+        appointment_type: appointmentType,
+        chief_complaint: chiefComplaint,
+        status: 'scheduled',
+        notes: reason,
+      });
+      persistedId = persisted.id;
+      appointmentId = `appt_${persisted.id}`;
+    }
+
     const appointment = {
       appointmentId,
+      persistedId,
       patientId,
       patientName: `${context.patient?.first_name} ${context.patient?.last_name}`,
       appointmentType,
       reason,
+      chiefComplaint,
       dateTime: slot.dateTime,
       dateTimeFormatted: slot.dateTimeFormatted,
       duration: slot.duration,
@@ -181,8 +268,10 @@ class FrontDeskAgent extends BaseAgent {
       reminderSent: false
     };
 
-    // Add to booked appointments
-    this.bookedAppointments.push(appointment);
+    if (!this.repository) {
+      // Mock mode: maintain in-memory state for _isSlotAvailable lookups
+      this.bookedAppointments.push(appointment);
+    }
 
     // Generate confirmation message
     const confirmationMessage = this._generateConfirmationMessage(appointment, context);
@@ -199,22 +288,66 @@ class FrontDeskAgent extends BaseAgent {
 
   /**
    * Reschedule an existing appointment.
+   * In db mode, the appointment is looked up by id+patient_id (so a stolen
+   * appointmentId from another patient cannot be moved), date/time updated,
+   * and status set to 'rescheduled'. In mock mode the in-memory record is
+   * mutated in place.
    */
-  _rescheduleAppointment(context, requestInfo) {
+  async _rescheduleAppointment(context, requestInfo) {
     const appointmentId = requestInfo.appointmentId;
     const newSlotId = requestInfo.newSlotId;
+    const patientId = context.patient?.id;
 
-    const existingAppt = this.bookedAppointments.find(a => a.appointmentId === appointmentId);
-    if (!existingAppt) {
-      return { status: 'error', message: 'Appointment not found' };
-    }
-
-    const newSlot = this._findSlotById(newSlotId);
+    const newSlot = await this._findSlotById(newSlotId);
     if (!newSlot) {
       return { status: 'error', message: 'New slot not found or unavailable' };
     }
 
-    // Update appointment
+    if (this.repository) {
+      if (!patientId) {
+        return { status: 'error', message: 'patient_id is required for db-mode rescheduling' };
+      }
+      // appointmentId may be the persisted id (number) or `appt_<id>` string.
+      const numericId = typeof appointmentId === 'string' && appointmentId.startsWith('appt_')
+        ? parseInt(appointmentId.slice(5), 10)
+        : parseInt(appointmentId, 10);
+      if (!Number.isFinite(numericId)) {
+        return { status: 'error', message: 'Appointment not found' };
+      }
+      const slotDate = new Date(newSlot.dateTime);
+      const updated = await this.repository.rescheduleAppointment(numericId, patientId, {
+        date: slotDate.toISOString().slice(0, 10),
+        time: slotDate.toISOString().slice(11, 19),
+        duration_minutes: newSlot.duration,
+      });
+      if (!updated) {
+        return { status: 'error', message: 'Appointment not found' };
+      }
+      const appointment = {
+        appointmentId,
+        persistedId: numericId,
+        dateTime: newSlot.dateTime,
+        dateTimeFormatted: newSlot.dateTimeFormatted,
+        duration: newSlot.duration,
+        status: 'rescheduled',
+        rescheduledAt: new Date().toISOString(),
+      };
+      const reschedulingMessage = this._generateReschedulingMessage(appointment, context);
+      return {
+        status: 'complete',
+        action: 'reschedule',
+        appointmentId,
+        appointment,
+        reschedulingMessage,
+        nextStep: 'notification_sent_to_patient'
+      };
+    }
+
+    // Mock mode: in-memory mutation (preserves prior behavior exactly)
+    const existingAppt = this.bookedAppointments.find(a => a.appointmentId === appointmentId);
+    if (!existingAppt) {
+      return { status: 'error', message: 'Appointment not found' };
+    }
     existingAppt.dateTime = newSlot.dateTime;
     existingAppt.dateTimeFormatted = newSlot.dateTimeFormatted;
     existingAppt.status = 'rescheduled';
@@ -588,6 +721,10 @@ ${carryforward.map(c => `### ${c.condition}
         break;
     }
 
+    // Notification delivery channels — only declare what is actually wired up.
+    // Email/SMS delivery requires Twilio + SendGrid integration (TODO, separate PR);
+    // until those land, advertising them here would be a false promise to patients
+    // who depend on these notifications for appointments and refills.
     return {
       status: 'complete',
       action: 'contact',
@@ -599,7 +736,10 @@ ${carryforward.map(c => `### ${c.condition}
       },
       subject,
       message,
-      channels: ['portal', 'email', 'text'],
+      channels: ['portal'],
+      pendingChannels: { email: 'not_configured', sms: 'not_configured' },
+      deliveryNote: 'Only portal in-app delivery is implemented. ' +
+                    'Email/SMS delivery requires Twilio + SendGrid integration (TODO).',
       readyToSend: true
     };
   }
@@ -671,9 +811,13 @@ Front Desk Team`;
 
   /**
    * Helper: Check if a slot is available (not already booked).
+   * Accepts an explicit `booked` array so the same predicate works for
+   * both mock-mode (this.bookedAppointments) and db-mode (rows from the
+   * scheduling repository, normalized to {dateTime, duration}).
    */
-  _isSlotAvailable(slotStart, slotEnd) {
-    return !this.bookedAppointments.some(appt => {
+  _isSlotAvailable(slotStart, slotEnd, booked = null) {
+    const source = booked !== null ? booked : this.bookedAppointments;
+    return !source.some(appt => {
       const apptStart = new Date(appt.dateTime);
       const apptEnd = new Date(apptStart.getTime() + appt.duration * 60000);
 
@@ -683,11 +827,24 @@ Front Desk Team`;
   }
 
   /**
-   * Helper: Find slot by ID.
+   * Helper: Find slot by ID. Async because _findAvailableSlots is async.
+   *
+   * The slotId format is `slot_<unix_ms>` — we parse the timestamp out and
+   * use the start-of-day for that slot as the search window. Without this,
+   * the 10-slot cap in _findAvailableSlots excludes any slot more than a
+   * day or two out from "now" (a pre-existing bug in mock mode).
    */
-  _findSlotById(slotId) {
-    // Generate slots dynamically (in real system, would query database)
-    const slotsNeeded = this._findAvailableSlots({}, { dateRangeStart: new Date() });
+  async _findSlotById(slotId) {
+    if (typeof slotId !== 'string') return null;
+    const match = /^slot_(\d+)$/.exec(slotId);
+    if (!match) return null;
+    const slotMs = parseInt(match[1], 10);
+    if (!Number.isFinite(slotMs)) return null;
+
+    const startOfDay = new Date(slotMs);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const slotsNeeded = await this._findAvailableSlots({}, { dateRangeStart: startOfDay });
     return slotsNeeded.slots.find(s => s.slotId === slotId);
   }
 

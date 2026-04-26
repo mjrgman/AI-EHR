@@ -157,36 +157,177 @@ function DashboardView({ appointments, medications, labs, patientName }) {
   );
 }
 
-function AppointmentsView({ appointments, checkInAppointment, activeCheckInId }) {
-  if (!appointments.length) {
-    return <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600">No upcoming appointments.</div>;
+const APPOINTMENT_TYPE_OPTIONS = [
+  { value: 'follow_up', label: 'Follow-up visit' },
+  { value: 'new_patient', label: 'New patient visit' },
+  { value: 'annual_wellness', label: 'Annual wellness' },
+  { value: 'urgent', label: 'Urgent visit' },
+];
+
+function RequestAppointmentForm({ onSubmitted, setError }) {
+  const [open, setOpen] = useState(false);
+  const [appointmentType, setAppointmentType] = useState('follow_up');
+  const [reason, setReason] = useState('');
+  const [slots, setSlots] = useState([]);
+  const [findingSlots, setFindingSlots] = useState(false);
+  const [submittingSlotId, setSubmittingSlotId] = useState(null);
+
+  const reset = () => {
+    setSlots([]);
+    setReason('');
+    setAppointmentType('follow_up');
+    setSubmittingSlotId(null);
+  };
+
+  const handleFindSlots = async () => {
+    setFindingSlots(true);
+    setSlots([]);
+    setError('');
+    try {
+      const result = await portalApi.findAppointmentSlots({ appointmentType });
+      setSlots(result.slots || []);
+      if (!result.slots || result.slots.length === 0) {
+        setError('No available slots in the next 14 days. Please call the office.');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to find appointment slots');
+    } finally {
+      setFindingSlots(false);
+    }
+  };
+
+  const handleBookSlot = async (slot) => {
+    setSubmittingSlotId(slot.slotId);
+    setError('');
+    try {
+      await portalApi.requestAppointment({
+        slotId: slot.slotId,
+        appointmentType,
+        reason: reason || 'Patient-requested appointment',
+      });
+      reset();
+      setOpen(false);
+      await onSubmitted();
+    } catch (err) {
+      setError(err.message || 'Failed to request appointment');
+      setSubmittingSlotId(null);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100"
+      >
+        Request a new appointment
+      </button>
+    );
   }
 
   return (
-    <div className="space-y-4">
-      {appointments.map((appointment) => (
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" key={appointment.id}>
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h3 className="text-xl font-semibold text-slate-900">{formatDate(appointment.appointment_date)}</h3>
-              <p className="mt-1 text-sm text-slate-600">{formatTime(appointment.appointment_time)} with {appointment.provider_name}</p>
-              <p className="mt-2 text-sm text-slate-500 capitalize">{String(appointment.appointment_type || 'visit').replace(/_/g, ' ')}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <StatusPill status={appointment.status} />
-              {['scheduled', 'confirmed'].includes(appointment.status) ? (
-                <button
-                  onClick={() => checkInAppointment(appointment.id)}
-                  disabled={activeCheckInId === appointment.id}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:bg-emerald-300"
-                >
-                  {activeCheckInId === appointment.id ? 'Checking in...' : 'Check in'}
-                </button>
-              ) : null}
-            </div>
+    <div className="rounded-3xl border border-sky-200 bg-sky-50/40 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <h3 className="text-lg font-semibold text-slate-900">Request a new appointment</h3>
+        <button
+          onClick={() => { reset(); setOpen(false); }}
+          className="text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700"
+        >
+          Cancel
+        </button>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-[180px_1fr]">
+        <label className="text-sm font-medium text-slate-700">Visit type</label>
+        <select
+          value={appointmentType}
+          onChange={(e) => { setAppointmentType(e.target.value); setSlots([]); }}
+          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          {APPOINTMENT_TYPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+
+        <label className="text-sm font-medium text-slate-700">Reason (optional)</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="What would you like to discuss?"
+          rows={2}
+          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div className="mt-4">
+        <button
+          onClick={handleFindSlots}
+          disabled={findingSlots}
+          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+        >
+          {findingSlots ? 'Finding slots...' : 'Find available slots'}
+        </button>
+      </div>
+
+      {slots.length > 0 ? (
+        <div className="mt-4 space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Pick a time — your request will be sent to the front desk for confirmation
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {slots.map((slot) => (
+              <button
+                key={slot.slotId}
+                onClick={() => handleBookSlot(slot)}
+                disabled={submittingSlotId !== null}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-800 transition hover:border-sky-400 hover:bg-sky-50 disabled:opacity-50"
+              >
+                {submittingSlotId === slot.slotId ? 'Submitting...' : slot.dateTimeFormatted}
+                <span className="block text-xs font-normal text-slate-500">{slot.duration} min</span>
+              </button>
+            ))}
           </div>
         </div>
-      ))}
+      ) : null}
+    </div>
+  );
+}
+
+function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, onRequestSubmitted, setError }) {
+  return (
+    <div className="space-y-6">
+      <RequestAppointmentForm onSubmitted={onRequestSubmitted} setError={setError} />
+
+      {appointments.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600">
+          No upcoming appointments. Use the form above to request one.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {appointments.map((appointment) => (
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" key={appointment.id}>
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900">{formatDate(appointment.appointment_date)}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{formatTime(appointment.appointment_time)} with {appointment.provider_name}</p>
+                  <p className="mt-2 text-sm text-slate-500 capitalize">{String(appointment.appointment_type || 'visit').replace(/_/g, ' ')}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusPill status={appointment.status} />
+                  {['scheduled', 'confirmed'].includes(appointment.status) ? (
+                    <button
+                      onClick={() => checkInAppointment(appointment.id)}
+                      disabled={activeCheckInId === appointment.id}
+                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:bg-emerald-300"
+                    >
+                      {activeCheckInId === appointment.id ? 'Checking in...' : 'Check in'}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -621,7 +762,13 @@ export default function PatientPortal() {
           <DashboardView appointments={appointments} medications={medications} labs={labs} patientName={patientName} />
         ) : null}
         {!loading && activeTab === 'appointments' ? (
-          <AppointmentsView appointments={appointments} checkInAppointment={handleCheckIn} activeCheckInId={activeCheckInId} />
+          <AppointmentsView
+            appointments={appointments}
+            checkInAppointment={handleCheckIn}
+            activeCheckInId={activeCheckInId}
+            onRequestSubmitted={() => loadPortalData('appointments')}
+            setError={setError}
+          />
         ) : null}
         {!loading && activeTab === 'medications' ? (
           <MedicationsView medications={medications} requestRefill={handleRefill} activeMedicationId={activeMedicationId} />

@@ -123,6 +123,74 @@ function sanitizeString(str, maxLength = 500) {
   return str.trim().slice(0, maxLength);
 }
 
+function getRequestRole(req) {
+  return req.user?.role || req.session?.userRole || 'guest';
+}
+
+function filterEncounterForRole(req, encounter) {
+  if (!encounter || typeof encounter !== 'object') return encounter;
+
+  const role = getRequestRole(req);
+  if (rbac.canAccess(role, 'notes')) return encounter;
+
+  const filtered = { ...encounter };
+  delete filtered.transcript;
+  delete filtered.soap_note;
+  return filtered;
+}
+
+function filterPatientBundleForRole(req, payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+
+  const role = getRequestRole(req);
+  const filtered = { ...payload };
+
+  if (!rbac.canAccess(role, 'problems')) delete filtered.problems;
+  if (!rbac.canAccess(role, 'medications')) delete filtered.medications;
+  if (!rbac.canAccess(role, 'allergies')) delete filtered.allergies;
+  if (!rbac.canAccess(role, 'labs')) delete filtered.labs;
+  if (!rbac.canAccess(role, 'vitals')) {
+    delete filtered.vitals;
+    delete filtered.vitals_history;
+  }
+
+  return filtered;
+}
+
+function requireAnyResourceAccess(...resourceTypes) {
+  return (req, res, next) => {
+    const role = getRequestRole(req);
+    if (resourceTypes.some((resourceType) => rbac.canAccess(role, resourceType))) {
+      return next();
+    }
+
+    return res.status(403).json({
+      error: 'Insufficient permissions',
+      userRole: role,
+      requiredAnyOf: resourceTypes,
+    });
+  };
+}
+
+function filterEncounterOrdersForRole(req, payload) {
+  const role = getRequestRole(req);
+  const filtered = { encounter_id: payload.encounter_id };
+
+  if (rbac.canAccess(role, 'lab_orders')) filtered.lab_orders = payload.lab_orders;
+  if (rbac.canAccess(role, 'imaging_orders')) filtered.imaging_orders = payload.imaging_orders;
+  if (rbac.canAccess(role, 'referrals')) filtered.referrals = payload.referrals;
+  if (rbac.canAccess(role, 'prescriptions')) filtered.prescriptions = payload.prescriptions;
+
+  filtered.total_orders = [
+    filtered.lab_orders?.length || 0,
+    filtered.imaging_orders?.length || 0,
+    filtered.referrals?.length || 0,
+    filtered.prescriptions?.length || 0,
+  ].reduce((sum, count) => sum + count, 0);
+
+  return filtered;
+}
+
 // ==========================================
 // SMART-on-FHIR DISCOVERY (unauthenticated — must precede auth middleware)
 // ==========================================
@@ -193,6 +261,10 @@ app.use('/api/billing', rbac.requireResourceAccess('billing'));
 app.use('/api/charges', rbac.requireResourceAccess('billing'));
 app.use('/api/appointments', rbac.requireResourceAccess('encounters'));
 app.use('/api/scheduling', rbac.requireResourceAccess('encounters'));
+app.use('/api/lab-orders', rbac.requireResourceAccess('lab_orders'));
+app.use('/api/imaging-orders', rbac.requireResourceAccess('imaging_orders'));
+app.use('/api/referrals', rbac.requireResourceAccess('referrals'));
+app.use('/api/vitals', rbac.requireResourceAccess('vitals'));
 app.use('/api/webhooks', rbac.requireRole('admin'), eventBusRouter);
 
 // LabCorp integration routes (Phase 2b — Chunk 5).
@@ -219,7 +291,8 @@ mountLabCorpRoutes(app, { db });
 app.get('/api/patients', async (req, res) => {
   try {
     const patients = await db.getAllPatients();
-    res.json(patients);
+    const role = getRequestRole(req);
+    res.json(patients.map((patient) => rbac.filterPHI(role, patient)));
   } catch (error) {
     console.error('Error fetching patients:', error);
     res.status(500).json({ error: 'Failed to fetch patients' });
@@ -239,6 +312,9 @@ app.get('/api/patients/:id', async (req, res) => {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
+    const role = getRequestRole(req);
+    const visiblePatient = rbac.filterPHI(role, patient);
+
     const [problems, medications, allergies, labs, vitals] = await Promise.all([
       db.getPatientProblems(id),
       db.getPatientMedications(id),
@@ -247,8 +323,8 @@ app.get('/api/patients/:id', async (req, res) => {
       db.getPatientVitals(id)
     ]);
 
-    res.json({
-      ...patient,
+    res.json(filterPatientBundleForRole(req, {
+      ...visiblePatient,
       age: db.calculateAge(patient.dob),
       problems,
       medications,
@@ -256,7 +332,7 @@ app.get('/api/patients/:id', async (req, res) => {
       labs,
       vitals: vitals.length > 0 ? vitals[0] : null,
       vitals_history: vitals
-    });
+    }));
   } catch (error) {
     console.error('Error fetching patient:', error);
     res.status(500).json({ error: 'Failed to fetch patient' });
@@ -331,7 +407,7 @@ app.post('/api/patients/extract-from-speech', async (req, res) => {
 // PROBLEM LIST ENDPOINTS
 // ==========================================
 
-app.post('/api/patients/:id/problems', async (req, res) => {
+app.post('/api/patients/:id/problems', rbac.requireResourceAccess('problems'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) {
@@ -363,7 +439,7 @@ app.post('/api/patients/:id/problems', async (req, res) => {
 // MEDICATION ENDPOINTS
 // ==========================================
 
-app.get('/api/patients/:id/medications', async (req, res) => {
+app.get('/api/patients/:id/medications', rbac.requireResourceAccess('medications'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) {
@@ -378,7 +454,7 @@ app.get('/api/patients/:id/medications', async (req, res) => {
   }
 });
 
-app.post('/api/patients/:id/medications', async (req, res) => {
+app.post('/api/patients/:id/medications', rbac.requireResourceAccess('medications'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) {
@@ -440,7 +516,7 @@ app.get('/api/encounters', async (req, res) => {
          ORDER BY e.encounter_date DESC LIMIT 50`
       );
     }
-    res.json(encounters);
+    res.json(encounters.map((encounter) => filterEncounterForRole(req, encounter)));
   } catch (error) {
     console.error('Error fetching encounters:', error);
     res.status(500).json({ error: 'Failed to fetch encounters' });
@@ -455,7 +531,7 @@ app.get('/api/encounters/:id', async (req, res) => {
     const encounter = await db.getEncounterById(id);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
 
-    res.json(encounter);
+    res.json(filterEncounterForRole(req, encounter));
   } catch (error) {
     console.error('Error fetching encounter:', error);
     res.status(500).json({ error: 'Failed to fetch encounter' });
@@ -1466,7 +1542,7 @@ app.post('/api/provider/preferences/decay', async (req, res) => {
 // ALLERGIES ENDPOINTS
 // ==========================================
 
-app.get('/api/patients/:id/allergies', async (req, res) => {
+app.get('/api/patients/:id/allergies', rbac.requireResourceAccess('allergies'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid patient ID' });
@@ -1479,7 +1555,7 @@ app.get('/api/patients/:id/allergies', async (req, res) => {
   }
 });
 
-app.post('/api/patients/:id/allergies', async (req, res) => {
+app.post('/api/patients/:id/allergies', rbac.requireResourceAccess('allergies'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid patient ID' });
@@ -1505,7 +1581,7 @@ app.post('/api/patients/:id/allergies', async (req, res) => {
 // PATIENT LABS & VITALS HISTORY
 // ==========================================
 
-app.get('/api/patients/:id/labs', async (req, res) => {
+app.get('/api/patients/:id/labs', rbac.requireResourceAccess('labs'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid patient ID' });
@@ -1518,7 +1594,7 @@ app.get('/api/patients/:id/labs', async (req, res) => {
   }
 });
 
-app.post('/api/patients/:id/labs', async (req, res) => {
+app.post('/api/patients/:id/labs', rbac.requireResourceAccess('labs'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid patient ID' });
@@ -1544,7 +1620,7 @@ app.post('/api/patients/:id/labs', async (req, res) => {
   }
 });
 
-app.get('/api/patients/:id/vitals', async (req, res) => {
+app.get('/api/patients/:id/vitals', rbac.requireResourceAccess('vitals'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid patient ID' });
@@ -1561,7 +1637,7 @@ app.get('/api/patients/:id/vitals', async (req, res) => {
 // ENCOUNTER ORDERS SUMMARY
 // ==========================================
 
-app.get('/api/encounters/:id/orders', async (req, res) => {
+app.get('/api/encounters/:id/orders', requireAnyResourceAccess('lab_orders', 'imaging_orders', 'referrals', 'prescriptions'), async (req, res) => {
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -1573,14 +1649,14 @@ app.get('/api/encounters/:id/orders', async (req, res) => {
       db.dbAll('SELECT * FROM prescriptions WHERE encounter_id = ? ORDER BY prescribed_date DESC', [id])
     ]);
 
-    res.json({
+    res.json(filterEncounterOrdersForRole(req, {
       encounter_id: id,
       lab_orders: labOrders,
       imaging_orders: imagingOrders,
       referrals,
       prescriptions,
       total_orders: labOrders.length + imagingOrders.length + referrals.length + prescriptions.length
-    });
+    }));
   } catch (error) {
     console.error('Error fetching encounter orders:', error);
     res.status(500).json({ error: 'Failed to fetch encounter orders' });
@@ -1588,7 +1664,7 @@ app.get('/api/encounters/:id/orders', async (req, res) => {
 });
 
 // Get CPT code suggestions for an encounter
-app.get('/api/encounters/:id/cpt-suggestions', async (req, res) => {
+app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -1645,7 +1721,7 @@ app.get('/api/dashboard', async (req, res) => {
         valid_transitions: workflow.getValidTransitions(wf.current_state)
       })),
       queue_counts: queueCounts,
-      recent_encounters: encounters
+      recent_encounters: encounters.map((encounter) => filterEncounterForRole(req, encounter))
     });
   } catch (error) {
     console.error('Error fetching dashboard:', error);
@@ -1949,7 +2025,7 @@ app.delete('/api/appointments/:id', async (req, res) => {
 // ==========================================
 
 // Get charge for an encounter (or compute E/M suggestion without saving)
-app.get('/api/encounters/:id/charge', async (req, res) => {
+app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -1973,7 +2049,7 @@ app.get('/api/encounters/:id/charge', async (req, res) => {
 });
 
 // Capture charge (creates/updates draft — does not finalize)
-app.post('/api/encounters/:id/charge', async (req, res) => {
+app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2000,7 +2076,7 @@ app.post('/api/encounters/:id/charge', async (req, res) => {
 });
 
 // Checkout — finalizes charge and marks encounter checked-out
-app.post('/api/encounters/:id/checkout', async (req, res) => {
+app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });

@@ -11,6 +11,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node test/run-tests.js",
+    "test:unit": "node --test test/unit/*.test.js",
+    "lint": "eslint server src --ext .js,.jsx,.mjs",
     "setup": "node scripts/setup.js",
     "create-user": "node scripts/create-user.js"
   },
@@ -43,6 +45,9 @@
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.24",
     "concurrently": "^8.2.2",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
     "nodemon": "^3.0.2",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",

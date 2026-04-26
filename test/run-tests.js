@@ -4433,6 +4433,13 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     null,
     '1234567890'
   );
+  await authModule.createUser(
+    'test.frontdesk',
+    'SecurePass!234',
+    'Test Front Desk',
+    'front_desk',
+    'frontdesk@example.com'
+  );
   const sarahPatient = await db.getPatientById(sarahId);
   const robertPatient = await db.getPatientById(robertId);
 
@@ -4477,9 +4484,20 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     return setCookie ? setCookie.split(';')[0] : '';
   }
 
+  await test('Auth HTTP: GET /api/health remains public', async () => {
+    const res = await httpRequest('/api/health');
+    assertEqual(res.status, 200, 'health endpoint must stay public');
+    assertEqual(res.body.status, 'ok');
+  });
+
   await test('Auth HTTP: protected clinician APIs reject unauthenticated requests', async () => {
     const res = await httpRequest('/api/patients');
     assertEqual(res.status, 401, `expected 401, got ${res.status}`);
+  });
+
+  await test('Auth HTTP: protected API rejects unauthenticated requests in development mode', async () => {
+    const res = await httpRequest('/api/patients');
+    assertEqual(res.status, 401, 'protected API must not fall back to a default dev clinician');
   });
 
   await test('Auth HTTP: spoofed x-user-role headers do not authenticate clinician APIs', async () => {
@@ -4567,6 +4585,82 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       body: { refreshToken: login.body.refreshToken }
     });
     assertEqual(refreshAfterRevoke.status, 401, 'logout-all should revoke outstanding refresh sessions');
+  });
+
+  await test('Access boundary: front desk patient detail omits bundled clinical subresources', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.frontdesk', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest(`/api/patients/${sarahId}`, { token: login.body.token });
+    assertEqual(res.status, 200);
+    assertEqual(res.body.first_name, sarahPatient.first_name);
+    assertEqual(res.body.last_name, sarahPatient.last_name);
+    assert(res.body.problems === undefined, 'front desk must not receive problem list');
+    assert(res.body.medications === undefined, 'front desk must not receive medications');
+    assert(res.body.allergies === undefined, 'front desk must not receive allergies');
+    assert(res.body.labs === undefined, 'front desk must not receive labs');
+    assert(res.body.vitals === undefined, 'front desk must not receive vitals');
+    assert(res.body.vitals_history === undefined, 'front desk must not receive vitals history');
+  });
+
+  await test('Access boundary: front desk cannot fetch medication subresource directly', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.frontdesk', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest(`/api/patients/${sarahId}/medications`, { token: login.body.token });
+    assertEqual(res.status, 403, 'front desk must not access medication subresource');
+  });
+
+  await test('Access boundary: front desk encounter detail omits transcript and SOAP note', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.frontdesk', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest(`/api/encounters/${encounterId}`, { token: login.body.token });
+    assertEqual(res.status, 200);
+    assert(res.body.transcript === undefined, 'front desk must not receive transcript');
+    assert(res.body.soap_note === undefined, 'front desk must not receive SOAP note');
+  });
+
+  await test('Access boundary: front desk cannot access encounter orders summary', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.frontdesk', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest(`/api/encounters/${encounterId}/orders`, { token: login.body.token });
+    assertEqual(res.status, 403, 'front desk must not access encounter orders');
+  });
+
+  await test('Access boundary: front desk cannot access billing preview endpoints', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.frontdesk', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest(`/api/encounters/${encounterId}/charge`, { token: login.body.token });
+    assertEqual(res.status, 403, 'front desk must not access charge preview');
+  });
+
+  await test('Access boundary: physician can still access billing preview endpoints', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest(`/api/encounters/${encounterId}/charge`, { token: login.body.token });
+    assertEqual(res.status, 200, 'physician should retain checkout preview access');
   });
 
   await test('Patient Portal HTTP: GET /api/patient-portal/session requires a verified portal session', async () => {
@@ -4749,6 +4843,57 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     const robertCookie = extractCookie(robertVerify);
     const robertExport = await httpRequest(`/api/medivault/export/${sarahId}`, { cookie: robertCookie });
     assertEqual(robertExport.status, 403, `expected 403, got ${robertExport.status}`);
+  });
+
+  // ==========================================
+  // PHASE: NODE:TEST UNIT SUITE
+  // ==========================================
+  // The unit suite under test/unit/ runs in isolation via Node's built-in
+  // test runner. We spawn it as a child process and surface pass/fail as a
+  // single test in the integration counters so CI's `npm test` covers both.
+
+  console.log('\nPHASE: UNIT TESTS (node:test)\n');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+  await test('Unit suite: node --test test/unit/*.test.js exits cleanly', async () => {
+    const { spawnSync } = require('child_process');
+    // Discover unit test files at runtime so adding a new test/unit/*.test.js
+    // file is automatically picked up. Node 22's --test treats a directory
+    // path as a module specifier, so we pass each file explicitly.
+    const unitDir = path.resolve(__dirname, 'unit');
+    const unitFiles = fs.readdirSync(unitDir)
+      .filter((f) => f.endsWith('.test.js'))
+      .map((f) => path.join('test', 'unit', f));
+
+    if (unitFiles.length === 0) {
+      throw new Error('No test/unit/*.test.js files found — refusing to silently pass');
+    }
+
+    const result = spawnSync(
+      process.execPath,
+      ['--test', ...unitFiles],
+      {
+        cwd: path.resolve(__dirname, '..'),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          // Reuse the same test-suite secrets so PHI encryption tests have a key.
+          // Each unit test that writes to SQLite uses :memory:, so the integration
+          // test database (set above) is not touched.
+          PHI_ENCRYPTION_KEY: process.env.PHI_ENCRYPTION_KEY,
+        },
+      }
+    );
+
+    if (result.status !== 0) {
+      const tail = (result.stdout || '').split('\n').slice(-40).join('\n');
+      const stderrTail = (result.stderr || '').split('\n').slice(-20).join('\n');
+      throw new Error(
+        `node --test exited with code ${result.status}.\n` +
+        `--- stdout (last 40 lines) ---\n${tail}\n` +
+        `--- stderr (last 20 lines) ---\n${stderrTail}`
+      );
+    }
   });
 
   // ==========================================

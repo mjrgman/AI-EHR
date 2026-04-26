@@ -1,0 +1,7 @@
+dist/
+node_modules/
+_eval/
+data/
+test/scenarios/results/
+coverage/
+*.min.js

@@ -88,6 +88,28 @@ const PHI_ROUTES = {
   // --- Dashboard (aggregated, contains patient list) ---
   'GET /api/dashboard':                           { resource_type: 'dashboard', action: 'READ', phi: true, phiFields: ['patient_list'] },
 
+  // --- Patient portal: appointment booking (added with the scheduling-DB refactor) ---
+  // These are the only patient-portal routes currently registered. The wider
+  // gap — every other /api/patient-portal/* endpoint is currently un-audited —
+  // is tracked in CLAUDE.md plan §"Pre-existing gaps" and gets its own PR.
+  // extractPatientId reads req.portalPatient.id, set by requirePortalSession.
+  // The middleware runs the callback inside res.on('finish'), by which point
+  // req.portalPatient has been populated by the route handler chain.
+  'POST /api/patient-portal/appointments/find-slots': {
+    resource_type: 'appointment',
+    action: 'access',
+    phi: true,
+    phiFields: ['appointment_date', 'provider_name'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/appointments/request': {
+    resource_type: 'appointment',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['appointment_date', 'provider_name', 'chief_complaint', 'reason'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+
   // --- MediVault patient export (Phase 3c) ---
   // This endpoint ships the patient's full clinical record as a FHIR Bundle.
   // It MUST be classified as PHI so the audit-logger middleware captures the
@@ -235,14 +257,21 @@ function auditMiddleware(options = {}) {
   } = options;
 
   return (req, res, next) => {
+    // Use originalUrl (never mutated by sub-routers) instead of req.path,
+    // because Express's `app.use('/api/patient-portal', router)` rewrites
+    // req.path to the path INSIDE the router. Without this, audit_log
+    // captures stripped paths like `/appointments/request` and matchRoute
+    // can't pair them with the full PHI_ROUTES keys.
+    const requestPath = (req.originalUrl || req.url || '').split('?')[0];
+
     // Skip non-API routes (static files, SPA catch-all)
-    if (!req.path.startsWith('/api/')) return next();
+    if (!requestPath.startsWith('/api/')) return next();
 
     // Skip excluded paths
-    if (excludePaths.includes(req.path)) return next();
+    if (excludePaths.includes(requestPath)) return next();
 
     // Skip audit endpoints to prevent recursive logging
-    if (req.path.startsWith('/api/audit/')) return next();
+    if (requestPath.startsWith('/api/audit/')) return next();
 
     const startTime = Date.now();
 
@@ -279,7 +308,7 @@ function auditMiddleware(options = {}) {
           // Upsert session
           await upsertSession(sessionId, userIdentity, userRole, req.ip, req.headers['user-agent']);
 
-          const routeMatch = matchRoute(req.method, req.path);
+          const routeMatch = matchRoute(req.method, requestPath);
 
           if (!routeMatch) {
             // Unclassified route — still log for completeness
@@ -290,9 +319,9 @@ function auditMiddleware(options = {}) {
               action: methodToAction(req.method),
               resource_type: 'unknown',
               resource_id: null,
-              description: `${req.method} ${req.path}`,
+              description: `${req.method} ${requestPath}`,
               request_method: req.method,
-              request_path: req.path,
+              request_path: requestPath,
               request_body_summary: null,
               response_status: res.statusCode,
               phi_accessed: false,
@@ -321,7 +350,7 @@ function auditMiddleware(options = {}) {
             resource_id: extractResourceId(req),
             description: buildDescription(config, req),
             request_method: req.method,
-            request_path: req.path,
+            request_path: requestPath,
             request_body_summary: scrubAndTruncateBody(req.body, maxBodySummaryLength),
             response_status: res.statusCode,
             phi_accessed: config.phi,

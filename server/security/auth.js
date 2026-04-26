@@ -299,8 +299,9 @@ function authenticateRequest(req) {
  * otherwise rejected with 401 in every environment.
  */
 function requireAuth(req, res, next) {
-  const publicPaths = ['/api/auth/login', '/api/health'];
-  if (publicPaths.some(p => req.path === p)) {
+  // Public routes that skip auth
+  const publicPaths = new Set(['/api/auth/login', '/auth/login', '/api/health', '/health']);
+  if (publicPaths.has(req.path)) {
     return next();
   }
 
@@ -312,6 +313,7 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: authResult.error });
   }
 
+  // No token — development bypass is explicit opt-in and still requires headers.
   const isDevHeaderBypassEnabled =
     process.env.NODE_ENV === 'development' &&
     process.env.ENABLE_DEV_AUTH_BYPASS === 'true';

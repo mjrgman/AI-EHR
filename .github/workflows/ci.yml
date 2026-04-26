@@ -58,6 +58,9 @@ jobs:
         run: |
           find server -name '*.js' -exec node -c {} +
 
+      - name: Lint
+        run: npm run lint
+
       - name: Build application
         run: npm run build
 
