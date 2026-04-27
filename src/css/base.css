@@ -1,0 +1,202 @@
+/* ============================================================
+   MEASURED CANON — Base styles
+   Import AFTER tokens.css.
+   Typography, focus, links, long-form reading grid.
+   ============================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;0,8..60,900;1,8..60,400&display=swap");
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--mc-font-body);
+  font-size: var(--mc-text-base);
+  line-height: var(--mc-leading-body);
+  color: var(--mc-text);
+  background-color: var(--mc-surface);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv11", "ss01", "ss03";  /* Inter niceties */
+  text-rendering: optimizeLegibility;
+}
+
+/* ------- HEADINGS — serif, institutional ------- */
+h1, h2, h3, h4, h5, h6,
+.mc-h1, .mc-h2, .mc-h3, .mc-h4, .mc-h5, .mc-h6 {
+  font-family: var(--mc-font-display);
+  font-weight: var(--mc-weight-bold);
+  color: var(--mc-navy);
+  line-height: var(--mc-leading-tight);
+  letter-spacing: var(--mc-tracking-tight);
+  margin: 0 0 var(--mc-space-4) 0;
+}
+
+.mc-hero, h1.mc-hero {
+  font-size: var(--mc-text-hero);
+  font-weight: var(--mc-weight-black);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
+}
+h1, .mc-h1 { font-size: var(--mc-text-5xl); }
+h2, .mc-h2 { font-size: var(--mc-text-4xl); }
+h3, .mc-h3 { font-size: var(--mc-text-2xl); }
+h4, .mc-h4 { font-size: var(--mc-text-xl); }
+h5, .mc-h5 { font-size: var(--mc-text-lg); }
+h6, .mc-h6 {
+  font-size: var(--mc-text-sm);
+  font-family: var(--mc-font-body);
+  font-weight: var(--mc-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--mc-tracking-caps);
+  color: var(--mc-slate);
+}
+
+/* Chapter opener treatment — serif title with a gold rule */
+.mc-chapter-opener {
+  padding-top: var(--mc-space-12);
+  padding-bottom: var(--mc-space-6);
+  border-bottom: 1px solid var(--mc-border);
+  margin-bottom: var(--mc-space-8);
+}
+.mc-chapter-opener .mc-eyebrow {
+  display: inline-block;
+  font-family: var(--mc-font-body);
+  font-size: var(--mc-text-xs);
+  font-weight: var(--mc-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--mc-tracking-caps);
+  color: var(--mc-gold);
+  margin-bottom: var(--mc-space-3);
+}
+.mc-chapter-opener h1,
+.mc-chapter-opener h2 {
+  margin-bottom: var(--mc-space-3);
+}
+.mc-chapter-opener::after {
+  content: "";
+  display: block;
+  width: 56px;
+  height: 2px;
+  background: var(--mc-gold);
+  margin-top: var(--mc-space-4);
+}
+
+/* ------- BODY PROSE ------- */
+p, ul, ol, blockquote { margin: 0 0 var(--mc-space-4) 0; }
+.mc-prose {
+  max-width: var(--mc-measure);
+  font-size: var(--mc-text-lg);
+  line-height: var(--mc-leading-loose);
+  color: var(--mc-text);
+}
+.mc-prose > * + * { margin-top: var(--mc-space-5); }
+.mc-prose h2 { margin-top: var(--mc-space-12); }
+.mc-prose h3 { margin-top: var(--mc-space-10); }
+
+/* ------- LINKS ------- */
+a {
+  color: var(--mc-navy-700);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--mc-navy-700) 40%, transparent);
+  transition: color var(--mc-duration-base) var(--mc-ease-standard),
+              text-decoration-color var(--mc-duration-base) var(--mc-ease-standard);
+}
+a:hover { color: var(--mc-gold); text-decoration-color: var(--mc-gold); }
+.mc-ink a { color: var(--mc-gold-400); }
+.mc-ink a:hover { color: var(--mc-ivory); }
+
+/* ------- FOCUS ------- */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--mc-focus-ring);
+  border-radius: var(--mc-radius-sm);
+}
+
+/* ------- BLOCKQUOTE ------- */
+blockquote {
+  border-left: 3px solid var(--mc-gold);
+  padding: var(--mc-space-2) 0 var(--mc-space-2) var(--mc-space-5);
+  font-family: var(--mc-font-display);
+  font-style: italic;
+  font-size: var(--mc-text-xl);
+  line-height: var(--mc-leading-snug);
+  color: var(--mc-navy);
+}
+
+/* ------- RULES / DIVIDERS ------- */
+hr {
+  border: 0;
+  border-top: 1px solid var(--mc-border);
+  margin: var(--mc-space-10) 0;
+}
+.mc-rule-gold {
+  border: 0;
+  border-top: 2px solid var(--mc-gold);
+  width: 56px;
+  margin: var(--mc-space-6) 0;
+}
+
+/* ------- CODE ------- */
+code, pre, kbd {
+  font-family: var(--mc-font-mono);
+  font-size: 0.92em;
+}
+code {
+  background: var(--mc-ivory);
+  padding: 0.1em 0.35em;
+  border-radius: var(--mc-radius-sm);
+  border: 1px solid var(--mc-border);
+}
+pre {
+  background: var(--mc-navy-800);
+  color: var(--mc-ivory);
+  padding: var(--mc-space-5);
+  border-radius: var(--mc-radius-md);
+  overflow-x: auto;
+  line-height: 1.55;
+}
+pre code { background: transparent; border: 0; padding: 0; color: inherit; }
+
+/* ------- CONTAINERS ------- */
+.mc-container     { width: 100%; margin-inline: auto; padding-inline: var(--mc-space-6); max-width: var(--mc-container-xl); }
+.mc-container-sm  { max-width: var(--mc-container-sm); }
+.mc-container-md  { max-width: var(--mc-container-md); }
+.mc-container-lg  { max-width: var(--mc-container-lg); }
+.mc-container-2xl { max-width: var(--mc-container-2xl); }
+
+/* ------- UTILITY: caps / eyebrow ------- */
+.mc-eyebrow, .mc-caps {
+  font-family: var(--mc-font-body);
+  font-size: var(--mc-text-xs);
+  font-weight: var(--mc-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--mc-tracking-caps);
+  color: var(--mc-slate);
+}
+.mc-eyebrow--gold { color: var(--mc-gold); }
+
+/* ------- IMAGES + FIGURES ------- */
+img, svg { max-width: 100%; height: auto; display: block; }
+figure { margin: var(--mc-space-8) 0; }
+figcaption {
+  font-size: var(--mc-text-sm);
+  color: var(--mc-text-muted);
+  margin-top: var(--mc-space-3);
+  padding-left: var(--mc-space-4);
+  border-left: 2px solid var(--mc-border);
+}
+
+/* ------- SELECTION ------- */
+::selection {
+  background: var(--mc-gold-200);
+  color: var(--mc-navy);
+}

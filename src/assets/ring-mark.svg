@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Ring mark — patient at center">
+  <rect width="240" height="240" fill="#f5f1e8"></rect>
+  
+  <circle cx="120" cy="120" r="108" fill="none" stroke="#15304a" stroke-width="14"></circle>
+  
+  <circle cx="120" cy="120" r="74" fill="none" stroke="#1a3a52" stroke-width="10"></circle>
+  
+  <circle cx="120" cy="120" r="48" fill="none" stroke="#4a5f7f" stroke-width="6"></circle>
+  
+  <circle cx="120" cy="120" r="30" fill="#f5f1e8"></circle>
+  
+  <circle cx="120" cy="120" r="10" fill="#b8860b"></circle>
+</svg>

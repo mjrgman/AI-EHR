@@ -1,0 +1,198 @@
+/* ============================================================
+   MEASURED CANON — Design Tokens
+   A physician-led design system for:
+     • Revolutionizing Healthcare with AI (book + companion web)
+     • ImpactMed Consulting (website)
+     • Command Center / CATC (React + Vite SPA)
+
+   Philosophy: Authority + Urgency + Hope.
+   Clinical Navy on Warm Ivory. Serif display, sans body.
+   Built from the manuscript's own color + type system.
+   ============================================================ */
+
+:root {
+  /* ------- CORE BRAND COLORS ------- */
+  --mc-navy:          #1a3a52;   /* Clinical Navy — primary text, headers */
+  --mc-navy-800:      #15304a;
+  --mc-navy-700:      #214666;
+  --mc-navy-600:      #2a567a;
+  --mc-slate:         #4a5f7f;   /* Clinical Slate — secondary, data viz */
+  --mc-slate-400:     #6f85a3;
+  --mc-slate-200:     #b4c2d4;
+  --mc-slate-100:     #d8e1ec;
+  --mc-ivory:         #f5f1e8;   /* Warm Ivory — canvas, cover ground */
+  --mc-ivory-soft:    #faf6ec;
+  --mc-off-white:     #fefdfb;   /* Long-form body background */
+  --mc-gold:          #b8860b;   /* Accent Gold — wisdom marks, rules */
+  --mc-gold-400:      #d4a132;
+  --mc-gold-200:      #ead09a;
+
+  /* ------- SEMANTIC COLORS ------- */
+  --mc-text:          #1a1f26;   /* body text, slightly warmer than pure black */
+  --mc-text-muted:    #4a5566;
+  --mc-text-subtle:   #7a8595;
+  --mc-text-invert:   #f7f3ea;
+
+  --mc-surface:       var(--mc-off-white);       /* pages */
+  --mc-surface-alt:   var(--mc-ivory);           /* sidebars, cards on white */
+  --mc-surface-ink:   var(--mc-navy);            /* dark sections */
+  --mc-surface-ink-2: var(--mc-navy-800);        /* darker sections */
+
+  --mc-border:        #e5ddcb;                    /* ivory-derived hairline */
+  --mc-border-strong: #cbc2ab;
+  --mc-border-ink:    rgba(255,255,255,0.12);    /* for use on navy */
+
+  --mc-focus:         #d4a132;                    /* visible on both navy + ivory */
+  --mc-focus-ring:    0 0 0 3px rgba(212,161,50,0.45);
+
+  /* ------- STATUS COLORS (clinical, not tech-bro) ------- */
+  --mc-success:       #3f7a52;   /* moss, not saas green */
+  --mc-success-soft:  #e3ecd8;
+  --mc-warning:       #b8860b;   /* reuse gold for consistency */
+  --mc-warning-soft:  #f5ebd0;
+  --mc-danger:        #a1322a;   /* clinical red, not alarm red */
+  --mc-danger-soft:   #f4dbd7;
+  --mc-info:          #2a567a;   /* navy-600 */
+  --mc-info-soft:     #dde6f0;
+
+  /* ------- EVIDENCE / TIER COLORS -------
+     Mirrors the book's evidence tier framework.
+     Tier A = highest-quality evidence; Tier D = weakest. */
+  --mc-tier-a:        #1a3a52;
+  --mc-tier-b:        #4a5f7f;
+  --mc-tier-c:        #b8860b;
+  --mc-tier-d:        #a1322a;
+
+  /* ------- TYPOGRAPHY ------- */
+  --mc-font-display:  "Source Serif 4", "Source Serif Pro", "Liberation Serif", Georgia, "Times New Roman", serif;
+  --mc-font-body:     "Inter", "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mc-font-mono:     "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* Type scale — modular, 1.2 ratio, 16px base */
+  --mc-text-2xs:      0.6875rem;  /* 11 */
+  --mc-text-xs:       0.75rem;    /* 12 */
+  --mc-text-sm:       0.875rem;   /* 14 */
+  --mc-text-base:     1rem;       /* 16 */
+  --mc-text-lg:       1.125rem;   /* 18 */
+  --mc-text-xl:       1.3125rem;  /* 21 */
+  --mc-text-2xl:      1.5625rem;  /* 25 */
+  --mc-text-3xl:      1.875rem;   /* 30 */
+  --mc-text-4xl:      2.25rem;    /* 36 */
+  --mc-text-5xl:      2.75rem;    /* 44 */
+  --mc-text-6xl:      3.375rem;   /* 54 */
+  --mc-text-hero:     4.25rem;    /* 68 — book-title energy on web */
+
+  --mc-leading-tight: 1.15;
+  --mc-leading-snug:  1.3;
+  --mc-leading-body:  1.55;
+  --mc-leading-loose: 1.7;
+
+  --mc-tracking-tight: -0.02em;
+  --mc-tracking-snug:  -0.01em;
+  --mc-tracking-base:   0;
+  --mc-tracking-wide:   0.04em;
+  --mc-tracking-caps:   0.08em;
+
+  --mc-weight-regular: 400;
+  --mc-weight-medium:  500;
+  --mc-weight-semibold:600;
+  --mc-weight-bold:    700;
+  --mc-weight-black:   900;
+
+  /* ------- SPACING — 4px grid ------- */
+  --mc-space-0:   0;
+  --mc-space-1:   0.25rem;   /* 4 */
+  --mc-space-2:   0.5rem;    /* 8 */
+  --mc-space-3:   0.75rem;   /* 12 */
+  --mc-space-4:   1rem;      /* 16 */
+  --mc-space-5:   1.25rem;   /* 20 */
+  --mc-space-6:   1.5rem;    /* 24 */
+  --mc-space-8:   2rem;      /* 32 */
+  --mc-space-10:  2.5rem;    /* 40 */
+  --mc-space-12:  3rem;      /* 48 */
+  --mc-space-16:  4rem;      /* 64 */
+  --mc-space-20:  5rem;      /* 80 */
+  --mc-space-24:  6rem;      /* 96 */
+  --mc-space-32:  8rem;      /* 128 */
+
+  /* ------- LAYOUT ------- */
+  --mc-container-sm: 640px;
+  --mc-container-md: 800px;   /* long-form reading */
+  --mc-container-lg: 1040px;
+  --mc-container-xl: 1280px;
+  --mc-container-2xl:1440px;
+
+  --mc-measure:      68ch;    /* body copy max line length */
+  --mc-measure-narrow: 56ch;
+
+  /* ------- RADII ------- */
+  --mc-radius-none:  0;
+  --mc-radius-xs:    2px;
+  --mc-radius-sm:    4px;
+  --mc-radius-md:    6px;      /* default — stays institutional, never rounded-pill */
+  --mc-radius-lg:    10px;
+  --mc-radius-xl:    16px;
+  --mc-radius-round: 999px;
+
+  /* ------- ELEVATION ------- */
+  --mc-shadow-xs:    0 1px 2px rgba(26,58,82,0.06);
+  --mc-shadow-sm:    0 1px 3px rgba(26,58,82,0.08), 0 1px 2px rgba(26,58,82,0.04);
+  --mc-shadow-md:    0 4px 10px rgba(26,58,82,0.08), 0 2px 4px rgba(26,58,82,0.04);
+  --mc-shadow-lg:    0 12px 28px rgba(26,58,82,0.12), 0 4px 10px rgba(26,58,82,0.05);
+  --mc-shadow-glow:  0 0 0 1px rgba(184,134,11,0.35), 0 10px 30px rgba(26,58,82,0.18);
+
+  /* ------- MOTION ------- */
+  --mc-ease-standard:  cubic-bezier(0.2, 0.0, 0.0, 1.0);
+  --mc-ease-emphasize: cubic-bezier(0.2, 0.0, 0.0, 1.2);
+  --mc-duration-fast:  120ms;
+  --mc-duration-base:  200ms;
+  --mc-duration-slow:  360ms;
+
+  /* ------- Z-INDEX ------- */
+  --mc-z-base:     0;
+  --mc-z-raised:   10;
+  --mc-z-dropdown: 1000;
+  --mc-z-sticky:   1100;
+  --mc-z-overlay:  1200;
+  --mc-z-modal:    1300;
+  --mc-z-toast:    1400;
+}
+
+/* ============================================================
+   DARK SECTION (navy-on-navy) — opt-in
+   Add class="mc-ink" to any block to flip to navy ground.
+   ============================================================ */
+.mc-ink {
+  --mc-surface:       var(--mc-navy);
+  --mc-surface-alt:   var(--mc-navy-800);
+  --mc-text:          var(--mc-text-invert);
+  --mc-text-muted:    #b4c2d4;
+  --mc-text-subtle:   #8a9bb5;
+  --mc-border:        rgba(255,255,255,0.10);
+  --mc-border-strong: rgba(255,255,255,0.22);
+
+  color: var(--mc-text);
+  background-color: var(--mc-surface);
+}
+
+/* ============================================================
+   PRINT — preserve typography, drop shadows
+   ============================================================ */
+@media print {
+  :root {
+    --mc-shadow-xs: none;
+    --mc-shadow-sm: none;
+    --mc-shadow-md: none;
+    --mc-shadow-lg: none;
+    --mc-shadow-glow: none;
+  }
+}
+
+/* Respect motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --mc-duration-fast: 0ms;
+    --mc-duration-base: 0ms;
+    --mc-duration-slow: 0ms;
+  }
+}

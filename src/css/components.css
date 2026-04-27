@@ -1,0 +1,348 @@
+/* ============================================================
+   MEASURED CANON — Component primitives
+   Import AFTER tokens.css + base.css.
+   Framework-agnostic. Drop these class names into any HTML/JSX.
+   ============================================================ */
+
+/* ============================================================
+   BUTTONS
+   .mc-btn              — primary (navy fill, ivory text)
+   .mc-btn--secondary   — slate outline on ivory
+   .mc-btn--ghost       — text button
+   .mc-btn--accent      — gold — use sparingly (the "rare wisdom mark")
+   .mc-btn--danger      — clinical red
+   .mc-btn--sm / --lg   — sizing
+   ============================================================ */
+.mc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--mc-space-2);
+  font-family: var(--mc-font-body);
+  font-weight: var(--mc-weight-semibold);
+  font-size: var(--mc-text-base);
+  line-height: 1;
+  letter-spacing: var(--mc-tracking-snug);
+  padding: 0.75rem 1.25rem;
+  border: 1px solid transparent;
+  border-radius: var(--mc-radius-md);
+  background: var(--mc-navy);
+  color: var(--mc-ivory);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background var(--mc-duration-base) var(--mc-ease-standard),
+    transform  var(--mc-duration-fast) var(--mc-ease-standard),
+    box-shadow var(--mc-duration-base) var(--mc-ease-standard);
+  box-shadow: var(--mc-shadow-xs);
+}
+.mc-btn:hover     { background: var(--mc-navy-700); box-shadow: var(--mc-shadow-md); }
+.mc-btn:active    { transform: translateY(1px); box-shadow: var(--mc-shadow-xs); }
+.mc-btn:disabled, .mc-btn[aria-disabled="true"] {
+  opacity: 0.5; cursor: not-allowed; box-shadow: none;
+}
+
+.mc-btn--secondary {
+  background: transparent;
+  color: var(--mc-navy);
+  border-color: var(--mc-slate);
+}
+.mc-btn--secondary:hover { background: var(--mc-slate-100); }
+
+.mc-btn--ghost {
+  background: transparent;
+  color: var(--mc-navy);
+  box-shadow: none;
+}
+.mc-btn--ghost:hover { background: var(--mc-ivory); }
+
+.mc-btn--accent {
+  background: var(--mc-gold);
+  color: #1a1f26;
+  border-color: var(--mc-gold);
+}
+.mc-btn--accent:hover { background: var(--mc-gold-400); }
+
+.mc-btn--danger {
+  background: var(--mc-danger);
+  color: var(--mc-ivory);
+}
+.mc-btn--danger:hover { background: #8b2b24; }
+
+.mc-btn--sm { padding: 0.5rem 0.875rem; font-size: var(--mc-text-sm); border-radius: var(--mc-radius-sm); }
+.mc-btn--lg { padding: 1rem 1.75rem; font-size: var(--mc-text-lg); }
+
+/* Dark section overrides */
+.mc-ink .mc-btn             { background: var(--mc-ivory); color: var(--mc-navy); }
+.mc-ink .mc-btn:hover       { background: var(--mc-gold-200); }
+.mc-ink .mc-btn--secondary  { background: transparent; color: var(--mc-ivory); border-color: rgba(255,255,255,0.3); }
+.mc-ink .mc-btn--secondary:hover { background: rgba(255,255,255,0.08); }
+.mc-ink .mc-btn--ghost      { color: var(--mc-ivory); }
+.mc-ink .mc-btn--ghost:hover{ background: rgba(255,255,255,0.08); }
+
+/* ============================================================
+   CARDS
+   .mc-card            — default card on ivory/white
+   .mc-card--ink       — dark card
+   .mc-card--bordered  — outline only, no shadow (doc-like)
+   ============================================================ */
+.mc-card {
+  background: var(--mc-off-white);
+  border: 1px solid var(--mc-border);
+  border-radius: var(--mc-radius-lg);
+  padding: var(--mc-space-6);
+  box-shadow: var(--mc-shadow-sm);
+  transition: box-shadow var(--mc-duration-base) var(--mc-ease-standard),
+              transform  var(--mc-duration-base) var(--mc-ease-standard);
+}
+.mc-card:hover { box-shadow: var(--mc-shadow-md); }
+.mc-card--bordered { box-shadow: none; background: transparent; }
+.mc-card--ink {
+  background: var(--mc-navy);
+  color: var(--mc-text-invert);
+  border-color: rgba(255,255,255,0.08);
+}
+.mc-card--ink h1, .mc-card--ink h2, .mc-card--ink h3,
+.mc-card--ink h4, .mc-card--ink h5 { color: var(--mc-ivory); }
+
+.mc-card__eyebrow {
+  font-family: var(--mc-font-body);
+  font-size: var(--mc-text-xs);
+  font-weight: var(--mc-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--mc-tracking-caps);
+  color: var(--mc-gold);
+  margin-bottom: var(--mc-space-2);
+}
+.mc-card__title   { font-family: var(--mc-font-display); font-size: var(--mc-text-2xl); color: var(--mc-navy); margin: 0 0 var(--mc-space-2) 0; }
+.mc-card__body    { color: var(--mc-text-muted); font-size: var(--mc-text-base); line-height: var(--mc-leading-body); }
+.mc-card__footer  { margin-top: var(--mc-space-5); padding-top: var(--mc-space-4); border-top: 1px solid var(--mc-border); display: flex; gap: var(--mc-space-3); align-items: center; justify-content: space-between; }
+
+/* ============================================================
+   BADGES / PILLS — intentionally squared, not rounded
+   .mc-badge          — neutral
+   .mc-badge--tier-a..d — evidence tier
+   .mc-badge--status  — success/warning/danger/info
+   ============================================================ */
+.mc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--mc-space-1);
+  font-family: var(--mc-font-body);
+  font-size: var(--mc-text-xs);
+  font-weight: var(--mc-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--mc-tracking-caps);
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--mc-radius-sm);
+  background: var(--mc-ivory);
+  color: var(--mc-navy);
+  border: 1px solid var(--mc-border);
+  line-height: 1.25;
+}
+.mc-badge--tier-a { background: var(--mc-tier-a); color: var(--mc-ivory); border-color: transparent; }
+.mc-badge--tier-b { background: var(--mc-tier-b); color: var(--mc-ivory); border-color: transparent; }
+.mc-badge--tier-c { background: var(--mc-tier-c); color: #1a1f26;        border-color: transparent; }
+.mc-badge--tier-d { background: var(--mc-tier-d); color: var(--mc-ivory); border-color: transparent; }
+.mc-badge--success{ background: var(--mc-success-soft); color: var(--mc-success); border-color: transparent; }
+.mc-badge--warning{ background: var(--mc-warning-soft); color: #7a5a07;          border-color: transparent; }
+.mc-badge--danger { background: var(--mc-danger-soft);  color: var(--mc-danger);  border-color: transparent; }
+.mc-badge--info   { background: var(--mc-info-soft);    color: var(--mc-info);    border-color: transparent; }
+
+/* Status dot for live indicators */
+.mc-dot {
+  width: 8px; height: 8px; border-radius: var(--mc-radius-round);
+  display: inline-block; background: var(--mc-slate);
+}
+.mc-dot--success { background: var(--mc-success); }
+.mc-dot--warning { background: var(--mc-warning); }
+.mc-dot--danger  { background: var(--mc-danger); }
+.mc-dot--pulse   { box-shadow: 0 0 0 0 rgba(184,134,11,0.6); animation: mcPulse 1.8s infinite; }
+@keyframes mcPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(184,134,11,0.55); }
+  70%  { box-shadow: 0 0 0 10px rgba(184,134,11,0); }
+  100% { box-shadow: 0 0 0 0 rgba(184,134,11,0); }
+}
+
+/* ============================================================
+   ALERTS / CALLOUTS
+   ============================================================ */
+.mc-alert {
+  display: flex;
+  gap: var(--mc-space-3);
+  padding: var(--mc-space-4) var(--mc-space-5);
+  border-radius: var(--mc-radius-md);
+  border-left: 3px solid var(--mc-slate);
+  background: var(--mc-ivory);
+  color: var(--mc-text);
+}
+.mc-alert__title { font-weight: var(--mc-weight-semibold); color: var(--mc-navy); margin: 0 0 0.25rem 0; }
+.mc-alert__body  { margin: 0; color: var(--mc-text-muted); font-size: var(--mc-text-sm); line-height: var(--mc-leading-body); }
+.mc-alert--info    { border-color: var(--mc-info);    background: var(--mc-info-soft); }
+.mc-alert--success { border-color: var(--mc-success); background: var(--mc-success-soft); }
+.mc-alert--warning { border-color: var(--mc-warning); background: var(--mc-warning-soft); }
+.mc-alert--danger  { border-color: var(--mc-danger);  background: var(--mc-danger-soft); }
+.mc-alert--evidence{ border-color: var(--mc-gold);    background: var(--mc-ivory-soft); }
+
+/* ============================================================
+   INPUTS / FORMS
+   ============================================================ */
+.mc-field { display: flex; flex-direction: column; gap: var(--mc-space-2); margin-bottom: var(--mc-space-4); }
+.mc-label {
+  font-family: var(--mc-font-body);
+  font-size: var(--mc-text-sm);
+  font-weight: var(--mc-weight-semibold);
+  color: var(--mc-navy);
+}
+.mc-hint  { font-size: var(--mc-text-sm); color: var(--mc-text-muted); }
+.mc-input, .mc-select, .mc-textarea {
+  font-family: var(--mc-font-body);
+  font-size: var(--mc-text-base);
+  line-height: 1.4;
+  color: var(--mc-text);
+  background: var(--mc-off-white);
+  border: 1px solid var(--mc-border-strong);
+  border-radius: var(--mc-radius-md);
+  padding: 0.65rem 0.85rem;
+  transition: border-color var(--mc-duration-base) var(--mc-ease-standard),
+              box-shadow   var(--mc-duration-base) var(--mc-ease-standard);
+  width: 100%;
+}
+.mc-input:hover, .mc-select:hover, .mc-textarea:hover { border-color: var(--mc-slate); }
+.mc-input:focus, .mc-select:focus, .mc-textarea:focus {
+  outline: none;
+  border-color: var(--mc-gold);
+  box-shadow: 0 0 0 3px rgba(184,134,11,0.18);
+}
+.mc-textarea { min-height: 7rem; resize: vertical; }
+
+/* ============================================================
+   TABLE — clinical, dense, legible
+   ============================================================ */
+.mc-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--mc-text-sm);
+  background: var(--mc-off-white);
+  border: 1px solid var(--mc-border);
+  border-radius: var(--mc-radius-md);
+  overflow: hidden;
+}
+.mc-table th, .mc-table td { padding: 0.7rem 0.9rem; text-align: left; border-bottom: 1px solid var(--mc-border); vertical-align: top; }
+.mc-table thead th {
+  background: var(--mc-ivory);
+  color: var(--mc-navy);
+  font-weight: var(--mc-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--mc-tracking-caps);
+  font-size: var(--mc-text-xs);
+}
+.mc-table tbody tr:last-child td { border-bottom: 0; }
+.mc-table tbody tr:hover { background: var(--mc-ivory-soft); }
+
+/* ============================================================
+   NAV / APP CHROME (for the Command Center / CATC)
+   ============================================================ */
+.mc-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mc-space-5);
+  padding: var(--mc-space-4) var(--mc-space-6);
+  background: var(--mc-navy);
+  color: var(--mc-ivory);
+  border-bottom: 1px solid var(--mc-navy-800);
+}
+.mc-nav__brand {
+  display: flex; align-items: center; gap: var(--mc-space-3);
+  font-family: var(--mc-font-display);
+  font-weight: var(--mc-weight-bold);
+  font-size: var(--mc-text-xl);
+  color: var(--mc-ivory);
+  letter-spacing: var(--mc-tracking-tight);
+}
+.mc-nav__links { display: flex; gap: var(--mc-space-1); }
+.mc-nav__link {
+  color: var(--mc-slate-200);
+  text-decoration: none;
+  font-size: var(--mc-text-sm);
+  font-weight: var(--mc-weight-medium);
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--mc-radius-sm);
+  transition: background var(--mc-duration-base) var(--mc-ease-standard),
+              color      var(--mc-duration-base) var(--mc-ease-standard);
+}
+.mc-nav__link:hover, .mc-nav__link[aria-current="page"] {
+  background: rgba(255,255,255,0.08);
+  color: var(--mc-ivory);
+}
+
+/* ============================================================
+   THREE-PILLAR MOTIF  (book canon — Lab / DAIM / Fellowship)
+   Use as a hero or section anchor; also works as a KPI triad.
+   ============================================================ */
+.mc-pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--mc-space-5);
+}
+@media (max-width: 720px) {
+  .mc-pillars { grid-template-columns: 1fr; }
+}
+.mc-pillar {
+  background: var(--mc-off-white);
+  border: 1px solid var(--mc-border);
+  border-top: 4px solid var(--mc-navy);
+  border-radius: var(--mc-radius-md);
+  padding: var(--mc-space-6);
+  position: relative;
+}
+.mc-pillar:nth-child(2) { border-top-color: var(--mc-slate); }
+.mc-pillar:nth-child(3) { border-top-color: var(--mc-gold); }
+.mc-pillar__num {
+  font-family: var(--mc-font-display);
+  font-weight: var(--mc-weight-black);
+  font-size: var(--mc-text-4xl);
+  color: var(--mc-navy);
+  line-height: 1;
+  margin-bottom: var(--mc-space-3);
+}
+.mc-pillar__title   { font-family: var(--mc-font-display); font-size: var(--mc-text-xl); color: var(--mc-navy); margin: 0 0 var(--mc-space-2) 0; }
+.mc-pillar__body    { color: var(--mc-text-muted); font-size: var(--mc-text-base); line-height: var(--mc-leading-body); margin: 0; }
+
+/* ============================================================
+   PATIENT-AT-CENTER ring motif (lifted from cover concept 2)
+   A purely CSS concentric-circle brand mark. 220×220 default.
+   ============================================================ */
+.mc-ring {
+  --ring-size: 220px;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  border-radius: var(--mc-radius-round);
+  background:
+    radial-gradient(circle at center,
+      var(--mc-gold)        0 6%,
+      var(--mc-ivory)       6% 8%,
+      var(--mc-slate)       8% 30%,
+      var(--mc-ivory)      30% 32%,
+      var(--mc-navy)       32% 60%,
+      var(--mc-ivory)      60% 62%,
+      var(--mc-navy-800)   62% 100%);
+  box-shadow: var(--mc-shadow-lg);
+}
+
+/* ============================================================
+   KPI TILE — for the Command Center dashboard
+   ============================================================ */
+.mc-kpi {
+  display: flex; flex-direction: column; gap: var(--mc-space-2);
+  padding: var(--mc-space-5);
+  background: var(--mc-off-white);
+  border: 1px solid var(--mc-border);
+  border-radius: var(--mc-radius-md);
+}
+.mc-kpi__label { font-size: var(--mc-text-xs); font-weight: var(--mc-weight-semibold); text-transform: uppercase; letter-spacing: var(--mc-tracking-caps); color: var(--mc-slate); }
+.mc-kpi__value { font-family: var(--mc-font-display); font-weight: var(--mc-weight-bold); font-size: var(--mc-text-4xl); color: var(--mc-navy); line-height: 1; }
+.mc-kpi__delta { font-size: var(--mc-text-sm); color: var(--mc-text-muted); }
+.mc-kpi__delta--up   { color: var(--mc-success); }
+.mc-kpi__delta--down { color: var(--mc-danger); }
