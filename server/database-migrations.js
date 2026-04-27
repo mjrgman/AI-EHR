@@ -845,17 +845,20 @@ function dbGetCompat(db, sql, params = []) {
  * Enables canonical drug identification via NLM RxNorm API.
  */
 async function addRxNormColumns(db) {
+  // server/server.js passes the database module's exports object; unwrap to the
+  // raw sqlite3 instance so .all()/.run() resolve. Mirrors dbAllCompat (L806).
+  const rawDb = db && typeof db.all === 'function' ? db : db?.db;
   const tables = ['medications', 'prescriptions'];
   for (const table of tables) {
     try {
       const cols = await new Promise((resolve, reject) => {
-        db.all(`PRAGMA table_info(${table})`, (err, rows) => {
+        rawDb.all(`PRAGMA table_info(${table})`, (err, rows) => {
           if (err) reject(err); else resolve(rows);
         });
       });
       if (!cols.some(c => c.name === 'rxnorm_cui')) {
         await new Promise((resolve, reject) => {
-          db.run(`ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`, (err) => {
+          rawDb.run(`ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`, (err) => {
             if (err) reject(err);
             else {
               console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
@@ -923,6 +926,9 @@ async function createLabCorpTokensTable(db) {
  * Uses the same PRAGMA-then-ALTER pattern as addRxNormColumns. Idempotent.
  */
 async function addLabCorpColumns(db) {
+  // server/server.js passes the database module's exports object; unwrap to the
+  // raw sqlite3 instance so .all()/.run() resolve. Mirrors dbAllCompat (L806).
+  const rawDb = db && typeof db.all === 'function' ? db : db?.db;
   const columns = [
     { name: 'external_order_id', type: 'TEXT' },
     { name: 'labcorp_status', type: 'TEXT' },
@@ -930,14 +936,14 @@ async function addLabCorpColumns(db) {
   ];
   try {
     const cols = await new Promise((resolve, reject) => {
-      db.all('PRAGMA table_info(lab_orders)', (err, rows) => {
+      rawDb.all('PRAGMA table_info(lab_orders)', (err, rows) => {
         if (err) reject(err); else resolve(rows);
       });
     });
     for (const col of columns) {
       if (!cols.some(c => c.name === col.name)) {
         await new Promise((resolve, reject) => {
-          db.run(`ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`, (err) => {
+          rawDb.run(`ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`, (err) => {
             if (err) reject(err);
             else {
               console.log(`[MIGRATIONS] Added ${col.name} column to lab_orders`);
