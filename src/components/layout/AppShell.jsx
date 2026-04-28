@@ -140,6 +140,14 @@ export default function AppShell({ children }) {
         </div>
       </header>
 
+      <div
+        role="status"
+        aria-live="off"
+        className="sticky top-14 z-40 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs font-semibold tracking-wide text-amber-900 shadow-sm"
+      >
+        Synthetic EHR Demo · No PHI · Not for clinical use
+      </div>
+
       {sidebarOpen ? (
         <>
           <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setSidebarOpen(false)} />
