@@ -139,6 +139,8 @@ agentic-ehr/
 
 **Stack:** Node.js + Express | React 18 + Vite | SQLite3 | Tailwind CSS | Anthropic Claude API (optional)
 
+**Database backend status:** SQLite is the only supported runtime backend in this worktree. `DATABASE_URL=postgresql://...` is intentionally rejected until the Postgres adapter, migration parity tests, and deployment drill are implemented. See [Database Backend Status](./docs/DATABASE_BACKEND_STATUS.md).
+
 ## Quick Start
 
 ### Prerequisites
@@ -226,6 +228,7 @@ For support and public contribution policy, see [SUPPORT.md](./SUPPORT.md), [SEC
 | `PHI_PEPPER` | No | Auto-derived | Salt for searchable PHI hashing |
 | `PROVIDER_NAME` | No | `Dr. Provider` | Default provider name for orders and notes |
 | `DATABASE_PATH` | No | `./data/ehr.db` | SQLite database location |
+| `DATABASE_URL` | No | â€” | Not supported for runtime use. PostgreSQL URLs fail closed until adapter parity is complete. |
 | `NODE_ENV` | No | `development` | `production` enables static file serving |
 
 ## HRT & Peptide Support

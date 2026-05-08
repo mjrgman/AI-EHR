@@ -18,12 +18,7 @@ const db = require('../database');
 const OPENFDA_BASE = 'https://api.fda.gov/drug/label.json';
 const DAILYMED_BASE = 'https://dailymed.nlm.nih.gov/dailymed/services/v2/spls.json';
 const REQUEST_TIMEOUT_MS = 5000;
-
-// ──────────────────────────────────────────
-// TABLE INITIALIZATION
-// ──────────────────────────────────────────
-
-db.dbRun(`
+const DOSING_REFERENCE_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS drug_dosing_reference (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     drug_name TEXT NOT NULL,
@@ -38,7 +33,17 @@ db.dbRun(`
     cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(drug_name, indication)
   )
-`).catch(err => {
+`;
+
+// ──────────────────────────────────────────
+// TABLE INITIALIZATION
+// ──────────────────────────────────────────
+
+async function ensureDosingReferenceTable() {
+  await db.dbRun(DOSING_REFERENCE_SCHEMA_SQL);
+}
+
+ensureDosingReferenceTable().catch(err => {
   console.warn('[Dosing] Table creation failed:', err.message);
 });
 
@@ -87,6 +92,7 @@ function httpsGet(url) {
  */
 async function getCached(drugName) {
   try {
+    await ensureDosingReferenceTable();
     const rows = await db.dbAll(
       `SELECT * FROM drug_dosing_reference
        WHERE drug_name = ? AND cached_at > datetime('now', '-30 days')`,
@@ -105,6 +111,7 @@ async function getCached(drugName) {
 async function setCache(drugName, dosingData) {
   const name = drugName.toLowerCase().trim();
   try {
+    await ensureDosingReferenceTable();
     await db.dbRun(
       `INSERT OR REPLACE INTO drug_dosing_reference
          (drug_name, rxnorm_cui, indication, typical_dose, max_dose,
@@ -409,6 +416,168 @@ async function validateDose(drugName, prescribedDose) {
   return { isValid: true, warning: null };
 }
 
+// ------------------------------------------
+// RENAL / HEPATIC / PEDIATRIC ADJUSTMENT GATE
+// ------------------------------------------
+
+function normalizeLabName(name = '') {
+  return String(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function firstNumber(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const match = String(value ?? '').match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function extractLabValue(context = {}, aliases = []) {
+  const normalizedAliases = aliases.map(normalizeLabName);
+  const labs = Array.isArray(context.labs) ? context.labs : [];
+  for (const lab of labs) {
+    const names = [
+      lab.test_name,
+      lab.name,
+      lab.loinc_display,
+      lab.code,
+      lab.display
+    ].filter(Boolean).map(normalizeLabName);
+
+    if (!names.some((name) => normalizedAliases.some((alias) => name.includes(alias)))) {
+      continue;
+    }
+
+    const numeric = firstNumber(
+      lab.result_value ?? lab.value ?? lab.result ?? lab.numeric_value ?? lab.result_text
+    );
+    if (numeric !== null) return numeric;
+  }
+  return null;
+}
+
+function ageYearsFromDob(dob, now = new Date()) {
+  if (!dob) return null;
+  const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return null;
+  let age = now.getUTCFullYear() - birth.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - birth.getUTCMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < birth.getUTCDate())) {
+    age -= 1;
+  }
+  return age >= 0 && age < 130 ? age : null;
+}
+
+function buildAdjustmentText(dosing = {}) {
+  return [
+    dosing.renal_adjustment,
+    dosing.hepatic_adjustment,
+    dosing.geriatric_notes,
+    dosing.raw_fda_text,
+    dosing.dailymed_info,
+    dosing.typical_dose,
+    dosing.max_dose
+  ].filter(Boolean).join('\n').toLowerCase();
+}
+
+function textSignalsHardStop(text = '') {
+  return /\b(contraindicated|not recommended|avoid|do not use|should not be used)\b/i.test(text);
+}
+
+function summarizeAdjustmentSource(dosing = {}) {
+  return {
+    source: dosing.source || 'none',
+    cached: Boolean(dosing.cached),
+    renalAdjustment: dosing.renal_adjustment || null,
+    hepaticAdjustment: dosing.hepatic_adjustment || null,
+    typicalDose: dosing.typical_dose || null,
+    maxDose: dosing.max_dose || null
+  };
+}
+
+/**
+ * Assess renal, hepatic, and pediatric patient factors before a Tier-3
+ * dosing proposal is routed for approval. Severe mismatches block before
+ * approval; softer gaps are carried into the physician review payload.
+ */
+async function assessDoseAdjustments(drugName, proposedDose, context = {}) {
+  const assessment = {
+    drugName,
+    proposedDose,
+    applied: false,
+    requiresAdjustment: false,
+    requiresBlockingReview: false,
+    blocks: [],
+    warnings: [],
+    contextSignals: {},
+    reference: null
+  };
+
+  if (!drugName) {
+    assessment.warnings.push('Dose-adjustment assessment skipped: missing medication name.');
+    return assessment;
+  }
+
+  const dosing = await getDosing(drugName);
+  assessment.reference = summarizeAdjustmentSource(dosing);
+
+  if (dosing.error || dosing.source === 'none') {
+    assessment.warnings.push(`No dosing reference data available for ${drugName}; physician must verify renal, hepatic, and pediatric suitability.`);
+    assessment.requiresAdjustment = true;
+    return assessment;
+  }
+
+  assessment.applied = true;
+
+  const eGfr = extractLabValue(context, ['egfr', 'estimated gfr', 'glomerular filtration rate']);
+  const crcl = extractLabValue(context, ['crcl', 'creatinine clearance']);
+  const ast = extractLabValue(context, ['ast', 'aspartate aminotransferase']);
+  const alt = extractLabValue(context, ['alt', 'alanine aminotransferase']);
+  const bilirubin = extractLabValue(context, ['bilirubin', 'total bilirubin']);
+  const ageYears = ageYearsFromDob(context.patient?.dob || context.patient?.date_of_birth);
+
+  assessment.contextSignals = { eGfr, crcl, ast, alt, bilirubin, ageYears };
+
+  const renalMetric = eGfr ?? crcl;
+  const renalText = dosing.renal_adjustment || '';
+  if (renalText) {
+    if (renalMetric === null) {
+      assessment.warnings.push(`Renal adjustment guidance exists for ${drugName}, but eGFR/CrCl is missing.`);
+    } else if (renalMetric < 30) {
+      assessment.blocks.push(`Renal adjustment required for ${drugName}: eGFR/CrCl ${renalMetric} is below 30. Label guidance: ${renalText}`);
+    } else if (renalMetric < 60) {
+      assessment.warnings.push(`Renal dose review recommended for ${drugName}: eGFR/CrCl ${renalMetric}. Label guidance: ${renalText}`);
+    }
+  }
+
+  const hepaticText = dosing.hepatic_adjustment || '';
+  const hepaticImpairment =
+    (ast !== null && ast >= 120) ||
+    (alt !== null && alt >= 120) ||
+    (bilirubin !== null && bilirubin >= 2);
+  if (hepaticText) {
+    if (hepaticImpairment) {
+      const message = `Hepatic adjustment required for ${drugName}: AST ${ast ?? 'n/a'}, ALT ${alt ?? 'n/a'}, bilirubin ${bilirubin ?? 'n/a'}. Label guidance: ${hepaticText}`;
+      if (textSignalsHardStop(hepaticText)) {
+        assessment.blocks.push(message);
+      } else {
+        assessment.warnings.push(message);
+      }
+    } else if (ast === null && alt === null && bilirubin === null) {
+      assessment.warnings.push(`Hepatic adjustment guidance exists for ${drugName}, but AST/ALT/bilirubin are missing.`);
+    }
+  }
+
+  if (ageYears !== null && ageYears < 18) {
+    const allAdjustmentText = buildAdjustmentText(dosing);
+    if (!/\b(pediatric|children|adolescent|child|infant)\b/i.test(allAdjustmentText)) {
+      assessment.blocks.push(`Pediatric dosing guidance missing for ${drugName}; patient age is ${ageYears}.`);
+    }
+  }
+
+  assessment.requiresAdjustment = assessment.blocks.length > 0 || assessment.warnings.length > 0;
+  assessment.requiresBlockingReview = assessment.blocks.length > 0;
+  return assessment;
+}
+
 // ──────────────────────────────────────────
 // EXPORTS
 // ──────────────────────────────────────────
@@ -417,5 +586,12 @@ module.exports = {
   getDosing,
   validateDose,
   getDosingFromFDA,
-  getDosingFromDailyMed
+  getDosingFromDailyMed,
+  assessDoseAdjustments,
+  _internal: {
+    ensureDosingReferenceTable,
+    normalizeLabName,
+    extractLabValue,
+    ageYearsFromDob
+  }
 };

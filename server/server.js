@@ -123,6 +123,55 @@ function sanitizeString(str, maxLength = 500) {
   return str.trim().slice(0, maxLength);
 }
 
+const EXTRACTED_VITALS_CONTEXT_KEYS = new Set([
+  'systolic_bp',
+  'diastolic_bp',
+  'heart_rate',
+  'respiratory_rate',
+  'temperature',
+  'weight',
+  'height',
+  'bmi',
+  'spo2',
+]);
+
+function mergeExtractedVitalsIntoContext(context, extractedVitals) {
+  if (!context || typeof context !== 'object') return {};
+  if (!context.vitals || typeof context.vitals !== 'object' || Array.isArray(context.vitals)) {
+    context.vitals = {};
+  }
+  if (!extractedVitals || typeof extractedVitals !== 'object' || Array.isArray(extractedVitals)) {
+    return context.vitals;
+  }
+
+  for (const key of Object.keys(extractedVitals)) {
+    if (!EXTRACTED_VITALS_CONTEXT_KEYS.has(key)) continue;
+    if (extractedVitals[key] === undefined) continue;
+    context.vitals[key] = extractedVitals[key];
+  }
+
+  return context.vitals;
+}
+
+function buildPrescriptionCreateGate(body = {}) {
+  const requestedStatus = typeof body.status === 'string'
+    ? body.status.trim().toLowerCase()
+    : '';
+
+  if (requestedStatus && requestedStatus !== 'draft') {
+    return {
+      error: `Direct prescription creation is draft-only. Use the dosing approval/signing flow before writing status "${requestedStatus}".`
+    };
+  }
+
+  return {
+    status: 'draft',
+    dosingApprovalId: body.dosing_approval_id
+      ? sanitizeString(body.dosing_approval_id, 120)
+      : null
+  };
+}
+
 function getRequestRole(req) {
   return req.user?.role || req.session?.userRole || 'guest';
 }
@@ -254,7 +303,7 @@ app.use('/api', auth.requireAuth);
 // RBAC: resource-level access control per route group
 app.use('/api/patients', rbac.requireResourceAccess('patients'));
 app.use('/api/encounters', rbac.requireResourceAccess('encounters'));
-app.use('/api/prescriptions', rbac.requireResourceAccess('medications'));
+app.use('/api/prescriptions', rbac.requireResourceAccess('prescriptions'));
 app.use('/api/medications', rbac.requireResourceAccess('medications'));
 app.use('/api/audit', rbac.requireRole('admin', 'physician'));
 app.use('/api/billing', rbac.requireResourceAccess('billing'));
@@ -632,8 +681,14 @@ app.post('/api/ai/extract-data', async (req, res) => {
       return res.status(400).json({ error: 'transcript is required' });
     }
 
-    const patient = patient_id ? await db.getPatientById(validateId(patient_id)) : null;
-    const result = await aiClient.extractClinicalData(sanitizeString(transcript, 20000), patient);
+    const pid = patient_id ? validateId(patient_id) : null;
+    const eid = encounter_id ? validateId(encounter_id) : null;
+    const patient = pid ? await db.getPatientById(pid) : null;
+    const result = await aiClient.extractClinicalData(
+      sanitizeString(transcript, 20000),
+      patient,
+      { patient_id: pid, encounter_id: eid }
+    );
 
     // Unwrap the result (extractClinicalData returns { extracted, extraction_summary })
     const extracted = result.extracted || result;
@@ -647,10 +702,7 @@ app.post('/api/ai/extract-data', async (req, res) => {
         const pid = validateId(patient_id);
         if (eid && pid) {
           const context = await cds.buildPatientContext(pid, eid);
-          // Merge extracted vitals into context for immediate CDS
-          if (extracted.vitals && Object.keys(extracted.vitals).length > 0) {
-            Object.assign(context.vitals, extracted.vitals);
-          }
+          mergeExtractedVitalsIntoContext(context, extracted.vitals);
           cdsSuggestions = await cds.evaluatePatientContext(eid, pid, context);
         }
       } catch (cdsErr) {
@@ -662,6 +714,8 @@ app.post('/api/ai/extract-data', async (req, res) => {
       mode: aiClient.getMode(),
       extracted,
       extraction_summary: extractionSummary,
+      ai_degraded: !!result.ai_degraded,
+      ai_fallback: result.ai_fallback || null,
       cds_suggestions: cdsSuggestions
     });
   } catch (error) {
@@ -672,7 +726,7 @@ app.post('/api/ai/extract-data', async (req, res) => {
 
 app.post('/api/ai/generate-note', async (req, res) => {
   try {
-    const { transcript, patient_id, vitals } = req.body;
+    const { transcript, patient_id, vitals, encounter_id } = req.body;
     if (!transcript || typeof transcript !== 'string') {
       return res.status(400).json({ error: 'transcript is required' });
     }
@@ -687,12 +741,20 @@ app.post('/api/ai/generate-note', async (req, res) => {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
-    const soapNote = await aiClient.generateSOAPNote(sanitizeString(transcript, 20000), patient, vitals || {});
+    const eid = encounter_id ? validateId(encounter_id) : null;
+    const noteResult = await aiClient.generateSOAPNoteWithMeta(
+      sanitizeString(transcript, 20000),
+      patient,
+      vitals || {},
+      { patient_id: pid, encounter_id: eid }
+    );
 
     res.json({
       mode: aiClient.getMode(),
-      soap_note: soapNote,
-      claude_enabled: aiClient.isClaudeEnabled()
+      soap_note: noteResult.soap_note,
+      claude_enabled: aiClient.isClaudeEnabled(),
+      ai_degraded: !!noteResult.ai_degraded,
+      ai_fallback: noteResult.ai_fallback || null
     });
   } catch (error) {
     console.error('Error generating SOAP note:', error);
@@ -716,6 +778,11 @@ app.post('/api/prescriptions', async (req, res) => {
       return res.status(400).json({ error: 'Invalid patient_id' });
     }
 
+    const prescriptionGate = buildPrescriptionCreateGate(req.body);
+    if (prescriptionGate.error) {
+      return res.status(400).json({ error: prescriptionGate.error });
+    }
+
     const rxData = {
       patient_id: patientId,
       encounter_id: req.body.encounter_id ? validateId(req.body.encounter_id) : null,
@@ -731,7 +798,8 @@ app.post('/api/prescriptions', async (req, res) => {
       icd10_codes: sanitizeString(req.body.icd10_codes, 100),
       prescriber: sanitizeString(req.body.prescriber || process.env.PROVIDER_NAME || 'Dr. Provider', 200),
       prescribed_date: req.body.prescribed_date || new Date().toISOString().split('T')[0],
-      status: req.body.status || 'signed'
+      status: prescriptionGate.status,
+      dosing_approval_id: prescriptionGate.dosingApprovalId
     };
 
     const result = await db.createPrescription(rxData);
@@ -812,7 +880,8 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
           instructions: `Take ${med.dose} ${med.route} ${med.frequency}`,
           prescriber: process.env.PROVIDER_NAME || 'Dr. Provider',
           prescribed_date: new Date().toISOString().split('T')[0],
-          status: 'signed'
+          status: 'draft',
+          dosing_approval_id: null
         };
 
         const result = await db.createPrescription(rxData);
@@ -2317,4 +2386,7 @@ module.exports = {
   app,
   initializeServerState,
   startServer,
+  __test: {
+    mergeExtractedVitalsIntoContext,
+  },
 };

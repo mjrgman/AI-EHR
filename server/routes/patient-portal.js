@@ -8,6 +8,7 @@ const {
   attachSessionCookie,
   clearSessionCookie,
   createSession,
+  requirePortalCsrf,
   requirePortalSession,
   revokeSession,
 } = require('../services/portal-session-service');
@@ -71,7 +72,7 @@ router.post('/verify', async (req, res) => {
     }
 
     const session = await createSession(patient.id, req);
-    attachSessionCookie(res, session.cookie);
+    attachSessionCookie(res, session.cookie, session.csrfCookie);
 
     return res.json({
       verified: true,
@@ -80,6 +81,7 @@ router.post('/verify', async (req, res) => {
         mrn: patient.mrn,
         name: patient.name,
       },
+      csrfToken: session.csrfToken,
       expiresAt: session.expiresAt,
     });
   } catch (error) {
@@ -98,6 +100,7 @@ router.post('/logout', async (req, res) => {
 });
 
 router.use(requirePortalSession);
+router.use(requirePortalCsrf);
 
 router.get('/session', async (req, res) => {
   const patient = await repository.getPatientSessionProfile(req.portalPatient.id);
@@ -147,9 +150,9 @@ router.post('/appointments/checkin', async (req, res) => {
 // status='scheduled' (not auto-confirmed). Front-desk staff confirm via the
 // existing clinician schedule UI.
 //
-// CSRF: these endpoints inherit the existing portal-wide CSRF gap
-// (HttpOnly + SameSite=Lax cookies only — no CSRF token validation). The
-// gap predates this change and is tracked separately for follow-up.
+// CSRF: state-changing portal endpoints are guarded by a double-submit
+// token (`__Host-portal_csrf` cookie + `x-csrf-token` header) plus same-origin
+// Origin fallback.
 // ------------------------------------------------------------------
 
 function getFrontDeskAgent() {

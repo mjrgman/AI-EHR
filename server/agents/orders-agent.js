@@ -16,10 +16,21 @@
 const { BaseAgent } = require('./base-agent');
 
 // Drug class cross-reactivity map (A-H3)
+const BETA_LACTAM_SHARED = [
+  'amoxicillin', 'ampicillin', 'piperacillin', 'nafcillin', 'oxacillin', 'dicloxacillin',
+  'penicillin', 'cephalexin', 'cefazolin', 'ceftriaxone', 'cefdinir', 'cefepime', 'cefuroxime',
+  'meropenem', 'imipenem', 'ertapenem', 'doripenem'
+];
+
 const CROSS_REACTIVITY = {
-  'penicillin': ['amoxicillin', 'ampicillin', 'piperacillin', 'nafcillin', 'oxacillin', 'dicloxacillin'],
+  'penicillin': BETA_LACTAM_SHARED,
   'sulfa': ['sulfamethoxazole', 'sulfasalazine', 'sulfadiazine', 'trimethoprim-sulfamethoxazole', 'bactrim', 'septra'],
-  'cephalosporin': ['cephalexin', 'cefazolin', 'ceftriaxone', 'cefdinir', 'cefepime', 'cefuroxime'],
+  'cephalosporin': BETA_LACTAM_SHARED,
+  'carbapenem': BETA_LACTAM_SHARED,
+  'fluoroquinolone': ['ciprofloxacin', 'levofloxacin', 'moxifloxacin', 'ofloxacin', 'gemifloxacin'],
+  'macrolide': ['azithromycin', 'clarithromycin', 'erythromycin'],
+  'vancomycin': ['vancomycin', 'oritavancin', 'dalbavancin', 'telavancin'],
+  'benzodiazepine': ['alprazolam', 'lorazepam', 'diazepam', 'clonazepam', 'temazepam', 'midazolam'],
   'nsaid': ['ibuprofen', 'naproxen', 'meloxicam', 'ketorolac', 'diclofenac', 'indomethacin', 'celecoxib'],
   'statin': ['atorvastatin', 'rosuvastatin', 'simvastatin', 'pravastatin', 'lovastatin', 'fluvastatin'],
   'ace inhibitor': ['lisinopril', 'enalapril', 'ramipril', 'benazepril', 'captopril', 'fosinopril', 'quinapril'],
@@ -471,4 +482,4 @@ class OrdersAgent extends BaseAgent {
   }
 }
 
-module.exports = { OrdersAgent };
+module.exports = { OrdersAgent, CROSS_REACTIVITY, checkCrossReactivity };

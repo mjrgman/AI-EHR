@@ -4,6 +4,7 @@
 // `react-hooks/exhaustive-deps` already exist in the codebase, so the rules
 // they reference must remain registered to keep those suppressions meaningful.
 module.exports = {
+  root: true,
   env: { node: true, browser: true, es2022: true },
   extends: [
     'eslint:recommended',

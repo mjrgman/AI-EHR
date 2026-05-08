@@ -33,20 +33,53 @@
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const oauth = require('../integrations/labcorp/oauth');
 const { LabCorpClient } = require('../integrations/labcorp/client');
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — OAuth flows complete in seconds
 
-// Module-level state store. Keyed by the opaque state token itself so
-// callback lookups are O(1). A background sweep on every /oauth/start call
-// keeps the map bounded without a timer (timers complicate test teardown).
-const pendingStates = new Map();
+function hashState(state) {
+  return crypto.createHash('sha256').update(String(state)).digest('hex');
+}
 
-function _sweepExpiredStates(now = Date.now()) {
-  for (const [state, rec] of pendingStates.entries()) {
-    if (rec.expiresAt <= now) pendingStates.delete(state);
+async function _sweepExpiredStates(db, now = Date.now()) {
+  await db.dbRun(
+    `DELETE FROM labcorp_oauth_states
+      WHERE consumed_at IS NOT NULL OR expires_at <= ?`,
+    [new Date(now).toISOString()]
+  );
+}
+
+async function _storePendingState(db, state, userId, now = Date.now()) {
+  const expiresAt = new Date(now + STATE_TTL_MS).toISOString();
+  await db.dbRun(
+    `INSERT INTO labcorp_oauth_states (state_hash, user_id, expires_at)
+     VALUES (?, ?, ?)`,
+    [hashState(state), userId, expiresAt]
+  );
+  return { userId, expiresAt };
+}
+
+async function _consumePendingState(db, state, now = Date.now()) {
+  const stateHash = hashState(state);
+  const row = await db.dbGet(
+    `SELECT * FROM labcorp_oauth_states
+      WHERE state_hash = ? AND consumed_at IS NULL`,
+    [stateHash]
+  );
+  if (!row) return null;
+
+  if (new Date(row.expires_at).getTime() <= now) {
+    await db.dbRun('DELETE FROM labcorp_oauth_states WHERE state_hash = ?', [stateHash]);
+    return { expired: true };
   }
+
+  await db.dbRun(
+    `UPDATE labcorp_oauth_states SET consumed_at = CURRENT_TIMESTAMP WHERE state_hash = ?`,
+    [stateHash]
+  );
+  return row;
 }
 
 /**
@@ -92,7 +125,7 @@ function mountLabCorpRoutes(app, { db } = {}) {
   // Returns `{ authorizeUrl, state }` so the SPA can window.location.assign()
   // the user to LabCorp. We could 302 here instead, but the SPA pattern
   // needs the URL in JSON so it can track the navigation.
-  router.post('/integrations/labcorp/oauth/start', (req, res) => {
+  router.post('/integrations/labcorp/oauth/start', async (req, res) => {
     const userId = req.user && req.user.sub;
     if (!userId) {
       return res.status(401).json({ error: 'authentication_required' });
@@ -109,13 +142,10 @@ function mountLabCorpRoutes(app, { db } = {}) {
     }
 
     // Sweep here (not on callback) so expired states linger the minimum time.
-    _sweepExpiredStates();
+    await _sweepExpiredStates(db);
 
     const state = oauth.generateState();
-    pendingStates.set(state, {
-      userId,
-      expiresAt: Date.now() + STATE_TTL_MS,
-    });
+    await _storePendingState(db, state, userId);
 
     const scope = (req.body && req.body.scope) || process.env.LABCORP_SCOPE || 'lab.read lab.write';
     const authorizeUrl = oauth.buildAuthorizeUrl({
@@ -146,17 +176,13 @@ function mountLabCorpRoutes(app, { db } = {}) {
       return res.status(400).json({ error: 'invalid_state', detail: 'state missing' });
     }
 
-    const stateRec = pendingStates.get(stateParam);
+    const stateRec = await _consumePendingState(db, stateParam);
     if (!stateRec) {
       return res.status(400).json({ error: 'invalid_state', detail: 'unknown or expired state' });
     }
-    if (stateRec.expiresAt <= Date.now()) {
-      pendingStates.delete(stateParam);
+    if (stateRec.expired) {
       return res.status(400).json({ error: 'invalid_state', detail: 'state expired' });
     }
-
-    // Single-use: delete immediately regardless of outcome. Replay prevention.
-    pendingStates.delete(stateParam);
 
     // Validate the callback shape (throws on error param, state mismatch, missing code)
     try {
@@ -181,10 +207,10 @@ function mountLabCorpRoutes(app, { db } = {}) {
         code: req.query.code,
         redirectUri,
       });
-      await oauth.storeTokens(db, stateRec.userId, tokens);
+      await oauth.storeTokens(db, stateRec.user_id, tokens);
       return res.json({
         ok: true,
-        userId: stateRec.userId,
+        userId: stateRec.user_id,
         scope: tokens.scope || null,
       });
     } catch (err) {
@@ -268,8 +294,10 @@ module.exports = {
   mountLabCorpRoutes,
   // Exported for tests or operators that need to inspect/sweep state
   _internal: {
-    pendingStates,
+    hashState,
     _sweepExpiredStates,
+    _storePendingState,
+    _consumePendingState,
     STATE_TTL_MS,
   },
 };

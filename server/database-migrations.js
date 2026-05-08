@@ -34,10 +34,12 @@ async function runMigrations(db) {
     await createPatientConsentTable(db);
     await createAgentAuditTrailTable(db);
     await createSafetyEventsTable(db);
+    await createAiInferencesTable(db);
     await createPhysicianOverridesTable(db);
     await createLoginAttemptsTable(db);
     await createPatientMessagesTable(db);
     await createPatientPortalSessionsTable(db);
+    await addProviderPreferenceTenantColumns(db);
     await createIndexes(db);
     await migrateCdsRules(db);
     await migrateSuggestionTypes(db);
@@ -45,7 +47,10 @@ async function runMigrations(db) {
     await createChargesTable(db);
     await createFhirIngestTables(db);
     await addRxNormColumns(db);
+    await addPrescriptionSafetyColumns(db);
+    await addAiDegradedEncounterColumns(db);
     await createLabCorpTokensTable(db);
+    await createLabCorpOAuthStatesTable(db);
     await addLabCorpColumns(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
@@ -256,6 +261,40 @@ async function createSafetyEventsTable(db) {
   `);
 }
 
+async function createAiInferencesTable(db) {
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS ai_inferences (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id TEXT NOT NULL UNIQUE,
+      ts DATETIME DEFAULT CURRENT_TIMESTAMP,
+      model TEXT NOT NULL,
+      model_version TEXT,
+      system_hash TEXT NOT NULL,
+      user_hash TEXT NOT NULL,
+      prompt_template_id TEXT,
+      prompt_sha256 TEXT,
+      retrieval_snapshot_json TEXT,
+      temperature REAL,
+      max_tokens INTEGER,
+      raw_response_json TEXT,
+      parsed_json TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      latency_ms INTEGER,
+      encounter_id INTEGER,
+      patient_id INTEGER,
+      fallback_to_mock_bool BOOLEAN DEFAULT 0,
+      error TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL,
+      FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE SET NULL
+    )
+  `);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_ai_inferences_patient ON ai_inferences(patient_id, ts DESC)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_ai_inferences_encounter ON ai_inferences(encounter_id, ts DESC)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_ai_inferences_prompt ON ai_inferences(prompt_template_id, prompt_sha256)`);
+}
+
 /**
  * Create physician_overrides table
  * Track every override of agent output for continuous learning
@@ -347,6 +386,14 @@ async function createPatientPortalSessionsTable(db) {
   `);
 }
 
+async function addProviderPreferenceTenantColumns(db) {
+  const columns = await dbAllCompat(db, `PRAGMA table_info(provider_preferences)`);
+  if (!columns.some(column => column.name === 'tenant_id')) {
+    await dbRun(db, `ALTER TABLE provider_preferences ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'`);
+    console.log('[MIGRATIONS] Added tenant_id column to provider_preferences');
+  }
+}
+
 // ==========================================
 // INDEXES
 // ==========================================
@@ -409,7 +456,14 @@ async function createIndexes(db) {
     // patient_portal_sessions table
     'CREATE INDEX IF NOT EXISTS idx_portal_sessions_hash ON patient_portal_sessions(session_hash)',
     'CREATE INDEX IF NOT EXISTS idx_portal_sessions_patient ON patient_portal_sessions(patient_id, revoked)',
-    'CREATE INDEX IF NOT EXISTS idx_portal_sessions_expiry ON patient_portal_sessions(expires_at)'
+    'CREATE INDEX IF NOT EXISTS idx_portal_sessions_expiry ON patient_portal_sessions(expires_at)',
+
+    // core clinical query coverage
+    'CREATE INDEX IF NOT EXISTS idx_patients_last_name_dob ON patients(last_name, dob)',
+    'CREATE INDEX IF NOT EXISTS idx_problems_patient_status ON problems(patient_id, status)',
+    'CREATE INDEX IF NOT EXISTS idx_medications_patient_status ON medications(patient_id, status)',
+    'CREATE INDEX IF NOT EXISTS idx_encounters_patient_date_desc ON encounters(patient_id, encounter_date DESC)',
+    'CREATE INDEX IF NOT EXISTS idx_provider_preferences_tenant_provider ON provider_preferences(tenant_id, provider_name)'
   ];
 
   // All indexes are independent — create in parallel to minimize startup latency.
@@ -848,25 +902,54 @@ async function addRxNormColumns(db) {
   const tables = ['medications', 'prescriptions'];
   for (const table of tables) {
     try {
-      const cols = await new Promise((resolve, reject) => {
-        db.all(`PRAGMA table_info(${table})`, (err, rows) => {
-          if (err) reject(err); else resolve(rows);
-        });
-      });
+      const cols = await dbAllCompat(db, `PRAGMA table_info(${table})`);
       if (!cols.some(c => c.name === 'rxnorm_cui')) {
-        await new Promise((resolve, reject) => {
-          db.run(`ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`, (err) => {
-            if (err) reject(err);
-            else {
-              console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
-              resolve();
-            }
-          });
-        });
+        await dbRun(db, `ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`);
+        console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
       }
     } catch (err) {
       console.warn(`[MIGRATIONS] rxnorm_cui migration for ${table}: ${err.message}`);
     }
+  }
+}
+
+/**
+ * Add prescription safety columns used by the Tier-3 signing gate.
+ * Creation endpoints stay draft-only, but the column preserves the approval
+ * identifier once the dedicated approval/sign flow writes a signed order.
+ */
+async function addPrescriptionSafetyColumns(db) {
+  try {
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(prescriptions)');
+    if (!cols.some(c => c.name === 'dosing_approval_id')) {
+      await dbRun(db, 'ALTER TABLE prescriptions ADD COLUMN dosing_approval_id TEXT');
+      console.log('[MIGRATIONS] Added dosing_approval_id column to prescriptions');
+    }
+  } catch (err) {
+    console.warn(`[MIGRATIONS] prescription safety column migration: ${err.message}`);
+  }
+}
+
+/**
+ * Add encounter-level AI degradation flags used when Claude/API fallback
+ * creates a note or extraction that requires explicit clinician review.
+ */
+async function addAiDegradedEncounterColumns(db) {
+  try {
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(encounters)');
+    const columns = [
+      { name: 'ai_degraded', type: 'BOOLEAN DEFAULT 0' },
+      { name: 'ai_degradation_reason', type: 'TEXT' },
+      { name: 'ai_degraded_at', type: 'DATETIME' }
+    ];
+    for (const col of columns) {
+      if (!cols.some(c => c.name === col.name)) {
+        await dbRun(db, `ALTER TABLE encounters ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`[MIGRATIONS] Added ${col.name} column to encounters`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[MIGRATIONS] encounter AI degradation column migration: ${err.message}`);
   }
 }
 
@@ -911,6 +994,21 @@ async function createLabCorpTokensTable(db) {
   console.log('[MIGRATIONS] labcorp_tokens table ready');
 }
 
+async function createLabCorpOAuthStatesTable(db) {
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS labcorp_oauth_states (
+      state_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      expires_at DATETIME NOT NULL,
+      consumed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_labcorp_oauth_states_expiry ON labcorp_oauth_states(expires_at, consumed_at)`);
+  console.log('[MIGRATIONS] labcorp_oauth_states table ready');
+}
+
 /**
  * Add LabCorp-specific columns to lab_orders so Phase 2b can track external
  * order lifecycle and raw PDF storage paths.
@@ -929,22 +1027,11 @@ async function addLabCorpColumns(db) {
     { name: 'labcorp_raw_pdf_path', type: 'TEXT' },
   ];
   try {
-    const cols = await new Promise((resolve, reject) => {
-      db.all('PRAGMA table_info(lab_orders)', (err, rows) => {
-        if (err) reject(err); else resolve(rows);
-      });
-    });
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(lab_orders)');
     for (const col of columns) {
       if (!cols.some(c => c.name === col.name)) {
-        await new Promise((resolve, reject) => {
-          db.run(`ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`, (err) => {
-            if (err) reject(err);
-            else {
-              console.log(`[MIGRATIONS] Added ${col.name} column to lab_orders`);
-              resolve();
-            }
-          });
-        });
+        await dbRun(db, `ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`[MIGRATIONS] Added ${col.name} column to lab_orders`);
       }
     }
   } catch (err) {
@@ -960,10 +1047,12 @@ module.exports = {
   createPatientConsentTable,
   createAgentAuditTrailTable,
   createSafetyEventsTable,
+  createAiInferencesTable,
   createPhysicianOverridesTable,
   createLoginAttemptsTable,
   createPatientMessagesTable,
   createPatientPortalSessionsTable,
+  addProviderPreferenceTenantColumns,
   createIndexes,
   migrateCdsRules,
   migrateSuggestionTypes,
@@ -971,6 +1060,9 @@ module.exports = {
   createChargesTable,
   createFhirIngestTables,
   addRxNormColumns,
+  addPrescriptionSafetyColumns,
+  addAiDegradedEncounterColumns,
   createLabCorpTokensTable,
+  createLabCorpOAuthStatesTable,
   addLabCorpColumns
 };

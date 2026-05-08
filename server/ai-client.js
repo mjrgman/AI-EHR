@@ -7,9 +7,16 @@
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const db = require('./database');
 
-const AI_MODE = process.env.AI_MODE || 'mock';
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const AI_FALLBACK_BANNER = 'Note generated in fallback mode; clinician verification required.';
+const DEFAULT_CLAUDE_HAIKU_MODEL = 'claude-haiku-4-5-20251001';
+const DEFAULT_CLAUDE_SONNET_MODEL = 'claude-sonnet-4-6-20260415';
+const PROMPT_ROOT = path.join(__dirname, 'ai-client', 'prompts');
+const promptCache = new Map();
 
 function normalizeTranscriptText(text = '') {
   return text
@@ -41,7 +48,37 @@ function validateExtractionResponse(parsed) {
 }
 
 function getMode() {
-  return ANTHROPIC_API_KEY && AI_MODE === 'api' ? 'api' : 'mock';
+  return process.env.ANTHROPIC_API_KEY && process.env.AI_MODE === 'api' ? 'api' : 'mock';
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function isPinnedClaudeModel(model) {
+  return /^claude-[a-z0-9-]+-\d{8}$/.test(String(model || ''));
+}
+
+function assertPinnedClaudeModel(model) {
+  if (!isPinnedClaudeModel(model)) {
+    throw new Error(`Claude model must be pinned to a dated build, got "${model}"`);
+  }
+}
+
+function loadPromptTemplate(promptId, relativePath) {
+  const cacheKey = `${promptId}:${relativePath}`;
+  if (promptCache.has(cacheKey)) return promptCache.get(cacheKey);
+
+  const filePath = path.join(PROMPT_ROOT, relativePath);
+  const template = fs.readFileSync(filePath, 'utf8').trim();
+  const loaded = {
+    prompt_id: promptId,
+    prompt_sha256: sha256(template),
+    filePath,
+    template,
+  };
+  promptCache.set(cacheKey, loaded);
+  return loaded;
 }
 
 function isClaudeEnabled() {
@@ -52,7 +89,7 @@ function isClaudeEnabled() {
 let _anthropicClient = null;
 function getAnthropicClient() {
   if (!_anthropicClient) {
-    _anthropicClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+    _anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
   }
   return _anthropicClient;
 }
@@ -64,13 +101,17 @@ function getAnthropicClient() {
  * @param {string} user
  * @param {string} model - defaults to haiku for cost efficiency
  */
-async function callClaude(system, user, model = 'claude-haiku-4-5-20251001') {
+async function callClaude(system, user, model = DEFAULT_CLAUDE_HAIKU_MODEL, promptMeta = {}, options = {}) {
+  assertPinnedClaudeModel(model);
   const client = getAnthropicClient();
   const AI_TIMEOUT_MS = 30000; // 30 second timeout
+  const requestId = crypto.randomUUID();
+  const start = Date.now();
+  const maxTokens = 4096;
 
   const apiCall = client.messages.create({
     model,
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
   });
@@ -79,8 +120,120 @@ async function callClaude(system, user, model = 'claude-haiku-4-5-20251001') {
     setTimeout(() => reject(new Error('AI request timed out after 30 seconds')), AI_TIMEOUT_MS);
   });
 
-  const message = await Promise.race([apiCall, timeoutPromise]);
-  return message.content[0].type === 'text' ? message.content[0].text : '';
+  try {
+    const message = await Promise.race([apiCall, timeoutPromise]);
+    const text = message.content[0].type === 'text' ? message.content[0].text : '';
+    await recordAiInference({
+      request_id: requestId,
+      model,
+      model_version: model,
+      system_hash: sha256(system),
+      user_hash: sha256(user),
+      prompt_template_id: promptMeta.prompt_id || null,
+      prompt_sha256: promptMeta.prompt_sha256 || null,
+      max_tokens: maxTokens,
+      raw_response_json: JSON.stringify(message),
+      parsed_json: text,
+      input_tokens: message.usage?.input_tokens,
+      output_tokens: message.usage?.output_tokens,
+      latency_ms: Date.now() - start,
+      encounter_id: options.encounter_id || options.encounterId || null,
+      patient_id: options.patient_id || options.patientId || null,
+    });
+    return text;
+  } catch (err) {
+    await recordAiInference({
+      request_id: requestId,
+      model,
+      model_version: model,
+      system_hash: sha256(system),
+      user_hash: sha256(user),
+      prompt_template_id: promptMeta.prompt_id || null,
+      prompt_sha256: promptMeta.prompt_sha256 || null,
+      max_tokens: maxTokens,
+      latency_ms: Date.now() - start,
+      encounter_id: options.encounter_id || options.encounterId || null,
+      patient_id: options.patient_id || options.patientId || null,
+      fallback_to_mock_bool: true,
+      error: err.message,
+    });
+    throw err;
+  }
+}
+
+async function recordAiInference(data) {
+  try {
+    if (db?.ready) await db.ready;
+    if (typeof db.createAiInference === 'function') {
+      return db.createAiInference(data);
+    }
+  } catch (err) {
+    console.error('[AI] Failed to persist ai_inferences row:', err.message);
+  }
+  return null;
+}
+
+let claudeCaller = callClaude;
+
+function __setClaudeCallerForTest(fn) {
+  claudeCaller = fn || callClaude;
+}
+
+function __resetClaudeCallerForTest() {
+  claudeCaller = callClaude;
+}
+
+function fallbackReason(operation, err) {
+  return `${operation} used local fallback because Claude/API failed: ${err.message}`;
+}
+
+async function recordAiFallbackSafety({ patient, patientId, encounterId, operation, error }) {
+  const pid = patient?.id || patientId || null;
+  const eid = encounterId || null;
+  const reason = fallbackReason(operation, error);
+  const fallback = {
+    degraded: true,
+    banner: AI_FALLBACK_BANNER,
+    operation,
+    reason,
+    patient_id: pid,
+    encounter_id: eid
+  };
+
+  try {
+    if (db?.ready) await db.ready;
+
+    let safetyEvent = null;
+    if (typeof db.createSafetyEvent === 'function') {
+      safetyEvent = await db.createSafetyEvent({
+        agent_name: 'ai_client',
+        level: 2,
+        label: 'ai_fallback_degraded',
+        description: reason,
+        response_required: true,
+        patient_id: pid,
+        encounter_id: eid,
+        reported_by: 'ai-client',
+        root_cause: 'claude_api_fallback'
+      });
+    }
+
+    if (eid && typeof db.markEncounterAiDegraded === 'function') {
+      await db.markEncounterAiDegraded(eid, reason);
+    }
+
+    return {
+      ...fallback,
+      safety_event_id: safetyEvent?.id || null
+    };
+  } catch (recordErr) {
+    console.error('[AI] Failed to persist AI fallback safety event:', recordErr.message);
+    return {
+      ...fallback,
+      safety_event_id: null,
+      safety_event_error: recordErr.message
+    };
+  }
 }
 
 // ==========================================
@@ -628,9 +781,9 @@ function extractImagingOrders(transcript) {
 // CLINICAL DATA EXTRACTION (Combined, Enhanced)
 // ==========================================
 
-async function extractClinicalData(transcript, patient) {
+async function extractClinicalData(transcript, patient, options = {}) {
   if (isClaudeEnabled()) {
-    return _claudeExtractClinicalData(transcript, patient);
+    return _claudeExtractClinicalData(transcript, patient, options);
   }
 
   // Mock mode: pattern-matching extraction with unified count summary
@@ -666,59 +819,9 @@ async function extractClinicalData(transcript, patient) {
   };
 }
 
-async function _claudeExtractClinicalData(transcript, patient) {
-  const system = `You are a clinical documentation AI. Extract structured data from a clinical encounter transcript.
-Return ONLY valid JSON matching the schema below. Do not include any explanation or markdown.
-
-Schema:
-{
-  "vitals": {
-    "systolic_bp": number|null,
-    "diastolic_bp": number|null,
-    "heart_rate": number|null,
-    "temperature": number|null,
-    "weight": number|null,
-    "height": number|null,
-    "respiratory_rate": number|null,
-    "spo2": number|null,
-    "bmi": number|null
-  },
-  "medications": [
-    { "medication_name": string, "dose": string, "route": string, "frequency": string }
-  ],
-  "problems": [
-    { "problem_name": string, "icd10_code": string, "status": "active"|"resolved"|"chronic" }
-  ],
-  "labs": [
-    { "test_name": string, "cpt_code": string|null }
-  ],
-  "imaging": [
-    { "study_type": string, "body_part": string }
-  ],
-  "ros": {
-    "Constitutional": string|null,
-    "Cardiovascular": string|null,
-    "Respiratory": string|null,
-    "Gastrointestinal": string|null,
-    "Musculoskeletal": string|null,
-    "Neurological": string|null,
-    "Psychiatric": string|null
-  },
-  "physical_exam": {
-    "General": string|null,
-    "Cardiovascular": string|null,
-    "Respiratory": string|null,
-    "Abdomen": string|null,
-    "Extremities": string|null,
-    "Neurological": string|null
-  }
-}
-
-Rules:
-- Only extract information explicitly stated in the transcript
-- For ICD-10 codes, use the most specific appropriate code
-- For vitals, weight is in pounds and height is in inches unless clearly stated otherwise
-- Return null for fields not mentioned in the transcript`;
+async function _claudeExtractClinicalData(transcript, patient, options = {}) {
+  const promptTemplate = loadPromptTemplate('clinical_extraction:v1', 'extraction/v1.md');
+  const system = promptTemplate.template;
 
   const patientCtx = patient
     ? `Patient: ${patient.first_name} ${patient.last_name}, DOB: ${patient.dob}, Sex: ${patient.sex}`
@@ -727,7 +830,7 @@ Rules:
   const userMsg = `${patientCtx ? patientCtx + '\n\n' : ''}Transcript:\n${transcript}`;
 
   try {
-    const raw = await callClaude(system, userMsg);
+    const raw = await claudeCaller(system, userMsg, DEFAULT_CLAUDE_HAIKU_MODEL, promptTemplate, options);
     // Strip markdown code fences if present
     const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
     const parsed = JSON.parse(cleaned);
@@ -761,6 +864,9 @@ Rules:
 
     return {
       extracted,
+      prompt_id: promptTemplate.prompt_id,
+      prompt_sha256: promptTemplate.prompt_sha256,
+      model: DEFAULT_CLAUDE_HAIKU_MODEL,
       extraction_summary: {
         total_fields: totalFields,
         counts
@@ -769,6 +875,13 @@ Rules:
   } catch (err) {
     // Fallback to pattern matching if Claude fails
     console.error('[AI] Claude extraction failed, falling back to pattern matching:', err.message);
+    const aiFallback = await recordAiFallbackSafety({
+      patient,
+      patientId: options.patient_id || options.patientId,
+      encounterId: options.encounter_id || options.encounterId,
+      operation: 'clinical_data_extraction',
+      error: err
+    });
     const extracted = {
       vitals: extractVitals(transcript),
       medications: extractMedications(transcript),
@@ -793,6 +906,11 @@ Rules:
 
     return {
       extracted,
+      ai_degraded: true,
+      ai_fallback: aiFallback,
+      prompt_id: promptTemplate.prompt_id,
+      prompt_sha256: promptTemplate.prompt_sha256,
+      model: DEFAULT_CLAUDE_HAIKU_MODEL,
       extraction_summary: {
         total_fields: totalFields,
         counts
@@ -806,13 +924,24 @@ Rules:
 // ==========================================
 
 async function generateSOAPNote(transcript, patient, vitals) {
-  if (isClaudeEnabled()) {
-    return _claudeGenerateSOAPNote(transcript, patient, vitals);
-  }
-  return _mockGenerateSOAPNote(transcript, patient, vitals);
+  const result = await generateSOAPNoteWithMeta(transcript, patient, vitals);
+  return result.soap_note;
 }
 
-async function _claudeGenerateSOAPNote(transcript, patient, vitals) {
+async function generateSOAPNoteWithMeta(transcript, patient, vitals, options = {}) {
+  if (isClaudeEnabled()) {
+    return _claudeGenerateSOAPNote(transcript, patient, vitals, options);
+  }
+  const soapNote = await _mockGenerateSOAPNote(transcript, patient, vitals);
+  return {
+    soap_note: soapNote,
+    ai_degraded: false,
+    ai_fallback: null
+  };
+}
+
+async function _claudeGenerateSOAPNote(transcript, patient, vitals, options = {}) {
+  const promptTemplate = loadPromptTemplate('soap_note:v1', 'soap/v1.md');
   const patientName = patient ? `${patient.first_name} ${patient.last_name}` : 'Unknown Patient';
   const age = patient && patient.dob ? calculateAge(patient.dob) : 'Unknown';
   const sex = patient ? patient.sex : '';
@@ -824,36 +953,7 @@ async function _claudeGenerateSOAPNote(transcript, patient, vitals) {
         .join(', ')
     : 'Not recorded';
 
-  const system = `You are a clinical documentation AI assisting a physician in a primary care setting.
-Generate a complete, professional SOAP note from the encounter transcript provided.
-
-Format the note exactly as follows (use plain text, no markdown):
-
-PATIENT: [name, age, sex]
-DATE: [today's date]
-
-SUBJECTIVE:
-[Chief complaint and HPI in narrative form. Include duration, severity, associated symptoms, and relevant history.]
-
-REVIEW OF SYSTEMS:
-[Systems reviewed, noting positive and negative findings]
-
-OBJECTIVE:
-Vitals: [list all available vitals]
-Physical Exam: [organized by system — General, HEENT, Cardiovascular, Respiratory, Abdomen, Extremities, Neurological as applicable]
-
-ASSESSMENT:
-[Numbered problem list with ICD-10 codes where applicable]
-
-PLAN:
-[Numbered list corresponding to each problem — medications, labs, imaging, referrals, follow-up, patient education]
-
-Rules:
-- Use standard medical abbreviations
-- Be concise but clinically complete
-- Only document what is stated or clearly implied in the transcript
-- Do not fabricate findings or orders not mentioned
-- Include ICD-10 codes for diagnoses in parentheses`;
+  const system = promptTemplate.template;
 
   const userMsg = `Patient: ${patientName}, Age: ${age}, Sex: ${sex}
 Vitals recorded: ${vitalsText}
@@ -863,10 +963,33 @@ Encounter Transcript:
 ${transcript}`;
 
   try {
-    return await callClaude(system, userMsg, 'claude-sonnet-4-6');
+    const soapNote = await claudeCaller(system, userMsg, DEFAULT_CLAUDE_SONNET_MODEL, promptTemplate, options);
+    return {
+      soap_note: soapNote,
+      ai_degraded: false,
+      ai_fallback: null,
+      prompt_id: promptTemplate.prompt_id,
+      prompt_sha256: promptTemplate.prompt_sha256,
+      model: DEFAULT_CLAUDE_SONNET_MODEL
+    };
   } catch (err) {
     console.error('[AI] Claude SOAP generation failed, falling back to pattern matching:', err.message);
-    return _mockGenerateSOAPNote(transcript, patient, vitals);
+    const aiFallback = await recordAiFallbackSafety({
+      patient,
+      patientId: options.patient_id || options.patientId,
+      encounterId: options.encounter_id || options.encounterId,
+      operation: 'soap_note_generation',
+      error: err
+    });
+    const soapNote = await _mockGenerateSOAPNote(transcript, patient, vitals);
+    return {
+      soap_note: soapNote,
+      ai_degraded: true,
+      ai_fallback: aiFallback,
+      prompt_id: promptTemplate.prompt_id,
+      prompt_sha256: promptTemplate.prompt_sha256,
+      model: DEFAULT_CLAUDE_SONNET_MODEL
+    };
   }
 }
 
@@ -1090,6 +1213,18 @@ module.exports = {
   extractPhysicalExam,
   extractClinicalData,
   generateSOAPNote,
+  generateSOAPNoteWithMeta,
   lookupMedication,
-  COMMON_MEDICATIONS
+  COMMON_MEDICATIONS,
+  AI_FALLBACK_BANNER,
+  __setClaudeCallerForTest,
+  __resetClaudeCallerForTest,
+  __test: {
+    DEFAULT_CLAUDE_HAIKU_MODEL,
+    DEFAULT_CLAUDE_SONNET_MODEL,
+    assertPinnedClaudeModel,
+    isPinnedClaudeModel,
+    loadPromptTemplate,
+    sha256,
+  }
 };

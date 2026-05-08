@@ -162,6 +162,13 @@ export default function ReviewPage() {
       {patient && <PatientBanner patient={patient} />}
 
       <div className="max-w-4xl mx-auto p-4 space-y-4">
+        {encounter?.ai_degraded ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="font-semibold">AI fallback mode</div>
+            <div>{encounter.ai_degradation_reason || 'Note generated in fallback mode; clinician verification required.'}</div>
+          </div>
+        ) : null}
+
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <TouchButton variant="secondary" size="sm" onClick={() => navigate('/encounter/' + encounterId)}>

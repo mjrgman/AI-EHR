@@ -31,9 +31,10 @@ const PEPTIDE_RULES = [
     category: 'glp1_t2dm',
     priority: 25,
     trigger_condition: {
+      pregnancy_gate: { required: true, reproductive_age_max: 55, lmp_required: true },
       problems_any: ['type 2 diabetes', 'T2DM', 'E11'],
       lab: { code: 'hba1c', operator: '>=', value: 7.0, unit: '%' },
-      contraindications_none: ['medullary thyroid carcinoma', 'MEN-2', 'history of pancreatitis']
+      contraindications_none: ['medullary thyroid carcinoma', 'MEN-2', 'history of pancreatitis', 'pregnancy']
     },
     suggested_actions: {
       title: 'Consider Semaglutide (Ozempic) for T2DM',
@@ -54,7 +55,7 @@ const PEPTIDE_RULES = [
         { type: 'patient_counseling', payload: { topics: ['GI side effects (nausea, vomiting, constipation)', 'Hypoglycemia risk if on sulfonylurea or insulin', 'Injection technique', 'Report severe abdominal pain (pancreatitis)'] } }
       ]
     },
-    evidence_source: 'SUSTAIN trials; ADA Standards of Care 2025: GLP-1 RA recommended as part of glucose-lowering therapy with demonstrated CV benefit in T2DM.'
+    evidence_source: 'SUSTAIN trials; ADA Standards of Care 2025: GLP-1 RA recommended as part of glucose-lowering therapy with demonstrated CV benefit in T2DM. Ozempic/Wegovy labeling requires pregnancy-risk counseling and semaglutide discontinuation before planned pregnancy or when pregnancy is recognized.'
   },
   {
     id: 'pep-sema-titrate-up',
@@ -63,6 +64,7 @@ const PEPTIDE_RULES = [
     category: 'glp1_t2dm',
     priority: 30,
     trigger_condition: {
+      pregnancy_gate: { required: true, reproductive_age_max: 55, lmp_required: true },
       on_medication: 'semaglutide',
       lab: { code: 'hba1c', operator: '>=', value: 7.0, unit: '%' },
       weeks_on_current_dose: { operator: '>=', value: 4 },
@@ -86,7 +88,7 @@ const PEPTIDE_RULES = [
         }
       ]
     },
-    evidence_source: 'Semaglutide package insert (Ozempic, Novo Nordisk); SUSTAIN trial protocols: titrate q4 weeks if tolerated.'
+    evidence_source: 'Semaglutide package insert (Ozempic, Novo Nordisk); SUSTAIN trial protocols: titrate q4 weeks if tolerated. Pregnancy gate requires documented non-pregnant status and LMP before reproductive-risk dose escalation.'
   },
   {
     id: 'pep-sema-gi-intolerance',
@@ -137,6 +139,7 @@ const PEPTIDE_RULES = [
     category: 'glp1_weight',
     priority: 30,
     trigger_condition: {
+      pregnancy_gate: { required: true, reproductive_age_max: 55, lmp_required: true },
       bmi_min: 30,
       contraindications_none: ['medullary thyroid carcinoma', 'MEN-2', 'history of pancreatitis', 'pregnancy']
     },
@@ -158,7 +161,7 @@ const PEPTIDE_RULES = [
         }
       ]
     },
-    evidence_source: 'SURMOUNT-1, SURMOUNT-2 trials (NEJM 2022, 2023); tirzepatide package insert (Zepbound, Eli Lilly).'
+    evidence_source: 'SURMOUNT-1, SURMOUNT-2 trials (NEJM 2022, 2023); tirzepatide package insert (Zepbound, Eli Lilly): discontinue Zepbound when pregnancy is recognized; pregnancy gate requires documented non-pregnant status and LMP before reproductive-risk initiation.'
   },
 
   // ==========================================

@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ULTRAPLAN_05-08-2026.md</title>
+<style>
+body {
+  font-family: -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  max-width: var(--width, 900px);
+  margin: 40px auto;
+  padding: 0 28px;
+  line-height: 1.65;
+  color: #2a2a2a;
+  background: #fefdfb;
+}
+h1, h2, h3, h4, h5, h6 {
+  color: #1a3a52;
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  font-weight: 700;
+  line-height: 1.25;
+}
+h1 { border-bottom: 2px solid #b8860b; padding-bottom: 10px; margin-top: 0.5em; }
+h2 { border-bottom: 1px solid #e0d8c8; padding-bottom: 6px; margin-top: 2em; }
+h3 { margin-top: 1.5em; color: #4a5f7f; }
+a { color: #b8860b; text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font-family: Consolas, 'Fira Code', 'JetBrains Mono', monospace;
+  background: #f4f0e8;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.92em;
+  color: #1a3a52;
+}
+pre {
+  background: #f4f0e8;
+  padding: 16px 20px;
+  border-radius: 6px;
+  overflow-x: auto;
+  border-left: 3px solid #4a5f7f;
+}
+pre code { background: none; padding: 0; font-size: 0.88em; }
+blockquote {
+  border-left: 4px solid #b8860b;
+  padding: 8px 18px;
+  color: #4a4a4a;
+  margin: 1em 0;
+  background: #f5f1e8;
+  font-style: italic;
+}
+table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  font-size: 0.95em;
+}
+th, td {
+  border: 1px solid #d8d0c0;
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+th { background: #f5f1e8; font-weight: 600; color: #1a3a52; }
+tr:nth-child(even) td { background: #fafaf5; }
+hr { border: none; border-top: 1px solid #b8860b; margin: 2em 0; }
+strong { color: #1a3a52; font-weight: 600; }
+em { color: #4a5f7f; }
+ul, ol { padding-left: 1.5em; }
+li { margin: 0.25em 0; }
+img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
+.emoji { font-style: normal; }
+
+/* Callout boxes for common patterns */
+blockquote p:first-child strong:first-child { color: #a1322a; }
+
+/* Page footer watermark */
+body::after {
+  content: 'Rendered by HAL render_md.py — Measured Canon preview';
+  display: block;
+  margin-top: 3em;
+  padding-top: 1em;
+  border-top: 1px dashed #d8d0c0;
+  color: #999;
+  font-size: 0.8em;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+<h1 id="ultraplan-agentic-ehr">Ultraplan — Agentic EHR</h1>
+<p><strong>Date:</strong> 2026-05-08<br />
+<strong>Author:</strong> 5-agent local ultrareview (security, clinical-safety, AI-trust, architecture, tests/CI) + cross-verification<br />
+<strong>Stage:</strong> Development / hard-code build — no live patient data<br />
+<strong>Mission:</strong> Move from "hardened" (post-2026-04-07 ultrareview) to <strong>best AI EHR ever conceived</strong> on the axes that actually matter: clinical correctness, AI trust, architectural ceiling, and capability differentiation.</p>
+<hr />
+<h2 id="where-we-stand-one-paragraph">Where we stand (one paragraph)</h2>
+<p>The 2026-04-07 ultrareview closed 77 findings in a 6-agent fix sweep. Spot-checks confirm the headline P0s (auth wiring, RBAC, JWT_SECRET non-export, agent governance, mutex, Tier-3 dosing approval) are real in code. The architecture and vision remain best-in-class — three-tier autonomy, module registry, fail-closed Domain Logic, evidence-source-required rules. <strong>What the prior review missed and what's accumulated since</strong> is now the work in front of us. Five themes:</p>
+<ol>
+<li><strong>Clinical correctness has critical holes</strong> the prior review didn't see — most importantly a <strong>prescription-write backdoor</strong> that bypasses every Tier-3 gate this project was architected around.</li>
+<li><strong>The AI inference layer is fundamentally non-reproducible</strong> — no prompt persistence, no model-version pinning on every call, silent mock-fallback. This is the single thing standing between "great AI EHR" and "best AI EHR ever."</li>
+<li><strong>Engineering-integrity controls</strong> (audit-log immutability, transcript encryption, supply-chain pinning, break-glass) are partial — fine for dev, but they cap what the system can become.</li>
+<li><strong>Architecture ceiling is single-node</strong> — Postgres adapter is a stub, message bus is in-process, sessions are Maps. No path to multi-tenancy or horizontal scale today.</li>
+<li><strong>Testing has improved</strong> (auth, RBAC, encryption, dosing-approval, scheduling tests now exist) but UI is 100% dark, scenarios are narratives not assertions, no migration tests, no coverage gate.</li>
+</ol>
+<hr />
+<h2 id="findings-ultraplan-crosswalk">Findings → Ultraplan crosswalk</h2>
+<p>Every finding below carries <strong>EVID:</strong> (file:line) and <strong>OWNER:</strong> (subsystem). Items without evidence are not in this plan.</p>
+<h3 id="p0-stop-the-bleed-real-bugs-this-week">P0 — Stop-the-bleed real bugs (this week)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Finding</th>
+<th>EVID</th>
+<th>Owner</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>U0-01</strong></td>
+<td><strong><code>POST /api/prescriptions</code> is a Tier-3 backdoor.</strong> Accepts <code>medication_name</code>, <code>dose</code>, <code>route</code>, <code>frequency</code>, and <code>status: 'signed'</code> from the client. No call to <code>requestDosingApproval</code>, no CDS, no allergy, no domain guardrail. The entire Tier-3 architecture is bypassable through a normal REST POST.</td>
+<td><code>server/server.js:707-779</code> (esp. line 734 <code>status: req.body.status || 'signed'</code>)</td>
+<td>Server / Tier-3</td>
+<td>Require <code>dosing_approval_id</code> issued via <code>BaseAgent.requestDosingApproval</code>. Re-run CDS + allergy + domain-logic guardrails server-side. Reject any client-supplied <code>status: 'signed'</code>.</td>
+</tr>
+<tr>
+<td><strong>U0-02</strong></td>
+<td><strong><code>POST /api/prescriptions/from-speech</code> is the same backdoor, worse.</strong> Extracts meds via regex from transcript and writes <code>status: 'signed'</code> directly. Speech → signed Rx, zero safety layer.</td>
+<td><code>server/server.js:781-828</code> (line 815)</td>
+<td>Server / Tier-3</td>
+<td>Route through Domain Logic + CDS pipeline. Output is a <em>proposed</em> prescription (<code>status: 'draft'</code>), not signed. Signing requires the dosing-approval flow.</td>
+</tr>
+<tr>
+<td><strong>U0-03</strong></td>
+<td><strong>MediVault drug-interaction checks never fire.</strong> <code>red-flag-agent</code> calls <code>drugSafetyService.checkDrugInteractions(medications)</code> with one arg; signature is <code>(newDrugName, activeMeds)</code>. <code>!activeMeds</code> short-circuits to <code>[]</code>.</td>
+<td><code>server/medivault/agents/red-flag-agent.js:392</code> vs <code>server/pharma/drug-safety-service.js:72</code></td>
+<td>MediVault / Pharma</td>
+<td>Fix arg order. Add unit test that exercises the call from MediVault end and asserts non-empty interactions for a known pair.</td>
+</tr>
+<tr>
+<td><strong>U0-04</strong></td>
+<td><strong>DDI source is dead.</strong> <code>drug-safety-service.js</code> calls <code>rxnorm.checkInteractionsAgainstList</code>. NLM retired the RxNorm interaction API in Jan 2024 — service silently returns empty arrays. Every "interaction-checked" prescription today is unchecked.</td>
+<td><code>server/pharma/drug-safety-service.js:72-86</code>, <code>server/pharma/rxnorm-service.js</code></td>
+<td>Pharma</td>
+<td>Replace with live source: DrugBank, OpenFDA AERS, self-hosted NIH RXNAV proxy, or licensed feed. Add <strong>fail-closed mode</strong> — if source unreachable, prescription is held with <code>pending_ddi_check</code>, not auto-approved.</td>
+</tr>
+<tr>
+<td><strong>U0-05</strong></td>
+<td><strong>Pregnancy gating absent on HRT and most peptide rules.</strong> Estradiol rule fires for <code>sex:'F', age_min:45</code> with no β-hCG / LMP gate. Only GLP-1 lists pregnancy in contraindications. ACOG documents spontaneous pregnancies through age 50+.</td>
+<td><code>server/domain/rules/hrt-rules.js:165-168</code>, <code>server/domain/rules/peptide-rules.js:141</code></td>
+<td>Domain rules</td>
+<td>Add <code>pregnancy_status</code> and LMP requirement to every reproductive-age-female-eligible rule in HRT + peptides. Block initiation if LMP unknown. Propagate check into <code>functional-med-engine.evaluateTrigger</code>.</td>
+</tr>
+<tr>
+<td><strong>U0-06</strong></td>
+<td><strong>Critical-value notification has no active path.</strong> <code>red-flag-agent</code> writes alerts to a queue with no STAT/page/SMS callback. K+ ≥6.0, troponin &gt;0.4 produces a queue entry, not a clinician-paged event.</td>
+<td><code>server/medivault/agents/red-flag-agent.js:198-220</code></td>
+<td>MediVault</td>
+<td>Emit synchronous <code>CRITICAL_VALUE</code> event to physician on-call channel. Require physician ack within configurable SLA. Log unacked criticals as Level-1 safety failures. Recalibrate troponin scale (legacy vs hsTrop), creatinine threshold to 5.0, add pediatric ranges.</td>
+</tr>
+<tr>
+<td><strong>U0-07</strong></td>
+<td><strong>Postgres adapter is a stub</strong> but docs and code paths suggest it works. Every method throws. Production claim is false; multi-tenancy and managed-DB stories are blocked.</td>
+<td><code>server/db/adapters/postgres.js:23-46</code></td>
+<td>DB</td>
+<td>Either implement end-to-end (translate <code>?</code>→<code>$N</code>, replace AUTOINCREMENT/BOOLEAN/serialize, connection pool, migration parity tests) or strike all "Postgres-ready" claims and pin SQLite explicitly until it lands.</td>
+</tr>
+<tr>
+<td><strong>U0-08</strong></td>
+<td><strong>Mock-fallback is silent.</strong> When Claude API errors, <code>_claudeExtractClinicalData</code> and <code>_claudeGenerateSOAPNote</code> fall through to regex/pattern-matching with <code>console.error</code> only. No <code>safety_events</code> row, no <code>ai_degraded=true</code> tag on the encounter. A clinician opens a chart not knowing the SOAP note was regex-built.</td>
+<td><code>server/ai-client.js:769-801</code>, <code>:867-870</code></td>
+<td>AI client</td>
+<td>On fallback: insert <code>safety_events</code> Level-2 row, set encounter flag <code>ai_degraded=true</code>, render banner on chart UI: "Note generated in fallback mode; clinician verification required."</td>
+</tr>
+</tbody>
+</table>
+<h3 id="p1-reliability-and-correctness-this-sprint">P1 — Reliability and correctness (this sprint)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Finding</th>
+<th>EVID</th>
+<th>Owner</th>
+<th>Fix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>U1-01</td>
+<td><strong>No renal/hepatic/pediatric dose-adjustment layer.</strong> <code>pharma/dosing-service.js</code> extracts <code>renal_adjustment</code>/<code>hepatic_adjustment</code> as text from FDA labels but nothing reads them at order time.</td>
+<td><code>server/pharma/dosing-service.js:206-242</code>, <code>server/agents/orders-agent.js</code></td>
+<td>Orders / Pharma</td>
+<td>Insert dose-adjustment middleware between <code>domain-logic-agent</code> proposals and <code>requestDosingApproval</code>. Pulls eGFR/AST-ALT-bilirubin/age-weight, blocks or annotates per FDA-label thresholds.</td>
+</tr>
+<tr>
+<td>U1-02</td>
+<td><strong><code>lab-synthesis-agent</code> runs in parallel with CDS</strong> (<code>dependsOn: []</code>), so CDS can evaluate stale labs in same pipeline.</td>
+<td><code>server/agents/lab-synthesis-agent.js:42</code></td>
+<td>Orchestrator</td>
+<td>Set <code>dependsOn: ['lab_synthesis']</code> on cds-agent and domain-logic-agent (or invert: lab_synthesis runs first).</td>
+</tr>
+<tr>
+<td>U1-03</td>
+<td><strong>Audit log has no integrity proof.</strong> Plain SQLite rows, no hash chain, no append-only constraint, no nightly verifier. A future regression or insider write rewrites history undetectably.</td>
+<td><code>server/audit-logger.js</code>, <code>server/database-migrations.js</code> (no <code>previous_hash</code>/<code>hmac</code> columns)</td>
+<td>Audit</td>
+<td>Add <code>previous_hash</code>, <code>hmac</code> columns to <code>audit_log</code>. Insert trigger fills <code>previous_hash</code> from prior row, <code>hmac</code> from <code>HMAC(secret, prior_hash || row_json)</code>. Block UPDATE/DELETE via SQLite trigger. Nightly chain-verifier job.</td>
+</tr>
+<tr>
+<td>U1-04</td>
+<td><strong>Token blacklist + rate limiter + session store are in-memory Maps.</strong> Logout on node A doesn't revoke on node B; restart wipes blacklist; per-replica rate limit lets attacker round-robin.</td>
+<td><code>server/security/auth.js:43</code>, <code>server/security/hipaa-middleware.js:26,37</code></td>
+<td>Security</td>
+<td>Move to Redis (or DB-backed <code>revoked_tokens(jti, exp)</code> + <code>rate_limit(key, count, window)</code> + <code>sessions(id, payload, exp)</code>). Single source of truth.</td>
+</tr>
+<tr>
+<td>U1-05</td>
+<td><strong>Prompts are inline string literals, not versioned.</strong> Two-week-old SOAP notes can't be replayed; prompt edits silently change behavior of in-flight encounters.</td>
+<td><code>server/ai-client.js:670</code> (extraction), <code>:827</code> (SOAP)</td>
+<td>AI client</td>
+<td>Move prompts to <code>server/ai-client/prompts/extraction/v1.md</code> + <code>prompts/soap/v1.md</code>. Hash on load. Store <code>prompt_id</code>, <code>prompt_sha256</code> on every inference row. New version = migration.</td>
+</tr>
+<tr>
+<td>U1-06</td>
+<td><strong>Model id <code>claude-sonnet-4-6</code> is unversioned alias.</strong> Auto-following minor revisions is a clinical-safety hazard — reproducibility breaks on every server-side model rev.</td>
+<td><code>server/ai-client.js:866</code></td>
+<td>AI client</td>
+<td>Pin every call site to a dated build. Startup assertion in <code>getMode()</code> rejects launch if any call uses an unversioned alias.</td>
+</tr>
+<tr>
+<td>U1-07</td>
+<td><strong>Citation-back-to-source absent on AI extractions.</strong> Vitals, meds, problems are extracted with no character offset into the transcript. A clinician can't verify "where did the AI hear me say BP 188/100?"</td>
+<td><code>server/ai-client.js:686-714</code> schema</td>
+<td>AI client</td>
+<td>Extend extraction schema: every value carries <code>evidence_quote</code> (verbatim transcript span), <code>start_offset</code>, <code>end_offset</code>. Reject parsed output where <code>evidence_quote</code> isn't a substring of transcript. Persist with inference row.</td>
+</tr>
+<tr>
+<td>U1-08</td>
+<td><strong>Penicillin↔cephalosporin cross-reactivity not in allergy class table</strong> (5–10% literature rate); no carbapenem, fluoroquinolone, macrolide, vancomycin, benzo classes.</td>
+<td><code>server/agents/orders-agent.js:18-27</code></td>
+<td>Orders</td>
+<td>Expand drug-class table. Source class membership from a maintained table (RxNorm RxClass relationships) rather than hardcoded list.</td>
+</tr>
+<tr>
+<td>U1-09</td>
+<td><strong>Lab-result trending absent.</strong> All thresholds are point-in-time. No Δ-from-baseline (creatinine doubling = AKI), no Na correction-rate guard (osmotic demyelination on rapid Na correction).</td>
+<td><code>server/medivault/agents/red-flag-agent.js:40-131</code>, CDS rules</td>
+<td>CDS / MediVault</td>
+<td>Lab trend detector that compares latest result to prior values within window. Trigger on Δ thresholds, not absolute values, for AKI/AMS/electrolyte derangement patterns.</td>
+</tr>
+<tr>
+<td>U1-10</td>
+<td><strong>CSRF on patient portal cookie auth</strong> — <code>SameSite=Lax</code> doesn't block top-level POST navigation; refill, message, triage, appointment booking are CSRF-vulnerable.</td>
+<td><code>server/services/portal-session-service.js:23-42</code>, <code>server/routes/patient-portal.js:120-385</code></td>
+<td>Patient portal</td>
+<td>Double-submit token + <code>SameSite=Strict</code> for state-changing endpoints. Origin-header check fallback.</td>
+</tr>
+<tr>
+<td>U1-11</td>
+<td><strong>Patient-portal session cookie missing <code>__Host-</code> prefix; <code>Path=/</code>.</strong></td>
+<td><code>server/services/portal-session-service.js</code></td>
+<td>Patient portal</td>
+<td><code>__Host-</code> prefix; <code>Secure</code>; <code>Path=/api/patient-portal</code>; <code>HttpOnly</code>; <code>SameSite=Strict</code>.</td>
+</tr>
+<tr>
+<td>U1-12</td>
+<td><strong>Provider-learning has no tenant isolation.</strong> <code>provider_preferences</code> keys on <code>provider_name TEXT</code> only — no <code>tenant_id</code>, no FK to <code>users</code>. Two clinics in one DB share practice patterns.</td>
+<td><code>server/database.js:281-294</code></td>
+<td>Provider learning</td>
+<td>Add <code>tenant_id</code> (or scope strictly per-deployment with documentation). Composite index <code>(tenant_id, provider_name)</code>.</td>
+</tr>
+<tr>
+<td>U1-13</td>
+<td><strong>OAuth state stored in module-level Map.</strong> LabCorp OAuth <code>invalid_state</code> after restart; not horizontally scalable.</td>
+<td><code>server/routes/labcorp-routes.js:44,115</code></td>
+<td>LabCorp</td>
+<td>Move to <code>labcorp_oauth_states</code> DB table with TTL.</td>
+</tr>
+<tr>
+<td>U1-14</td>
+<td><strong>XML parser without <code>processEntities:false</code>/<code>stopNodes</code>.</strong> External-party lab XML is XXE / billion-laughs surface. fast-xml-parser version bump fixed one CVE; the configuration surface is wider.</td>
+<td><code>server/integrations/labcorp/parser.js:64-71</code></td>
+<td>LabCorp</td>
+<td>Configure parser: <code>processEntities: false</code>, set <code>stopNodes</code> for known-large fields, max-depth limit.</td>
+</tr>
+<tr>
+<td>U1-15</td>
+<td><strong>Webhook signature has no timestamp/nonce; no SSRF allowlist on subscriber URL.</strong> Admin can register <code>http://169.254.169.254/...</code> (cloud metadata).</td>
+<td><code>server/integrations/event-bus.js:81-128</code></td>
+<td>Integrations</td>
+<td>Sign <code>timestamp.body</code>, reject &gt;5 min skew. Block RFC1918 + link-local + metadata IPs.</td>
+</tr>
+<tr>
+<td>U1-16</td>
+<td><strong>No SBAR-shaped inter-agent messages.</strong> Handoffs are loose JSON. Reconciliation/translation agents lose clinical context fidelity over multi-hop pipelines.</td>
+<td><code>server/agents/message-bus.js</code>, all agents</td>
+<td>Inter-agent</td>
+<td>Define an SBAR envelope schema: <code>situation</code>, <code>background</code>, <code>assessment</code>, <code>recommendation</code>, <code>provenance</code>. All Tier-2/Tier-3 messages adopt it.</td>
+</tr>
+<tr>
+<td>U1-17</td>
+<td><strong><code>Object.assign(context.vitals, extracted.vitals)</code> on Claude output.</strong> Prototype-pollution surface via <code>__proto__</code> key.</td>
+<td><code>server/server.js:651</code></td>
+<td>Server</td>
+<td>Whitelist copier; reject keys outside the schema.</td>
+</tr>
+<tr>
+<td>U1-18</td>
+<td><strong>Migration test file does not exist.</strong> Schema versioning, idempotent re-run, additive-column migrations on populated DB are untested.</td>
+<td><code>server/database-migrations.js</code>, <code>test/unit/</code> (no <code>database-migrations.test.js</code>)</td>
+<td>Tests</td>
+<td>New <code>test/unit/database-migrations.test.js</code>: fresh-DB run, repeated-run idempotency, populated-DB additive-column run, failed-migration rollback.</td>
+</tr>
+<tr>
+<td>U1-19</td>
+<td><strong>UI test layer is 0% covered.</strong> No vitest, no @testing-library/react, no Playwright. 8 React pages + dozens of components are dark.</td>
+<td><code>package.json:44-55</code>, <code>src/</code></td>
+<td>Frontend tests</td>
+<td>Vitest + @testing-library/react for <code>src/components/workflow/</code> and <code>src/pages/</code>. One Playwright smoke test in CI: login → encounter → SOAP draft.</td>
+</tr>
+<tr>
+<td>U1-20</td>
+<td><strong>Stress-test scenarios are narratives, not assertions.</strong> Scenario runner CAN check <code>expected_cds.should_fire</code>, but <code>stress-test-scenarios.json</code> (1743 lines) has zero <code>expected_cds</code> blocks. CI doesn't invoke the runner.</td>
+<td><code>test/scenarios/run-scenario.js:236-258</code>, <code>test/scenarios/stress-test-scenarios.json</code></td>
+<td>Tests</td>
+<td>Backfill <code>expected_cds</code> on every scenario. CI job: boot server, run <code>node test/scenarios/run-scenario.js --all</code>, exit non-zero on failure.</td>
+</tr>
+<tr>
+<td>U1-21</td>
+<td><strong>ESLint posture is permissive (3/10).</strong> Multiple <code>no-*</code> rules downgraded to <code>warn</code>, no security/promise/import plugins.</td>
+<td><code>.eslintrc.cjs:21-40</code></td>
+<td>Lint</td>
+<td>Tighten downgraded rules to <code>error</code>. Add <code>eslint-plugin-security</code>, <code>eslint-plugin-node</code>, <code>eslint-plugin-promise</code>.</td>
+</tr>
+<tr>
+<td>U1-22</td>
+<td><strong>No coverage gate, no SAST, no Dependabot.</strong></td>
+<td><code>.github/workflows/ci.yml</code></td>
+<td>CI</td>
+<td>c8/nyc with 70% floor on <code>server/</code>. CodeQL job. <code>.github/dependabot.yml</code> weekly. <code>dependency-review-action</code> on PRs. SBOM (cyclonedx).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="p2-the-ai-trust-ledger-the-differentiator">P2 — The AI Trust Ledger (the differentiator)</h3>
+<p>This is what makes it <em>the</em> AI EHR, not just a hardened one. Plan one engineering quarter, then iterate.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Capability</th>
+<th>Target</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>U2-01</td>
+<td><strong><code>ai_inferences</code> table.</strong> Every Claude call writes a row: <code>request_id</code>, <code>ts</code>, <code>model</code>, <code>model_version</code>, <code>system_hash</code>, <code>user_hash</code>, <code>prompt_template_id</code>, <code>retrieval_snapshot_json</code>, <code>temperature</code>, <code>max_tokens</code>, <code>raw_response_json</code>, <code>parsed_json</code>, <code>input_tokens</code>, <code>output_tokens</code>, <code>latency_ms</code>, <code>encounter_id</code>, <code>patient_id</code>, <code>fallback_to_mock_bool</code>, <code>error</code>. Inserted in <code>callClaude</code> (<code>ai-client.js:67</code>).</td>
+<td>Every AI inference reproducible from cold storage.</td>
+<td>AI client + DB</td>
+</tr>
+<tr>
+<td>U2-02</td>
+<td><strong>Versioned prompt registry</strong> (U1-05 done) <strong>+ migration semantics</strong>. New prompt version creates a new template_id; running encounters can opt-in or stay on prior version until clinician closes.</td>
+<td>Audit-perfect prompt provenance.</td>
+<td>AI client</td>
+</tr>
+<tr>
+<td>U2-03</td>
+<td><strong>Confidence + override audit.</strong> Persist confidence per AI-extracted field. <code>physician_overrides</code> table (already exists, unwired) gets writes from the transcript-edit handler so corrections feed the learning loop.</td>
+<td>Learning loop closes; overrides are first-class data.</td>
+<td>UI + AI client</td>
+</tr>
+<tr>
+<td>U2-04</td>
+<td><strong>Rule versioning + decision provenance.</strong> <code>clinical_rules</code> adds <code>rule_version</code>. Every CDS/Domain Logic suggestion stores the <code>rule_id</code> + <code>rule_version</code> + <code>evidence_source</code> it fired against.</td>
+<td>Reconstruct any suggestion: which rule, on what data, with what thresholds.</td>
+<td>CDS + Domain</td>
+</tr>
+<tr>
+<td>U2-05</td>
+<td><strong>Mock-fallback explicit safety event</strong> (U0-08 done). Plus a <code>degraded_encounters</code> view for nightly review.</td>
+<td>No silent AI degradation.</td>
+<td>AI client</td>
+</tr>
+<tr>
+<td>U2-06</td>
+<td><strong>Litigation hold</strong> (development-time analogue: "frozen on review hold"). Encounter row gets <code>frozen_at</code> timestamp; while frozen, prompts can't be retired, models can't be deprecated, templates can't be edited. Frozen encounters always replay byte-identical.</td>
+<td>Frozen reconstruction guarantee.</td>
+<td>AI client + DB</td>
+</tr>
+<tr>
+<td>U2-07</td>
+<td><strong>Replay Console (the moonshot).</strong> Clinician opens any AI-touched chart artifact (SOAP note, extraction, CDS suggestion). Clicks "Replay." System reconstructs prompt + context + model + sampling from the <code>ai_inferences</code> row, re-fires against the pinned snapshot, diffs old vs new output. <strong>No EHR on the market does this. This single capability is what makes it best-in-class.</strong></td>
+<td>Reproducible AI for medico-legal defense + scientific reproducibility.</td>
+<td>UI + AI client</td>
+</tr>
+</tbody>
+</table>
+<h3 id="p3-architectural-ceiling-next-610-weeks">P3 — Architectural ceiling (next 6–10 weeks)</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Capability</th>
+<th>EVID / Target</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>U3-01</td>
+<td><strong>Tenancy decision and execution.</strong> Pick: (a) per-tenant DB row (<code>tenant_id</code> everywhere) for multi-tenant SaaS, OR (b) per-deployment hardening (separate volumes, DBs, secrets, MRN scoping documented). Currently straddles both — pick one and execute.</td>
+<td>All PHI-bearing tables.</td>
+<td>DB / deployment</td>
+</tr>
+<tr>
+<td>U3-02</td>
+<td><strong>Postgres adapter end-to-end</strong> (U0-07 done) — translate placeholders, replace SQLite-isms, migration parity test, connection pool.</td>
+<td><code>server/db/adapters/postgres.js</code>.</td>
+<td>DB</td>
+</tr>
+<tr>
+<td>U3-03</td>
+<td><strong>Externalize state to Redis</strong> (U1-04 done) — token blacklist, rate limiter, session store, OAuth state. Prerequisite for &gt;1 replica.</td>
+<td>Multiple.</td>
+<td>Security / Infra</td>
+</tr>
+<tr>
+<td>U3-04</td>
+<td><strong>MessageBus durability</strong>. In-process EventEmitter + queue → outbox pattern (<code>claimed_by</code>, <code>claimed_at</code>) or Redis Streams / NATS / Postgres LISTEN-NOTIFY. Node crash mid-encounter doesn't lose unacked work.</td>
+<td><code>server/agents/message-bus.js:131-143</code>.</td>
+<td>Agents / Infra</td>
+</tr>
+<tr>
+<td>U3-05</td>
+<td><strong>Observability baseline.</strong> <code>/metrics</code> (prom-client), structured logs with <code>request_id</code> + <code>agent_id</code> + <code>encounter_id</code> correlation, OpenTelemetry tracing through the message bus, separate <code>/healthz</code> vs <code>/readyz</code>, webhook DLQ + replay endpoint. On-call runbook in repo.</td>
+<td><code>server/server.js</code>, all agents.</td>
+<td>Observability</td>
+</tr>
+<tr>
+<td>U3-06</td>
+<td><strong>TLS by default.</strong> <code>nginx/nginx.conf</code> HTTPS redirect + 443 server block currently commented out. <code>setup.js</code> generates dev certs. Document Let's Encrypt path.</td>
+<td><code>nginx/nginx.conf:42-44, 97-106</code>.</td>
+<td>Deployment</td>
+</tr>
+<tr>
+<td>U3-07</td>
+<td><strong>Backup + restore drill.</strong> SQLite path solid; add Postgres path; document and automate restore drill (anonymized for non-prod).</td>
+<td><code>scripts/backup.sh</code>.</td>
+<td>Ops</td>
+</tr>
+<tr>
+<td>U3-08</td>
+<td><strong>Index coverage + FTS.</strong> Add <code>patients(last_name, dob)</code>, <code>problems(patient_id, status)</code>, <code>medications(patient_id, status)</code>, <code>encounters(patient_id, encounter_date DESC)</code>. Full-text search for problem-list and note search.</td>
+<td><code>server/database.js:386-551</code>.</td>
+<td>DB</td>
+</tr>
+</tbody>
+</table>
+<h3 id="p4-moonshot-capabilities-best-ai-ehr-ever">P4 — Moonshot capabilities ("best AI EHR ever")</h3>
+<p>These are net-new capabilities. Each is a 1–2 month engineering effort. Pick 2–3 to actually ship; the rest become roadmap.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Capability</th>
+<th>Why it's differentiating</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>U4-01</strong></td>
+<td><strong>Replay Console</strong> (U2-07 promoted). Time-travel into any AI-touched artifact: prompt, context, model, output, diff.</td>
+<td>No EHR has this. Solves the medico-legal-AI problem the entire industry is dodging.</td>
+</tr>
+<tr>
+<td><strong>U4-02</strong></td>
+<td><strong>Continuous-learning Provider Profile</strong>, with explicit consent + per-clinician opt-in. The agent learns the physician's macros, phrasing, dx preferences over time. The clinician can view, edit, freeze, or wipe their profile from a settings page.</td>
+<td>Today, every physician trains every model from scratch on every encounter. This is the obvious win every other EHR is too risk-averse to ship.</td>
+</tr>
+<tr>
+<td><strong>U4-03</strong></td>
+<td><strong>Voice-driven chart navigation</strong> beyond capture: "show me her last A1C trend," "compare today's BP to last visit," "draft a referral to ortho for left knee." Built on the same ambient pipeline.</td>
+<td>Removes the click count even for non-documentation tasks.</td>
+</tr>
+<tr>
+<td><strong>U4-04</strong></td>
+<td><strong>Patient-side Replay</strong>. Patient logs into MediVault, sees not just their record but <strong>why</strong> the AI surfaced X. Builds patient trust in AI recommendations and meets the emerging "explainable AI" bar from FDA SaMD guidance.</td>
+<td>Differentiator for direct-to-consumer / DPC market.</td>
+</tr>
+<tr>
+<td><strong>U4-05</strong></td>
+<td><strong>Specialty-pluggable Domain Logic.</strong> HRT/peptide/functional-med is one specialty. Architect Domain Logic so a cardiologist, endocrinologist, or rheumatologist can publish their own rule pack with the same evidence-source enforcement. Rule packs are signed and versioned; clinic admins enable per-deployment.</td>
+<td>Turns this from a great primary-care EHR into a platform.</td>
+</tr>
+<tr>
+<td><strong>U4-06</strong></td>
+<td><strong>Live agent-decision tracing UI</strong> for the clinician. Open a CDS suggestion → see the rule that fired, the data points it considered, the alternative rules it didn't fire, with one-click feedback ("this was wrong because…"). Feedback feeds rule-improvement loop.</td>
+<td>Closes the AI-trust feedback loop visibly. Builds physician trust by <em>showing the work</em>.</td>
+</tr>
+<tr>
+<td><strong>U4-07</strong></td>
+<td><strong>Coding agent with prospective E&amp;M optimization</strong> + audit-defense bundle. When the encounter is being documented, the coding agent shows what's needed for the next E&amp;M level and what's missing — but also flags upcoding pressure and emits an audit-defense pack (notes + chart references) on every claim.</td>
+<td>Aligns revenue-integrity with documentation integrity. Solves the "coder vs clinician" tension structurally.</td>
+</tr>
+<tr>
+<td><strong>U4-08</strong></td>
+<td><strong>Standing-orders engine with per-protocol RBAC tier</strong>. Physician-signed standing-order template required; MA can execute under tier 2 only against a current physician-signed template. Versioning, expiration, audit.</td>
+<td>Today MA refill protocols are evaluated like single orders. Real practices live and die on standing orders.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="sequencing-recommended">Sequencing — recommended</h2>
+<pre><code>Week 1–2  : P0 (U0-01 … U0-08)          — close real bugs, prove safety
+Week 3–6  : P1 (U1-01 … U1-22)          — reliability, AI trust foundations, tests
+Week 7–10 : P2 (U2-01 … U2-06)          — AI Trust Ledger
+Week 11   : P2-07 Replay Console MVP    — first moonshot ships
+Quarter 2 : P3 (U3-*) + P4 picks        — architecture ceiling + 2-3 moonshots
+</code></pre>
+<p>P0 has hard ordering: U0-01 + U0-02 (the prescription backdoor) is the single highest-stakes item; everything else can fan out after that's closed.</p>
+<p>P1 has soft ordering: U1-03 (audit immutability) and U1-04 (externalize state) are dependencies for P2 and P3. U1-05/06/07 (prompt versioning, model pinning, citations) are dependencies for U2-*.</p>
+<p>P2 is mostly serial — <code>ai_inferences</code> table first, then everything else builds on it.</p>
+<p>P4 can start in parallel with P3 once U2-01 is in.</p>
+<hr />
+<h2 id="what-this-becomes-when-shipped">What this becomes when shipped</h2>
+<p>The bar — "best AI EHR ever conceived" — has three legs the rest of the industry is failing at:</p>
+<ol>
+<li><strong>Reproducible AI</strong>. Today, every AI EHR's clinical AI output is a one-shot — you can't replay a SOAP note from 6 weeks ago. Once U2-01 + U2-07 ship, this codebase can. <strong>No competitor has this.</strong></li>
+<li><strong>Visible reasoning</strong>. Today, CDS is a black box; clinicians stop trusting alerts because they can't see why. Once U4-06 ships, every alert is one click from "show me your work." <strong>No competitor does this either.</strong></li>
+<li><strong>Specialty extensibility on a safety chassis</strong>. The Domain Logic + evidence-source pattern is a <em>platform</em>, not a feature. Once U4-05 ships, this is the substrate any specialty can build on — with the safety guarantees baked in. <strong>No competitor's plugin model has the safety chassis.</strong></li>
+</ol>
+<p>Hardening the existing system (P0 + P1 + P3) makes it a <em>good</em> AI EHR. P2 + P4 are what make it the <em>best ever conceived</em>. The split is intentional — a skipped P0 caps every later ambition, and a perfectly-hardened-but-undifferentiated EHR is just another EMR.</p>
+<hr />
+<h2 id="open-questions-blockages-to-revisit">Open questions / blockages — to revisit</h2>
+<p>These are the questions I deferred during the iterative review per your instruction. Read at end, decide later.</p>
+<ol>
+<li><strong>Tenancy mode</strong> — single-clinic-per-deployment (current implicit) vs <code>tenant_id</code>-everywhere multi-tenant. P3 needs the call. <strong>Default if no answer</strong>: keep per-deployment, document the boundary, drop "Postgres-ready" from docs until a real tenancy story exists.</li>
+<li><strong>DDI replacement source</strong> — DrugBank (commercial), OpenFDA AERS (free, signal not interaction), self-hosted RXNAV proxy, or licensed feed. Each has cost + latency tradeoffs. P0/U0-04 needs this. <strong>Default</strong>: stand up a self-hosted RXNAV proxy with a cached interactions table and fail-closed mode while we evaluate commercial.</li>
+<li><strong>Model pinning policy</strong> — pin to dated build (e.g., <code>claude-sonnet-4-6-20260301</code>) and re-validate on each rev, or follow alias and accept silent drift. <strong>Default</strong>: pin every call, re-validate quarterly, refuse to launch on unversioned alias.</li>
+<li><strong>Replay Console scope</strong> — full UI (P4) or backend <code>/api/inference/replay/:id</code> first (P2). <strong>Default</strong>: backend first, UI later.</li>
+<li><strong>Provider-learning consent</strong> — opt-in with default off, opt-out with default on, or off-by-default with a setup flow. Affects U4-02. <strong>Default</strong>: opt-in with explicit consent screen at first login.</li>
+<li><strong>Specialty-pack distribution</strong> (U4-05) — in-repo, signed npm package, or a registry service. <strong>Default</strong>: signed npm package, single trusted publisher to start.</li>
+<li><strong>Critical-value notification channel</strong> (U0-06) — internal (in-app banner + sound) only, vs SMS/page integration. <strong>Default</strong>: in-app + log unack as Level-1; SMS/page as P4 later.</li>
+<li><strong>CSRF token strategy on patient portal</strong> (U1-10) — double-submit cookie or synchronizer-pattern via separate <code>/csrf-token</code> endpoint. <strong>Default</strong>: double-submit cookie (simpler, stateless).</li>
+</ol>
+<hr />
+<p><em>Generated 2026-05-08 by 5-agent local ultrareview + cross-verified at source. Supersedes ULTRAREVIEW_04-07-2026.md as the active roadmap. Prior report retained for historical reference.</em></p>
+</body>
+</html>

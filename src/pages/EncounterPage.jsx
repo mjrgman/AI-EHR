@@ -434,7 +434,11 @@ export default function EncounterPage() {
       setExtractedData(result);
       await updateEncounter({ transcript, patient_id: encounter.patient_id });
       await refreshCDS();
-      toast.success('Clinical data extracted');
+      if (result.ai_degraded) {
+        toast.warning('AI fallback mode; clinician verification required');
+      } else {
+        toast.success('Clinical data extracted');
+      }
     } catch (e) {
       safeLog.error('Extract failed:', e);
       toast.error('Data extraction failed');
@@ -454,7 +458,11 @@ export default function EncounterPage() {
       if (result.soap_note) {
         setSoapNote(result.soap_note);
         await updateEncounter({ soap_note: result.soap_note, patient_id: encounter.patient_id });
-        toast.success('SOAP note generated');
+        if (result.ai_degraded) {
+          toast.warning('AI fallback mode; clinician verification required');
+        } else {
+          toast.success('SOAP note generated');
+        }
       }
     } catch (e) {
       safeLog.error('Note generation failed:', e);
@@ -976,6 +984,13 @@ export default function EncounterPage() {
     <div className="flex flex-col h-screen">
       {/* Patient Banner */}
       {patient && <PatientBanner patient={patient} />}
+
+      {encounter?.ai_degraded ? (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">AI fallback mode</div>
+          <div>{encounter.ai_degradation_reason || 'Note generated in fallback mode; clinician verification required.'}</div>
+        </div>
+      ) : null}
 
       {/* Workflow Bar */}
       <div className="bg-white border-b border-gray-100 px-4 py-2 flex items-center justify-between">

@@ -105,6 +105,18 @@ async function runAllTests() {
     assert(tableNames.includes('referrals'), 'referrals table should exist');
   });
 
+  await test('Database has tenant and query-performance indexes from migrations', async () => {
+    const { runMigrations } = require('../server/database-migrations');
+    await runMigrations(db);
+    const indexes = await db.dbAll("SELECT name FROM sqlite_master WHERE type='index'");
+    const names = new Set(indexes.map(index => index.name));
+    assert(names.has('idx_patients_last_name_dob'), 'patient lookup index should exist');
+    assert(names.has('idx_problems_patient_status'), 'problem status index should exist');
+    assert(names.has('idx_medications_patient_status'), 'medication status index should exist');
+    assert(names.has('idx_encounters_patient_date_desc'), 'encounter date index should exist');
+    assert(names.has('idx_provider_preferences_tenant_provider'), 'provider preference tenant index should exist');
+  });
+
   await test('Demo patients loaded (Sarah Mitchell + Robert Chen)', async () => {
     const patients = await db.getAllPatients();
     assert(patients.length >= 2, 'At least two patients should exist');
@@ -138,6 +150,52 @@ async function runAllTests() {
     assert(JSON.parse(hypoxia.trigger_condition).value === 95, 'Hypoxia threshold should be 95');
     assert(rules.some(r => r.rule_name === 'fever_low_grade'), 'Low-grade fever rule should exist');
     assert(rules.some(r => r.rule_name === 'antibiotic_stewardship_uri'), 'Antibiotic stewardship rule should exist');
+  });
+
+  await test('Database adapter fails closed for PostgreSQL URLs until adapter parity exists', async () => {
+    const { spawnSync } = require('child_process');
+    const result = spawnSync(
+      process.execPath,
+      ['-e', `
+        (async () => {
+          const db = require('./server/db/adapter');
+          try {
+            await db.init();
+            console.error('unexpected postgres init success');
+            process.exit(1);
+          } catch (err) {
+            if (/PostgreSQL adapter is intentionally disabled/.test(err.message)) {
+              console.log('POSTGRES_ADAPTER_BLOCKED_OK');
+              process.exit(0);
+            }
+            console.error(err.message);
+            process.exit(2);
+          }
+        })();
+      `],
+      {
+        cwd: path.resolve(__dirname, '..'),
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          DATABASE_URL: 'postgresql://user:pass@localhost:5432/ehr_test',
+          DATABASE_PATH: '',
+        },
+      }
+    );
+
+    assertEqual(result.status, 0, `expected Postgres adapter guard to pass, got ${result.status}: ${result.stderr || result.stdout}`);
+    assert((result.stdout || '').includes('POSTGRES_ADAPTER_BLOCKED_OK'), 'expected blocked adapter proof output');
+  });
+
+  await test('Docs pin runtime database support to SQLite until PostgreSQL parity exists', async () => {
+    const statusDoc = fs.readFileSync(path.resolve(__dirname, '../docs/DATABASE_BACKEND_STATUS.md'), 'utf8');
+    const deploymentDoc = fs.readFileSync(path.resolve(__dirname, '../DEPLOYMENT.md'), 'utf8');
+    const readme = fs.readFileSync(path.resolve(__dirname, '../README.md'), 'utf8');
+
+    assert(statusDoc.includes('SQLite is the only supported runtime database backend'), 'backend status doc must pin SQLite');
+    assert(deploymentDoc.includes('PostgreSQL/RDS/Cloud SQL deployment sections are planning references only'), 'deployment doc must mark managed-Postgres as planning only');
+    assert(readme.includes('SQLite is the only supported runtime backend'), 'README must expose current database backend boundary');
   });
 
   await test('Retrieve patient with full clinical data', async () => {
@@ -364,6 +422,201 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assert(result.changes > 0, 'Encounter should be updated');
   });
 
+  await test('AI fallback: Claude extraction records safety event and marks encounter degraded', async () => {
+    const { runMigrations } = require('../server/database-migrations');
+    await runMigrations(db);
+
+    const fallbackEncounter = await db.createEncounter({
+      patient_id: sarahId,
+      encounter_type: 'Office Visit',
+      chief_complaint: 'AI fallback extraction test',
+      provider: 'Dr. Test Provider'
+    });
+    const patient = await db.getPatientById(sarahId);
+    const oldMode = process.env.AI_MODE;
+    const oldKey = process.env.ANTHROPIC_API_KEY;
+    process.env.AI_MODE = 'api';
+    process.env.ANTHROPIC_API_KEY = 'test-key-no-network';
+    aiClient.__setClaudeCallerForTest(async () => {
+      throw new Error('simulated Claude outage');
+    });
+
+    try {
+      const result = await aiClient.extractClinicalData(
+        'Patient: blood pressure 142 over 88 and pulse 76.',
+        patient,
+        { patient_id: sarahId, encounter_id: fallbackEncounter.id }
+      );
+
+      assertEqual(result.ai_degraded, true, 'fallback extraction should be flagged as degraded');
+      assert(result.ai_fallback.banner.includes('clinician verification required'), 'fallback response should include review banner text');
+
+      const encounter = await db.getEncounterById(fallbackEncounter.id);
+      assertEqual(Number(encounter.ai_degraded), 1, 'encounter should be marked ai_degraded');
+
+      const safety = await db.dbGet(
+        `SELECT * FROM safety_events
+         WHERE encounter_id = ? AND label = 'ai_fallback_degraded'
+         ORDER BY id DESC LIMIT 1`,
+        [fallbackEncounter.id]
+      );
+      assert(safety, 'fallback should create a safety_events row');
+      assertEqual(safety.level, 2, 'AI fallback should be a Level-2 safety event');
+      assertEqual(safety.response_required, 1, 'fallback safety event should require response');
+    } finally {
+      aiClient.__resetClaudeCallerForTest();
+      process.env.AI_MODE = oldMode;
+      if (oldKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = oldKey;
+    }
+  });
+
+  await test('AI fallback: Claude SOAP generation returns metadata and marks encounter degraded', async () => {
+    const fallbackEncounter = await db.createEncounter({
+      patient_id: sarahId,
+      encounter_type: 'Office Visit',
+      chief_complaint: 'AI fallback SOAP test',
+      provider: 'Dr. Test Provider'
+    });
+    const patient = await db.getPatientById(sarahId);
+    const oldMode = process.env.AI_MODE;
+    const oldKey = process.env.ANTHROPIC_API_KEY;
+    process.env.AI_MODE = 'api';
+    process.env.ANTHROPIC_API_KEY = 'test-key-no-network';
+    aiClient.__setClaudeCallerForTest(async () => {
+      throw new Error('simulated Claude outage');
+    });
+
+    try {
+      const result = await aiClient.generateSOAPNoteWithMeta(
+        'Patient: I am here for diabetes follow up. Doctor: Continue Metformin 500mg twice daily.',
+        patient,
+        {},
+        { patient_id: sarahId, encounter_id: fallbackEncounter.id }
+      );
+
+      assert(result.soap_note.length > 200, 'fallback SOAP note should still be generated');
+      assertEqual(result.ai_degraded, true, 'fallback SOAP generation should be flagged as degraded');
+
+      const encounter = await db.getEncounterById(fallbackEncounter.id);
+      assertEqual(Number(encounter.ai_degraded), 1, 'encounter should be marked degraded after SOAP fallback');
+
+      const safety = await db.dbGet(
+        `SELECT * FROM safety_events
+         WHERE encounter_id = ? AND label = 'ai_fallback_degraded'
+         ORDER BY id DESC LIMIT 1`,
+        [fallbackEncounter.id]
+      );
+      assert(safety, 'SOAP fallback should create a safety_events row');
+      assert(safety.description.includes('soap_note_generation'), 'safety event should identify SOAP operation');
+    } finally {
+      aiClient.__resetClaudeCallerForTest();
+      process.env.AI_MODE = oldMode;
+      if (oldKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = oldKey;
+    }
+  });
+
+  await test('AI fallback: encounter and review pages render degraded warning banner', async () => {
+    const encounterPage = fs.readFileSync(path.resolve(__dirname, '../src/pages/EncounterPage.jsx'), 'utf8');
+    const reviewPage = fs.readFileSync(path.resolve(__dirname, '../src/pages/ReviewPage.jsx'), 'utf8');
+
+    assert(encounterPage.includes('AI fallback mode'), 'Encounter page should render AI fallback banner');
+    assert(encounterPage.includes('clinician verification required'), 'Encounter page should require clinician verification');
+    assert(reviewPage.includes('AI fallback mode'), 'Review page should render AI fallback banner');
+    assert(reviewPage.includes('clinician verification required'), 'Review page should require clinician verification');
+  });
+
+  await test('AI trust: prompts are versioned and Claude model aliases are rejected', async () => {
+    const extractionPrompt = aiClient.__test.loadPromptTemplate('clinical_extraction:v1', 'extraction/v1.md');
+    const soapPrompt = aiClient.__test.loadPromptTemplate('soap_note:v1', 'soap/v1.md');
+
+    assertEqual(extractionPrompt.prompt_sha256.length, 64, 'extraction prompt should have SHA-256 provenance');
+    assertEqual(soapPrompt.prompt_sha256.length, 64, 'SOAP prompt should have SHA-256 provenance');
+    assert(aiClient.__test.isPinnedClaudeModel(aiClient.__test.DEFAULT_CLAUDE_HAIKU_MODEL), 'default Haiku model must be pinned');
+    assert(aiClient.__test.isPinnedClaudeModel(aiClient.__test.DEFAULT_CLAUDE_SONNET_MODEL), 'default Sonnet model must be pinned');
+    let rejectedAlias = false;
+    try {
+      aiClient.__test.assertPinnedClaudeModel('claude-sonnet-4-6');
+    } catch (err) {
+      rejectedAlias = /pinned to a dated build/.test(err.message);
+    }
+    assert(rejectedAlias, 'unversioned Claude alias should be rejected');
+
+    const aiInferenceColumns = await db.dbAll('PRAGMA table_info(ai_inferences)');
+    const columnNames = new Set(aiInferenceColumns.map(column => column.name));
+    assert(columnNames.has('prompt_template_id'), 'ai_inferences should persist prompt_template_id');
+    assert(columnNames.has('prompt_sha256'), 'ai_inferences should persist prompt_sha256');
+    assert(columnNames.has('raw_response_json'), 'ai_inferences should persist raw_response_json');
+  });
+
+  await test('AI extraction CDS vitals merge rejects prototype-pollution keys', async () => {
+    const { __test } = require('../server/server');
+    const context = { vitals: { heart_rate: 72 } };
+    const extractedVitals = JSON.parse(
+      '{"systolic_bp":188,"diastolic_bp":100,"__proto__":{"polluted":true},"constructor":{"prototype":{"polluted":true}},"unknown_key":"ignored"}'
+    );
+
+    __test.mergeExtractedVitalsIntoContext(context, extractedVitals);
+
+    assertEqual(context.vitals.systolic_bp, 188, 'allowed systolic BP should merge');
+    assertEqual(context.vitals.diastolic_bp, 100, 'allowed diastolic BP should merge');
+    assertEqual(context.vitals.heart_rate, 72, 'existing vitals should be preserved');
+    assertEqual(context.vitals.unknown_key, undefined, 'unknown keys should not merge');
+    assertEqual(Object.prototype.hasOwnProperty.call(context.vitals, 'constructor'), false, 'constructor key should not merge');
+    assertEqual({}.polluted, undefined, 'Object prototype should not be polluted');
+  });
+
+  await test('Event bus: webhook signatures include timestamp and reject stale payloads', async () => {
+    const eventBus = require('../server/integrations/event-bus');
+    const body = JSON.stringify({ event: 'lab.resulted', data: { id: 1 } });
+    const timestamp = String(Date.now());
+    const signature = eventBus.signPayload(body, 'test-secret', timestamp);
+
+    assert(eventBus.verifyWebhookSignature({
+      body,
+      secret: 'test-secret',
+      timestamp,
+      signature: `sha256=${signature}`
+    }), 'fresh timestamp.body signature should verify');
+
+    assertEqual(eventBus.verifyWebhookSignature({
+      body,
+      secret: 'test-secret',
+      timestamp: String(Date.now() - 10 * 60 * 1000),
+      signature: `sha256=${signature}`
+    }), false, 'stale signatures should be rejected');
+  });
+
+  await test('Event bus: webhook subscription blocks metadata and private-network URLs', async () => {
+    const eventBus = require('../server/integrations/event-bus');
+    assertEqual(eventBus.isBlockedWebhookUrl('http://169.254.169.254/latest/meta-data'), true, 'metadata IP should be blocked');
+    assertEqual(eventBus.isBlockedWebhookUrl('http://127.0.0.1:8080/hook'), true, 'loopback webhook should be blocked');
+    assertEqual(eventBus.isBlockedWebhookUrl('https://webhooks.example.com/ehr'), false, 'public HTTPS webhook should be allowed');
+  });
+
+  await test('Agent orchestrator: lab synthesis runs before CDS and domain logic', async () => {
+    const agents = require('../server/agents');
+    const orchestrator = agents.getOrchestrator(db);
+    const phases = orchestrator._buildPhases().map((phase) => phase.map((agent) => agent.name));
+    const phaseIndex = (agentName) => phases.findIndex((phase) => phase.includes(agentName));
+
+    assert(phaseIndex('lab_synthesis') >= 0, 'lab_synthesis should be registered in the encounter agent graph');
+    assert(phaseIndex('cds') > phaseIndex('lab_synthesis'), 'CDS must wait for lab_synthesis');
+    assert(phaseIndex('domain_logic') > phaseIndex('cds'), 'Domain logic must wait for CDS guardrails');
+    assert(agents.runEncounterPipeline.toString().includes('lab_synthesis'), 'default encounter pipeline should include lab_synthesis');
+  });
+
+  await test('Orders agent: allergy cross-reactivity covers beta-lactams and major drug classes', async () => {
+    const { checkCrossReactivity, CROSS_REACTIVITY } = require('../server/agents/orders-agent');
+    assert(checkCrossReactivity('cephalexin', 'penicillin'), 'penicillin allergy should flag cephalosporin cross-reactivity');
+    assert(checkCrossReactivity('amoxicillin', 'cephalosporin'), 'cephalosporin allergy should flag penicillin-class drugs');
+    assert(checkCrossReactivity('meropenem', 'penicillin'), 'penicillin allergy should flag carbapenem caution');
+    assert(CROSS_REACTIVITY.fluoroquinolone.includes('ciprofloxacin'), 'fluoroquinolone class table should include ciprofloxacin');
+    assert(CROSS_REACTIVITY.macrolide.includes('azithromycin'), 'macrolide class table should include azithromycin');
+    assert(CROSS_REACTIVITY.benzodiazepine.includes('lorazepam'), 'benzodiazepine class table should include lorazepam');
+  });
+
   // ==========================================
   // PHASE 5: WORKFLOW STATE MACHINE TESTS
   // ==========================================
@@ -494,6 +747,55 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assert(suggestions.length > 0, 'Should generate drug-allergy alert');
     assert(suggestions.some(s => s.suggestion_type === 'allergy_alert'), 'Should be allergy_alert type');
     assert(suggestions.some(s => s.category === 'urgent'), 'Should be urgent');
+  });
+
+  await test('Drug Safety DDI: deterministic provider detects sildenafil + nitroglycerin as critical', async () => {
+    const drugSafetyService = require('../server/pharma/drug-safety-service');
+    const interactions = await drugSafetyService.checkDrugInteractions(
+      'Viagra 50 mg',
+      [{ medication_name: 'Nitroglycerin SL 0.4 mg' }]
+    );
+
+    assertEqual(interactions.length, 1, 'Expected one deterministic DDI fixture');
+    assertEqual(interactions[0].severity, 'critical', 'PDE-5 inhibitor + nitrate must be critical');
+    assert(interactions[0].source.includes('local deterministic DDI'), 'Source must identify local deterministic provider');
+    assert(!interactions[0].source.toLowerCase().includes('rxnorm'), 'DDI source must not use retired RxNorm interaction endpoint');
+  });
+
+  await test('Drug Safety DDI: list checker detects lisinopril + spironolactone pair', async () => {
+    const drugSafetyService = require('../server/pharma/drug-safety-service');
+    const interactions = await drugSafetyService.checkMedicationListInteractions([
+      'Lisinopril 20 mg daily',
+      'Spironolactone 25 mg daily'
+    ]);
+
+    assertEqual(interactions.length, 1, 'Expected one interaction from medication-list pair check');
+    assertEqual(interactions[0].severity, 'serious', 'ACE inhibitor + spironolactone should be serious');
+    assert(interactions[0].description.toLowerCase().includes('hyperkalemia'), 'Alert must name hyperkalemia risk');
+  });
+
+  await test('Drug Safety DDI: provider unavailable fails closed with pending critical alert', async () => {
+    const drugSafetyService = require('../server/pharma/drug-safety-service');
+    const originalProvider = process.env.DDI_PROVIDER;
+    process.env.DDI_PROVIDER = 'none';
+
+    try {
+      const interactions = await drugSafetyService.checkDrugInteractions(
+        'Warfarin',
+        [{ medication_name: 'Amiodarone' }]
+      );
+
+      assertEqual(interactions.length, 1, 'Fail-closed lane must return a blocking interaction');
+      assertEqual(interactions[0].severity, 'critical', 'Provider outage must be critical');
+      assertEqual(interactions[0].pending_ddi_check, true, 'Provider outage must mark pending_ddi_check');
+      assert(interactions[0].source.toLowerCase().includes('fail-closed'), 'Source must identify fail-closed guardrail');
+    } finally {
+      if (originalProvider === undefined) {
+        delete process.env.DDI_PROVIDER;
+      } else {
+        process.env.DDI_PROVIDER = originalProvider;
+      }
+    }
   });
 
   await test('CDS differential diagnosis: Chest pain', async () => {
@@ -744,6 +1046,32 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   await test('Provider profile returns all preferences', async () => {
     const prefs = await providerLearning.getProviderProfile('Dr. Test Provider');
     assert(prefs.length >= 2, `Should have at least 2 preferences, got ${prefs.length}`);
+  });
+
+  await test('Provider learning scopes preferences by tenant', async () => {
+    const oldTenant = process.env.TENANT_ID;
+    try {
+      process.env.TENANT_ID = 'tenant_a';
+      await providerLearning.recordProviderAction(
+        'Dr. Shared Name', 'E11.9', 'Type 2 Diabetes',
+        'lab_order', JSON.stringify({ test_name: 'Tenant A A1C', cpt_code: '83036' })
+      );
+
+      process.env.TENANT_ID = 'tenant_b';
+      const tenantBPrefs = await db.getProviderPreferences('Dr. Shared Name', 'E11.9');
+      assertEqual(tenantBPrefs.length, 0, 'tenant B must not see tenant A preferences');
+
+      await providerLearning.recordProviderAction(
+        'Dr. Shared Name', 'E11.9', 'Type 2 Diabetes',
+        'lab_order', JSON.stringify({ test_name: 'Tenant B A1C', cpt_code: '83036' })
+      );
+      const tenantBNow = await db.getProviderPreferences('Dr. Shared Name', 'E11.9');
+      assertEqual(tenantBNow.length, 1, 'tenant B should see only its own preference');
+      assertEqual(tenantBNow[0].tenant_id, 'tenant_b', 'preference row should persist tenant_id');
+    } finally {
+      if (oldTenant === undefined) delete process.env.TENANT_ID;
+      else process.env.TENANT_ID = oldTenant;
+    }
   });
 
   // ==========================================
@@ -2135,6 +2463,15 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assert(result && typeof result.ok === 'boolean', 'should return a result object');
   });
 
+  await test('LabCorp: parser rejects XML entity declarations before parsing', async () => {
+    const payload = Buffer.from(`<?xml version="1.0"?>
+<!DOCTYPE foo [ <!ENTITY xxe SYSTEM "file:///etc/passwd"> ]>
+<LabCorpResult><results><result><code>A1C</code><value>&xxe;</value></result></results></LabCorpResult>`);
+    const result = labcorpParser.parseXmlResult(payload);
+    assertEqual(result.ok, false, 'XXE payload should not parse as ok');
+    assert(result.warnings.includes('unsafe_xml_entities_rejected'), 'should warn that unsafe XML entities were rejected');
+  });
+
   await test('LabCorp: parser extracts CBC fixture with erythrocytosis flag', async () => {
     const buffer = labcorpFs.readFileSync(labcorpPath.join(labcorpMockDir, 'cbc.xml'));
     const result = labcorpParser.parseXmlResult(buffer);
@@ -3167,6 +3504,15 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assert(body.authorizeUrl.includes('client_id=test-client'), 'authorizeUrl must include clientId');
     assert(body.authorizeUrl.includes('response_type=code'), 'authorizeUrl must request code grant');
     _startedOauthState = body.state;
+
+    const labcorpRoutes = require('../server/routes/labcorp-routes');
+    const row = await db.dbGet(
+      'SELECT user_id, consumed_at FROM labcorp_oauth_states WHERE state_hash = ?',
+      [labcorpRoutes._internal.hashState(body.state)]
+    );
+    assert(row, 'OAuth state should be persisted in the database');
+    assertEqual(row.user_id, _oauthTestUserId, 'OAuth state should retain the authenticated user id');
+    assertEqual(row.consumed_at, null, 'fresh OAuth state should be unconsumed');
   });
 
   await test('LabCorp routes: GET /oauth/callback with valid state exchanges code and stores tokens', async () => {
@@ -3182,6 +3528,15 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     const stored = await oauth.getTokens(db, _oauthTestUserId);
     assertEqual(stored.access_token, 'at-from-server',
       'callback must persist the tokens it exchanged from the token server');
+  });
+
+  await test('LabCorp routes: OAuth state is single-use after callback', async () => {
+    assert(_startedOauthState, 'precondition: a state has already been consumed by the valid callback test');
+    const { status, body } = await labcorpRoutesRequest({
+      path: `/api/integrations/labcorp/oauth/callback?code=valid-code&state=${_startedOauthState}`
+    });
+    assertEqual(status, 400, `replaying a consumed state should fail, got ${status}`);
+    assertEqual(body.error, 'invalid_state', 'replayed state should return invalid_state');
   });
 
   await test('LabCorp routes: GET /oauth/callback with unknown state returns 400', async () => {
@@ -3898,6 +4253,92 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     );
   });
 
+  await test('Pregnancy Gate: estradiol initiation blocked when LMP and non-pregnant status are missing', () => {
+    const engine = require('../server/domain/functional-med-engine');
+    const result = engine.evaluate({
+      patient: { id: 7001, sex: 'F', dob: '1978-01-01', has_uterus: true },
+      encounter: { transcript: 'Severe hot flashes and night sweats, requesting HRT.' },
+      vitals: {},
+      problems: [],
+      medications: [],
+      labs: []
+    });
+
+    assert(
+      !result.suggestions.some(s => s.rule_id === 'hrt-e2-menopausal-vasomotor'),
+      'estradiol initiation must not fire without documented LMP and non-pregnant status'
+    );
+    assert(
+      !result.dosingProposals.some(p => p.rule_id === 'hrt-e2-menopausal-vasomotor'),
+      'estradiol dosing proposal must be blocked by pregnancy gate'
+    );
+  });
+
+  await test('Pregnancy Gate: estradiol initiation can fire when non-pregnant status and LMP are documented', () => {
+    const engine = require('../server/domain/functional-med-engine');
+    const result = engine.evaluate({
+      patient: {
+        id: 7002,
+        sex: 'F',
+        dob: '1978-01-01',
+        has_uterus: true,
+        pregnancy_status: 'not_pregnant',
+        lmp_date: '2026-04-15'
+      },
+      encounter: { transcript: 'Severe hot flashes and night sweats, requesting HRT.' },
+      vitals: {},
+      problems: [],
+      medications: [],
+      labs: []
+    });
+
+    assert(
+      result.suggestions.some(s => s.rule_id === 'hrt-e2-menopausal-vasomotor'),
+      'estradiol initiation should fire once pregnancy gate is satisfied'
+    );
+    assert(
+      result.dosingProposals.some(p => p.rule_id === 'hrt-e2-menopausal-vasomotor'),
+      'estradiol dosing proposal should exist only after pregnancy gate is satisfied'
+    );
+  });
+
+  await test('Pregnancy Gate: semaglutide initiation blocked for reproductive-risk female when LMP is missing', () => {
+    const engine = require('../server/domain/functional-med-engine');
+    const result = engine.evaluate({
+      patient: { id: 7003, sex: 'F', dob: '1991-01-01', has_uterus: true, pregnancy_status: 'not_pregnant' },
+      encounter: { transcript: 'Diabetes follow-up, discuss semaglutide.' },
+      vitals: {},
+      problems: [{ problem_name: 'Type 2 Diabetes', icd10_code: 'E11.9' }],
+      medications: [],
+      labs: [{ test_name: 'Hemoglobin A1C', result_value: '8.2' }]
+    });
+
+    assert(
+      !result.dosingProposals.some(p => p.rule_id === 'pep-sema-t2dm-init'),
+      'semaglutide initiation must not fire when LMP is unknown'
+    );
+  });
+
+  await test('Pregnancy Gate: semaglutide initiation can fire with documented LMP and negative beta-hCG', () => {
+    const engine = require('../server/domain/functional-med-engine');
+    const result = engine.evaluate({
+      patient: { id: 7004, sex: 'F', dob: '1991-01-01', has_uterus: true, lmp_date: '2026-04-12' },
+      encounter: { transcript: 'Diabetes follow-up, discuss semaglutide.' },
+      vitals: {},
+      problems: [{ problem_name: 'Type 2 Diabetes', icd10_code: 'E11.9' }],
+      medications: [],
+      labs: [
+        { test_name: 'Hemoglobin A1C', result_value: '8.2' },
+        { test_name: 'Beta hCG quantitative', result_value: '0' }
+      ]
+    });
+
+    assert(
+      result.dosingProposals.some(p => p.rule_id === 'pep-sema-t2dm-init'),
+      'semaglutide initiation should fire when pregnancy gate is satisfied'
+    );
+  });
+
   await test('Guardrail: DomainLogicAgent has dependsOn: ["cds"] — orchestrator enforces CDS-first ordering', () => {
     const { DomainLogicAgent } = require('../server/agents/domain-logic-agent');
     const agent = new DomainLogicAgent();
@@ -4124,6 +4565,123 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     }
   });
 
+  await test('Dose Adjustment Gate: severe renal impairment blocks Tier-3 proposal before approval request', async () => {
+    const dosingService = require('../server/pharma/dosing-service');
+    await dosingService._internal.ensureDosingReferenceTable();
+    await db.dbRun(
+      `INSERT OR REPLACE INTO drug_dosing_reference
+         (drug_name, rxnorm_cui, indication, typical_dose, max_dose, renal_adjustment, hepatic_adjustment, geriatric_notes, source, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      [
+        'testosterone cypionate',
+        null,
+        'general',
+        '100 mg',
+        '200 mg',
+        'Reduce dose or avoid use when eGFR is below 30.',
+        null,
+        null,
+        'test_seed'
+      ]
+    );
+
+    const { DomainLogicAgent } = require('../server/agents/domain-logic-agent');
+    const agent = new DomainLogicAgent();
+    let approvalCalled = false;
+    agent.requestDosingApproval = async () => {
+      approvalCalled = true;
+      return { approved: true };
+    };
+
+    const proposal = {
+      rule_id: 'test-dose-adjustment-renal',
+      rule_name: 'Test renal dose adjustment',
+      evidence_source: 'test dosing reference',
+      action: {
+        payload: {
+          medication: 'Testosterone Cypionate',
+          currentDose: 'none',
+          proposedDose: '100 mg',
+          route: 'IM',
+          frequency: 'weekly',
+          rationale: 'Synthetic proposal for renal gate regression test'
+        }
+      }
+    };
+    const context = {
+      patient: { id: 77701, dob: '1970-01-01' },
+      encounter: { id: 77701 },
+      labs: [{ test_name: 'eGFR', result_value: '24', units: 'mL/min/1.73m2' }]
+    };
+
+    const result = await agent.submitDosingProposal(proposal, context);
+    assertEqual(approvalCalled, false, 'blocking renal adjustment must stop before requestDosingApproval');
+    assertEqual(result.approved, false, 'blocked proposal must not be approved');
+    assertEqual(result.response.status, 'blocked_by_dose_adjustment_gate');
+    assert(result.response.reason.includes('eGFR/CrCl 24'), 'block reason must cite the renal value');
+    assert(agent.safetyEvents.some((event) => event.level === 1), 'blocked dose adjustment must log LEVEL_1 safety event');
+  });
+
+  await test('Dose Adjustment Gate: moderate renal gap is annotated into physician review payload', async () => {
+    const dosingService = require('../server/pharma/dosing-service');
+    await dosingService._internal.ensureDosingReferenceTable();
+    await db.dbRun(
+      `INSERT OR REPLACE INTO drug_dosing_reference
+         (drug_name, rxnorm_cui, indication, typical_dose, max_dose, renal_adjustment, hepatic_adjustment, geriatric_notes, source, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      [
+        'semaglutide',
+        null,
+        'general',
+        '0.25 mg',
+        '2 mg',
+        'Review renal function and adjust monitoring when eGFR is reduced.',
+        null,
+        null,
+        'test_seed'
+      ]
+    );
+
+    const { DomainLogicAgent } = require('../server/agents/domain-logic-agent');
+    const agent = new DomainLogicAgent();
+    let capturedDosingChange = null;
+    agent.requestDosingApproval = async (dosingChange) => {
+      capturedDosingChange = dosingChange;
+      return { approved: false, approvalId: 'test-approval', response: { approved: false } };
+    };
+
+    const proposal = {
+      rule_id: 'test-dose-adjustment-warning',
+      rule_name: 'Test renal warning annotation',
+      evidence_source: 'test dosing reference',
+      action: {
+        payload: {
+          medication: 'Semaglutide',
+          currentDose: 'none',
+          proposedDose: '0.25 mg',
+          route: 'SC',
+          frequency: 'weekly',
+          rationale: 'Synthetic proposal for renal warning regression test'
+        }
+      }
+    };
+    const context = {
+      patient: { id: 77702, dob: '1975-01-01' },
+      encounter: { id: 77702 },
+      labs: [{ test_name: 'eGFR', result_value: '45', units: 'mL/min/1.73m2' }]
+    };
+
+    const result = await agent.submitDosingProposal(proposal, context);
+    assertEqual(result.approvalId, 'test-approval', 'non-blocking renal review should reach physician approval gate');
+    assert(capturedDosingChange, 'requestDosingApproval should receive the enriched dosing change');
+    assert(capturedDosingChange.doseAdjustment.requiresAdjustment, 'doseAdjustment should be attached to the physician payload');
+    assert(
+      capturedDosingChange.doseAdjustment.warnings.some((warning) => warning.includes('eGFR/CrCl 45')),
+      'annotation must cite the moderate renal value'
+    );
+    assert(agent.safetyEvents.some((event) => event.level === 3), 'non-blocking adjustment warning must log LEVEL_3 safety event');
+  });
+
   // ==========================================================
   // PHASE 3c: MediVault Patient Export (buildPatientBundle)
   //
@@ -4214,6 +4772,126 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       )
     );
     assert(hasLabObservation, 'Bundle must contain at least one Observation with category=laboratory (from labs)');
+  });
+
+  await test('MediVault Red Flag: medication list checks deterministic DDI provider with correct severity', async () => {
+    const medivault = require('../server/medivault');
+    const filename = 'ddi-regression-med-list.txt';
+
+    await db.dbRun(
+      'DELETE FROM vault_documents WHERE patient_id = ? AND original_filename = ?',
+      [sarahId, filename]
+    );
+    await db.dbRun(
+      `INSERT INTO vault_documents
+       (patient_id, document_type, source_system, original_filename, ocr_text, ocr_confidence, classification, created_at)
+       VALUES (?, 'medication_list', 'test', ?, ?, 1.0, 'medication_list', datetime('now', '+5 minutes'))`,
+      [
+        sarahId,
+        filename,
+        'Lisinopril 20 mg daily\nSpironolactone 25 mg daily'
+      ]
+    );
+
+    const redFlagAgent = new medivault.RedFlagAgent();
+    const alerts = await redFlagAgent._checkMedications(sarahId);
+    const ddiAlert = alerts.find(alert =>
+      alert.type === 'medication_interaction' &&
+      String(alert.description).toLowerCase().includes('lisinopril') &&
+      String(alert.description).toLowerCase().includes('spironolactone')
+    );
+
+    assert(ddiAlert, 'Expected a MediVault medication interaction alert for lisinopril + spironolactone');
+    assertEqual(ddiAlert.severity, 'serious', 'MediVault must preserve normalized DDI severity');
+    assert(ddiAlert.details.source.includes('local deterministic DDI'), 'MediVault alert must expose deterministic DDI source');
+    assertEqual(ddiAlert.details.pendingDdiCheck, false, 'Deterministic provider should not mark pendingDdiCheck');
+  });
+
+  await test('MediVault Red Flag: CRITICAL_VALUE message type is registered', async () => {
+    const { MESSAGE_TYPES } = require('../server/agents/message-bus');
+    assertEqual(MESSAGE_TYPES.CRITICAL_VALUE, 'CRITICAL_VALUE', 'CRITICAL_VALUE must be a valid message type');
+  });
+
+  await test('MediVault Red Flag: critical lab value queues physician ack-required event', async () => {
+    const medivault = require('../server/medivault');
+    const filename = 'critical-value-regression-lab.txt';
+    const sentMessages = [];
+    const fakeBus = {
+      async sendMessage(from, to, messageType, payload, options = {}) {
+        const message = {
+          id: `msg_test_${sentMessages.length + 1}`,
+          from_agent: from,
+          to_agent: to,
+          message_type: messageType,
+          payload,
+          priority: options.priority,
+          patient_id: options.patientId,
+          encounter_id: options.encounterId
+        };
+        sentMessages.push(message);
+        return message;
+      }
+    };
+
+    await db.dbRun(
+      'DELETE FROM vault_documents WHERE patient_id = ? AND original_filename = ?',
+      [sarahId, filename]
+    );
+    await db.dbRun(
+      `INSERT INTO vault_documents
+       (patient_id, document_type, source_system, original_filename, ocr_text, ocr_confidence, classification, created_at)
+       VALUES (?, 'lab_report', 'test', ?, ?, 1.0, 'lab_report', datetime('now', '+6 minutes'))`,
+      [sarahId, filename, 'Potassium: 6.2 mEq/L\nCreatinine: 1.0 mg/dL']
+    );
+
+    const redFlagAgent = new medivault.RedFlagAgent({ messageBus: fakeBus });
+    const result = await redFlagAgent.process({
+      patient: { id: sarahId },
+      encounter: { id: encounterId }
+    });
+
+    const critical = result.alerts.find(alert =>
+      alert.type === 'lab_critical_high' &&
+      String(alert.description).toLowerCase().includes('potassium')
+    );
+    assert(critical, 'Expected a critical potassium alert');
+    assertEqual(sentMessages.length, 1, 'Exactly one internal critical-value message should be queued');
+    assertEqual(sentMessages[0].to_agent, 'physician', 'Critical value must route to physician');
+    assertEqual(sentMessages[0].message_type, 'CRITICAL_VALUE', 'Critical value must use CRITICAL_VALUE event type');
+    assertEqual(sentMessages[0].priority, 5, 'Critical value must use highest message priority');
+    assertEqual(sentMessages[0].payload.requiresAck, true, 'Critical value payload must require physician ack');
+    assertEqual(sentMessages[0].payload.ackStatus, 'pending', 'Critical value ack starts pending');
+    assert(sentMessages[0].payload.ackRequiredBy, 'Critical value payload must include ack deadline');
+    assertEqual(result.criticalDispatches.length, 1, 'Process result must report critical dispatch');
+    assert(redFlagAgent.safetyEvents.some(event => event.level === 1 && event.description.includes('Potassium')), 'Level-1 safety event must be recorded');
+
+    const timelineRows = await db.dbAll(
+      `SELECT * FROM vault_timeline
+       WHERE patient_id = ? AND event_type = 'critical_value_alert'
+       ORDER BY id DESC LIMIT 1`,
+      [sarahId]
+    );
+    assert(timelineRows.length >= 1, 'Critical value dispatch must write a vault_timeline audit row');
+  });
+
+  await test('MediVault Red Flag: lab trend detector flags creatinine doubling', async () => {
+    const { RedFlagAgent } = require('../server/medivault/agents/red-flag-agent');
+    await db.dbRun(
+      `INSERT INTO labs (patient_id,test_name,result_value,reference_range,units,result_date,status,abnormal_flag)
+       VALUES (?, 'Creatinine', '1.0', '0.6-1.2', 'mg/dL', '2026-05-01', 'final', 'Normal')`,
+      [sarahId]
+    );
+    await db.dbRun(
+      `INSERT INTO labs (patient_id,test_name,result_value,reference_range,units,result_date,status,abnormal_flag)
+       VALUES (?, 'Creatinine', '2.2', '0.6-1.2', 'mg/dL', '2026-05-08', 'final', 'High')`,
+      [sarahId]
+    );
+
+    const redFlagAgent = new RedFlagAgent();
+    const alerts = await redFlagAgent._checkLabTrends(sarahId);
+    const aki = alerts.find(alert => alert.type === 'lab_trend_aki');
+    assert(aki, 'Creatinine doubling should produce an AKI trend alert');
+    assertEqual(aki.severity, 'serious', 'AKI trend alert should be serious');
   });
 
   // ------------------------------------------------------------
@@ -4479,9 +5157,27 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     };
   }
 
-  function extractCookie(response) {
+  function getSetCookieHeaders(response) {
+    if (typeof response.headers.getSetCookie === 'function') {
+      return response.headers.getSetCookie();
+    }
     const setCookie = response.headers.get('set-cookie');
-    return setCookie ? setCookie.split(';')[0] : '';
+    if (!setCookie) return [];
+    return setCookie.split(/,(?=\s*__Host-|portal_session=|__Host-portal_session=)/).map((cookie) => cookie.trim());
+  }
+
+  function extractCookie(response) {
+    return getSetCookieHeaders(response)
+      .map((cookie) => cookie.split(';')[0])
+      .filter(Boolean)
+      .join('; ');
+  }
+
+  function portalCsrfHeader(response) {
+    return response.body?.csrfToken || getSetCookieHeaders(response)
+      .map((cookie) => cookie.split(';')[0])
+      .find((cookie) => cookie.startsWith('__Host-portal_csrf='))
+      ?.split('=')[1] || '';
   }
 
   await test('Auth HTTP: GET /api/health remains public', async () => {
@@ -4663,6 +5359,77 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(res.status, 200, 'physician should retain checkout preview access');
   });
 
+  await test('Prescription HTTP: client cannot create a signed prescription directly', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest('/api/prescriptions', {
+      method: 'POST',
+      token: login.body.token,
+      body: {
+        patient_id: sarahId,
+        medication_name: 'Lisinopril',
+        dose: '10mg',
+        route: 'PO',
+        frequency: 'daily',
+        status: 'signed'
+      }
+    });
+    assertEqual(res.status, 400, `expected 400 for client-supplied signed status, got ${res.status}`);
+    assert(String(res.body.error).includes('draft-only'), 'error should state prescription creation is draft-only');
+  });
+
+  await test('Prescription HTTP: direct create defaults to draft status', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest('/api/prescriptions', {
+      method: 'POST',
+      token: login.body.token,
+      body: {
+        patient_id: sarahId,
+        medication_name: 'Lisinopril',
+        dose: '10mg',
+        route: 'PO',
+        frequency: 'daily'
+      }
+    });
+    assertEqual(res.status, 201, `expected 201 for draft prescription, got ${res.status}`);
+    const row = await db.dbGet('SELECT status, dosing_approval_id FROM prescriptions WHERE id = ?', [res.body.id]);
+    assert(row, 'created prescription row should exist');
+    assertEqual(row.status, 'draft', 'direct prescription create must store draft status');
+    assertEqual(row.dosing_approval_id, null, 'direct prescription create must not fabricate an approval id');
+  });
+
+  await test('Prescription HTTP: from-speech creates draft prescriptions only', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    assertEqual(login.status, 200);
+
+    const res = await httpRequest('/api/prescriptions/from-speech', {
+      method: 'POST',
+      token: login.body.token,
+      body: {
+        patient_id: sarahId,
+        transcript: 'Start Lisinopril 10 mg by mouth daily for blood pressure.'
+      }
+    });
+    assertEqual(res.status, 200, `expected 200 from speech prescription extraction, got ${res.status}`);
+    assert(res.body.prescriptions.length >= 1, 'from-speech should create at least one draft prescription for this transcript');
+    const row = await db.dbGet('SELECT status, dosing_approval_id FROM prescriptions WHERE id = ?', [res.body.prescriptions[0].id]);
+    assert(row, 'from-speech prescription row should exist');
+    assertEqual(row.status, 'draft', 'from-speech prescriptions must not be auto-signed');
+    assertEqual(row.dosing_approval_id, null, 'from-speech prescriptions must not fabricate an approval id');
+  });
+
   await test('Patient Portal HTTP: GET /api/patient-portal/session requires a verified portal session', async () => {
     const res = await httpRequest('/api/patient-portal/session');
     assertEqual(res.status, 401, `expected 401, got ${res.status}`);
@@ -4679,11 +5446,38 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     });
     assertEqual(verify.status, 200, `expected 200 verify, got ${verify.status}`);
     const cookie = extractCookie(verify);
-    assert(cookie.startsWith('portal_session='), 'verify should return a portal_session cookie');
+    const setCookies = getSetCookieHeaders(verify).join('\n');
+    assert(cookie.includes('__Host-portal_session='), 'verify should return a __Host-portal_session cookie');
+    assert(cookie.includes('__Host-portal_csrf='), 'verify should return a __Host-portal_csrf cookie');
+    assert(verify.body.csrfToken, 'verify should return a CSRF token for double-submit requests');
+    assert(setCookies.includes('Path=/api/patient-portal'), 'portal cookies should be scoped to /api/patient-portal');
+    assert(setCookies.includes('SameSite=Strict'), 'portal cookies should use SameSite=Strict');
+    assert(setCookies.includes('Secure'), 'portal cookies should use Secure for __Host- prefix compatibility');
 
     const session = await httpRequest('/api/patient-portal/session', { cookie });
     assertEqual(session.status, 200, `expected 200 session, got ${session.status}`);
     assertEqual(session.body.patient.id, sarahId, 'session endpoint should bind to the verified patient');
+  });
+
+  await test('Patient Portal HTTP: state-changing requests require CSRF token', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+      }
+    });
+    const cookie = extractCookie(verify);
+    const res = await httpRequest('/api/patient-portal/message', {
+      method: 'POST',
+      cookie,
+      body: {
+        subject: 'CSRF regression',
+        message: 'This should be rejected without x-csrf-token.',
+      }
+    });
+    assertEqual(res.status, 403, `expected 403 without CSRF header, got ${res.status}`);
   });
 
   await test('Patient Portal HTTP: appointments use the normalized appointment schema columns', async () => {
@@ -4722,6 +5516,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     const res = await httpRequest('/api/patient-portal/message', {
       method: 'POST',
       cookie,
+      headers: { 'x-csrf-token': portalCsrfHeader(verify) },
       body: {
         subject: 'Portal test message',
         message: 'Checking secure message persistence from the regression suite.',
@@ -4747,6 +5542,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     const res = await httpRequest('/api/patient-portal/symptom-triage', {
       method: 'POST',
       cookie,
+      headers: { 'x-csrf-token': portalCsrfHeader(verify) },
       body: {
         symptoms: 'Chest tightness with dizziness',
         severity: 8,
@@ -4773,6 +5569,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     const res = await httpRequest('/api/patient-portal/voice-intent', {
       method: 'POST',
       cookie,
+      headers: { 'x-csrf-token': portalCsrfHeader(verify) },
       body: { transcript: 'What are my upcoming appointments?' }
     });
     assertEqual(res.status, 200, `expected 200 voice intent, got ${res.status}`);

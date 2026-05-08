@@ -72,6 +72,7 @@ const LAB_ALIASES = {
   hs_crp: ['hscrp', 'hscreactive', 'highsensitivitycrp', 'crp'],
   fibrinogen: ['fibrinogen'],
   ferritin: ['ferritin'],
+  beta_hcg: ['betahcg', 'bhcg', 'hcg', 'quantitativehcg', 'pregnancytest'],
   '25_oh_vitamin_d': ['25ohvitamind', '25hydroxyvitamind', 'vitamind25', 'vitamind', '25oh']
 };
 
@@ -132,6 +133,92 @@ function patientAge(patient) {
   return age;
 }
 
+function firstPresent(...values) {
+  return values.find(value => value !== undefined && value !== null && String(value).trim() !== '');
+}
+
+function normalizeStatus(value) {
+  return String(value || '').toLowerCase().replace(/[_-]/g, ' ').trim();
+}
+
+function hasPregnancyCondition(ctx) {
+  const problems = ctx.problems || [];
+  if (!Array.isArray(problems) || problems.length === 0) return false;
+
+  return problems.some((problem) => {
+    const name = normalizeStatus(problem.problem_name || problem.name);
+    const code = normalizeStatus(problem.icd10_code || problem.code);
+    return name.includes('pregnan') ||
+      name.includes('gestation') ||
+      code.startsWith('z33') ||
+      code.startsWith('z34') ||
+      code.startsWith('z3a') ||
+      /^o\d/.test(code);
+  });
+}
+
+function hasNegativePregnancyStatus(ctx) {
+  const status = normalizeStatus(firstPresent(
+    ctx.pregnancy_status,
+    ctx.pregnancyStatus,
+    ctx.patient?.pregnancy_status,
+    ctx.patient?.pregnancyStatus,
+    ctx.encounter?.pregnancy_status,
+    ctx.encounter?.pregnancyStatus
+  ));
+
+  if (status) {
+    if (status.includes('pregnant') && !status.includes('not pregnant') && !status.includes('non pregnant')) {
+      return false;
+    }
+    if (
+      status.includes('not pregnant') ||
+      status.includes('non pregnant') ||
+      status === 'negative' ||
+      status.includes('negative pregnancy') ||
+      status.includes('postmenopausal') ||
+      status.includes('menopause confirmed') ||
+      status.includes('surgically sterile')
+    ) {
+      return true;
+    }
+  }
+
+  const betaHcg = findLabValue(ctx.labs || [], 'beta_hcg');
+  return betaHcg !== null && betaHcg < 5;
+}
+
+function hasDocumentedLmp(ctx) {
+  return !!firstPresent(
+    ctx.lmp,
+    ctx.lmp_date,
+    ctx.last_menstrual_period,
+    ctx.patient?.lmp,
+    ctx.patient?.lmp_date,
+    ctx.patient?.last_menstrual_period,
+    ctx.encounter?.lmp,
+    ctx.encounter?.lmp_date,
+    ctx.encounter?.last_menstrual_period
+  );
+}
+
+function passesPregnancyGate(trigger, ctx) {
+  const gate = trigger.pregnancy_gate;
+  if (!gate?.required) return true;
+
+  if (ctx.patient?.sex !== 'F') return true;
+  if (ctx.patient?.has_uterus === false) return true;
+
+  const age = patientAge(ctx.patient);
+  const maxAge = gate.reproductive_age_max ?? 55;
+  if (age !== null && age > maxAge) return true;
+
+  if (hasPregnancyCondition(ctx)) return false;
+  if (gate.lmp_required !== false && !hasDocumentedLmp(ctx)) return false;
+
+  return hasNegativePregnancyStatus(ctx);
+}
+
 // ==========================================
 // TRIGGER EVALUATION
 // ==========================================
@@ -153,6 +240,8 @@ function evaluateTrigger(trigger, ctx) {
     if (trigger.age_min != null && age < trigger.age_min) return false;
     if (trigger.age_max != null && age > trigger.age_max) return false;
   }
+
+  if (!passesPregnancyGate(trigger, ctx)) return false;
 
   // BMI gate
   if (trigger.bmi_min != null) {

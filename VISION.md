@@ -488,7 +488,7 @@ This is not a stateless system. Every agent has persistent memory.
 **Current Stack:**
 - Frontend: React + Vite + Tailwind CSS
 - Backend: Node.js / Express
-- Database: SQLite (development) → PostgreSQL (production)
+- Database: SQLite currently; PostgreSQL is roadmap-only until adapter and migration parity are complete
 - AI: Claude API (Anthropic) for clinical reasoning, with pattern-matching fallback
 - Voice: Web Speech API (development) → production-grade ASR (Whisper, Deepgram, or equivalent)
 
@@ -531,7 +531,7 @@ Persistent agent memory, provider style learning, practice-level analytics, qual
 FHIR R4 integration, external record ingestion (hospital discharge summaries, specialist notes), lab interface (HL7), e-prescribing (NCPDP SCRIPT).
 
 **Phase 7 — Production Hardening**
-HIPAA compliance audit, penetration testing, PostgreSQL migration, cloud deployment, disaster recovery, user authentication (OAuth2/SAML).
+HIPAA compliance audit, penetration testing, PostgreSQL migration planning, cloud deployment planning, disaster recovery, user authentication (OAuth2/SAML).
 
 ---
 

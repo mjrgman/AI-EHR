@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const db = require('../database');
 
 const WEBHOOK_TIMEOUT_MS = 5000;
+const WEBHOOK_SIGNATURE_TOLERANCE_MS = 5 * 60 * 1000;
 const VALID_EVENTS = [
   'encounter.started', 'encounter.completed',
   'order.placed', 'order.completed',
@@ -69,9 +70,58 @@ initEventBusTables().catch(err =>
 // WEBHOOK SIGNATURE
 // ──────────────────────────────────────────
 
-function signPayload(payload, secret) {
+function signPayload(payload, secret, timestamp = null) {
   const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  return crypto.createHmac('sha256', secret).update(body).digest('hex');
+  const signedBody = timestamp ? `${timestamp}.${body}` : body;
+  return crypto.createHmac('sha256', secret).update(signedBody).digest('hex');
+}
+
+function safeEqualHex(left, right) {
+  if (!left || !right) return false;
+  const a = Buffer.from(String(left).replace(/^sha256=/, ''), 'hex');
+  const b = Buffer.from(String(right).replace(/^sha256=/, ''), 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function verifyWebhookSignature({ body, secret, timestamp, signature, now = Date.now() }) {
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return false;
+  if (Math.abs(now - ts) > WEBHOOK_SIGNATURE_TOLERANCE_MS) return false;
+  const expected = signPayload(body, secret, String(ts));
+  return safeEqualHex(signature, expected);
+}
+
+function isBlockedWebhookUrl(endpointUrl) {
+  let parsed;
+  try {
+    parsed = new URL(endpointUrl);
+  } catch {
+    return true;
+  }
+
+  if (!['https:', 'http:'].includes(parsed.protocol)) return true;
+  if (parsed.username || parsed.password) return true;
+
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (
+    host === 'localhost' ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host === 'metadata.google.internal' ||
+    host === '169.254.169.254' ||
+    host.startsWith('127.') ||
+    host.startsWith('10.') ||
+    host.startsWith('192.168.') ||
+    host.startsWith('169.254.') ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+    /^fc[0-9a-f]{2}:/i.test(host) ||
+    /^fd[0-9a-f]{2}:/i.test(host) ||
+    /^fe80:/i.test(host)
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 // ──────────────────────────────────────────
@@ -81,7 +131,9 @@ function signPayload(payload, secret) {
 function deliverWebhook(url, payload, secret) {
   return new Promise((resolve) => {
     const body = JSON.stringify(payload);
-    const signature = signPayload(body, secret);
+    const timestamp = String(Date.now());
+    const nonce = crypto.randomUUID();
+    const signature = signPayload(body, secret, timestamp);
     const parsed = new URL(url);
     const transport = parsed.protocol === 'https:' ? https : http;
     const startTime = Date.now();
@@ -96,6 +148,8 @@ function deliverWebhook(url, payload, secret) {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
         'X-EHR-Signature': `sha256=${signature}`,
+        'X-EHR-Timestamp': timestamp,
+        'X-EHR-Nonce': nonce,
         'X-EHR-Event': payload.event,
         'X-EHR-Delivery-ID': crypto.randomUUID()
       }
@@ -195,6 +249,9 @@ async function emit(eventType, data) {
 // ──────────────────────────────────────────
 
 async function subscribe(subscriberName, endpointUrl, events) {
+  if (isBlockedWebhookUrl(endpointUrl)) {
+    throw new Error('Webhook endpoint URL is not allowed');
+  }
   const invalidEvents = events.filter(e => e !== '*' && !VALID_EVENTS.includes(e));
   if (invalidEvents.length > 0) {
     throw new Error(`Invalid event types: ${invalidEvents.join(', ')}. Valid: ${VALID_EVENTS.join(', ')}`);
@@ -281,6 +338,9 @@ module.exports = {
   subscribe,
   unsubscribe,
   listSubscriptions,
+  signPayload,
+  verifyWebhookSignature,
+  isBlockedWebhookUrl,
   VALID_EVENTS,
   router
 };

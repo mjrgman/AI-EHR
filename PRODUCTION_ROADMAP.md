@@ -47,13 +47,13 @@ The system is **not** a demo. It already has:
 
 **SMART-on-FHIR:** OAuth2 Authorization Code + PKCE. ClientApplication registration with target EHR. Launch context handling. Sprint 4-5.
 
-### Gap 2: PostgreSQL Migration (High)
+### Gap 2: PostgreSQL Migration (High, roadmap-only today)
 
-**Current:** SQLite3 (single-user, no vector support).
+**Current:** SQLite3 is the only supported runtime backend. The Postgres adapter is not implemented and `DATABASE_URL=postgresql://...` fails closed.
 
 **Target:** PostgreSQL 15+ with pgvector extension.
 
-**Approach:** Prisma ORM for schema migration. UUIDs replace integer PKs for FHIR compatibility. Encryption at rest (pgcrypto or RDS encryption), SSL/TLS in transit, row-level security, pgaudit extension. Sprint 2.
+**Approach:** Future implementation must include an adapter, migration parity tests, backup/restore proof, and documentation before any production Postgres/RDS/Cloud SQL claim. Candidate direction: Prisma ORM for schema migration, UUIDs for FHIR compatibility, encryption at rest, SSL/TLS in transit, row-level security, and pgaudit extension.
 
 ### Gap 3: RAG / Vector Search for Agent Memory (High)
 
@@ -86,7 +86,7 @@ The system is **not** a demo. It already has:
 | Sprint | Dates | Deliverables | Dependencies |
 |---|---|---|---|
 | 1 | Apr 7-18 | FHIR facade: Patient, Encounter, Observation, Condition | None |
-| 2 | Apr 21 - May 2 | FHIR: MedicationRequest, AllergyIntolerance, DiagnosticReport. PostgreSQL migration. | Sprint 1 |
+| 2 | Apr 21 - May 2 | FHIR: MedicationRequest, AllergyIntolerance, DiagnosticReport. PostgreSQL migration planning. | Sprint 1 |
 | 3 | May 5-16 | FHIR: ServiceRequest, DocumentReference, CarePlan. pgvector + RAG pipeline. Agent memory upgrade. | Sprint 2 |
 | 4 | May 19-30 | Deepgram voice pipeline. Speaker diarization. Scribe agent integration. | Sprint 1 |
 | 5 | Jun 1-12 | AssemblyAI batch pipeline. Medplum Docker deployment. SMART-on-FHIR auth. | Sprint 2-3 |
@@ -100,7 +100,7 @@ The system is **not** a demo. It already has:
 | Frontend | React 18 + Vite + Tailwind + @medplum/react | Provider UI |
 | Backend | Express.js + @medplum/fhir-router | REST API + FHIR facade |
 | FHIR Server | Medplum Server (self-hosted Docker) | FHIR CDR + OAuth2 |
-| Database | PostgreSQL 15+ with pgvector | Clinical data + vectors |
+| Database | SQLite now; PostgreSQL 15+ with pgvector after adapter parity | Clinical data + vectors |
 | ORM | Prisma | Schema migrations |
 | AI Engine | Claude API (@anthropic-ai/sdk) | Clinical reasoning |
 | RAG | @langchain/core + @langchain/anthropic | Vector retrieval |

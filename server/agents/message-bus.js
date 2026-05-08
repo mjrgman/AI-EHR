@@ -46,6 +46,7 @@ const MESSAGE_TYPES = {
   PRESCRIPTION_CREATED: 'PRESCRIPTION_CREATED', // Orders → Event Bus (external webhook)
   LAB_RESULTED: 'LAB_RESULTED',           // Lab → PatientLink + MediVault
   LAB_SYNTHESIS_READY: 'LAB_SYNTHESIS_READY', // LabSynthesis → CDS + Domain Logic (Phase 2b)
+  CRITICAL_VALUE: 'CRITICAL_VALUE',       // MediVault Red Flag -> Physician on-call
 
   // Functional-Medicine / HRT / Peptide Dosing Events (Tier 3 MD-in-loop)
   DOSING_REVIEW_REQUEST: 'DOSING_REVIEW_REQUEST',             // Domain Logic → Physician (approval required)
@@ -500,6 +501,9 @@ class MessageBus extends EventEmitter {
     // MediVault Red Flag → Physician: critical alerts require physician review
     this.subscribe('physician', 'RED_FLAG_ALERT', async (msg) => {
       this.emit('catc:redflag_to_physician', msg);
+    });
+    this.subscribe('physician', 'CRITICAL_VALUE', async (msg) => {
+      this.emit('catc:critical_value_to_physician', msg);
     });
 
     // Lab results → PatientLink + MediVault: new results trigger notifications

@@ -67,7 +67,9 @@ function getXmlParser() {
         textNodeName: '#text',
         trimValues: true,
         parseAttributeValue: true,
-        parseTagValue: true
+        parseTagValue: true,
+        processEntities: false,
+        stopNodes: ['*.OBX.5', '*.NTE.3', '*.Comments']
       });
     } catch (err) {
       _xmlParser = false;
@@ -249,6 +251,15 @@ function parseXmlResult(buffer) {
   const xml = buffer.toString('utf8');
   base.rawExcerpt = xml.slice(0, 500);
 
+  if (hasUnsafeXmlConstruct(xml)) {
+    base.warnings.push('unsafe_xml_entities_rejected');
+    return base;
+  }
+  if (maxXmlDepth(xml) > 60) {
+    base.warnings.push('xml_depth_limit_exceeded');
+    return base;
+  }
+
   const parser = getXmlParser();
   if (!parser) {
     base.warnings.push('xml_parser_unavailable');
@@ -338,6 +349,28 @@ function findAll(node, key, out = []) {
   return out;
 }
 
+function hasUnsafeXmlConstruct(xml) {
+  return /<!DOCTYPE|<!ENTITY|\bSYSTEM\b|\bPUBLIC\b/i.test(xml);
+}
+
+function maxXmlDepth(xml) {
+  let depth = 0;
+  let maxDepth = 0;
+  const tagPattern = /<\/?([A-Za-z_][\w:.-]*)(?:\s[^>]*)?>/g;
+  let match;
+  while ((match = tagPattern.exec(xml)) !== null) {
+    const fullTag = match[0];
+    if (fullTag.startsWith('<?') || fullTag.startsWith('<!')) continue;
+    if (fullTag.startsWith('</')) {
+      depth = Math.max(0, depth - 1);
+    } else if (!fullTag.endsWith('/>')) {
+      depth += 1;
+      maxDepth = Math.max(maxDepth, depth);
+    }
+  }
+  return maxDepth;
+}
+
 // ==========================================
 // SHARED HELPERS
 // ==========================================
@@ -376,6 +409,8 @@ module.exports = {
     tryParseResultLine,
     normalizeDate,
     normalizeValue,
-    findAll
+    findAll,
+    hasUnsafeXmlConstruct,
+    maxXmlDepth
   }
 };

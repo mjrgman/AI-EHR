@@ -164,6 +164,7 @@ const HRT_RULES = [
     trigger_condition: {
       sex: 'F',
       age_min: 45,
+      pregnancy_gate: { required: true, reproductive_age_max: 55, lmp_required: true },
       symptoms_any: ['hot flashes', 'night sweats', 'vasomotor', 'sleep disturbance (menopausal)'],
       contraindications_none: ['breast cancer history', 'estrogen-dependent cancer', 'dvt/pe history', 'active liver disease', 'unexplained vaginal bleeding']
     },
@@ -198,7 +199,7 @@ const HRT_RULES = [
         }
       ]
     },
-    evidence_source: 'NAMS 2022 Position Statement on Hormone Therapy; ACOG Committee Opinion 2020: Transdermal estradiol preferred; progestogen required if intact uterus.'
+    evidence_source: 'NAMS 2022 Position Statement on Hormone Therapy; ACOG menopause hormone therapy guidance; estradiol labeling notes transdermal estradiol is not indicated for pregnancy. Pregnancy gate requires documented non-pregnant status and LMP before initiation in reproductive-risk patients.'
   },
   {
     id: 'hrt-e2-contraindicated',

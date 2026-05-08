@@ -1,12 +1,11 @@
 /**
  * Database Adapter Interface for Agentic EHR
  *
- * Provides a unified interface that both SQLite and PostgreSQL
- * adapters implement. This enables swapping databases without
- * changing application code.
+ * Provides the database interface used by future adapters without
+ * claiming unfinished backends are safe to run.
  *
- * Current: SQLite (single-provider / dev)
- * Planned: PostgreSQL (multi-site / production)
+ * Current supported runtime backend: SQLite.
+ * Planned, not implemented: PostgreSQL.
  *
  * Usage:
  *   const db = require('./db/adapter');
@@ -14,7 +13,6 @@
  *   const rows = await db.all('SELECT * FROM patients WHERE id = ?', [1]);
  */
 
-const path = require('path');
 const logger = require('../utils/logger').child({ _module: 'db' });
 
 // ==========================================
@@ -24,10 +22,9 @@ const logger = require('../utils/logger').child({ _module: 'db' });
 function getAdapter() {
   const dbUrl = process.env.DATABASE_URL;
   if (dbUrl && dbUrl.startsWith('postgresql://')) {
-    // Future: return require('./adapters/postgres');
     throw new Error(
-      'PostgreSQL adapter not yet implemented. ' +
-      'Set DATABASE_PATH for SQLite or contribute the postgres adapter.'
+      'PostgreSQL adapter is intentionally disabled: no production-ready adapter or migration parity exists yet. ' +
+      'Unset DATABASE_URL and set DATABASE_PATH to use the supported SQLite backend.'
     );
   }
   return require('./adapters/sqlite');
@@ -48,7 +45,8 @@ function getAdapter() {
  *   isHealthy()     → Promise<boolean>
  *
  * Parameterized queries use ? placeholders (SQLite style).
- * The PostgreSQL adapter will translate ? → $1, $2, etc.
+ * A future PostgreSQL adapter must translate ? placeholders, pass
+ * migration parity tests, and update docs before DATABASE_URL is accepted.
  */
 
 let adapter = null;

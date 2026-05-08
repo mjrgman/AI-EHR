@@ -21,7 +21,7 @@ class CDSAgent extends BaseAgent {
   constructor(options = {}) {
     super('cds', {
       description: 'Clinical decision support — alerts, drug interactions, differentials, preventive care',
-      dependsOn: [],         // CDS runs in parallel with Scribe (Phase 1)
+      dependsOn: ['lab_synthesis'], // Lab normalization must finish before CDS evaluates same-pipeline labs
       priority: 10,
       autonomyTier: 2, // Tier 2: Supervised — recommendations reviewed, not auto-executed
       ...options

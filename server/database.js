@@ -164,6 +164,9 @@ function initializeDatabase() {
         encounter_date DATE NOT NULL,
         encounter_type TEXT, chief_complaint TEXT,
         transcript TEXT, soap_note TEXT,
+        ai_degraded BOOLEAN DEFAULT 0,
+        ai_degradation_reason TEXT,
+        ai_degraded_at DATETIME,
         status TEXT CHECK(status IN ('in-progress','completed','signed')) DEFAULT 'in-progress',
         provider TEXT, duration_minutes INTEGER, completed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -201,6 +204,7 @@ function initializeDatabase() {
         dose TEXT NOT NULL, route TEXT NOT NULL, frequency TEXT NOT NULL,
         quantity INTEGER, refills INTEGER DEFAULT 0,
         instructions TEXT, indication TEXT, icd10_codes TEXT,
+        dosing_approval_id TEXT,
         prescriber TEXT NOT NULL, prescribed_date DATE NOT NULL,
         status TEXT CHECK(status IN ('draft','signed','transmitted','dispensed')) DEFAULT 'draft',
         pdf_path TEXT,
@@ -280,6 +284,7 @@ function initializeDatabase() {
 
       db.run(`CREATE TABLE IF NOT EXISTS provider_preferences (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         provider_name TEXT NOT NULL,
         condition_code TEXT NOT NULL,
         condition_name TEXT NOT NULL,
@@ -1298,15 +1303,85 @@ const db_helpers = {
   },
 
   updateEncounter: (encounterId, updates) => {
-    const { transcript, soap_note, status, duration_minutes } = updates;
+    const { transcript, soap_note, status, duration_minutes, ai_degraded, ai_degradation_reason } = updates;
     return dbRun(`UPDATE encounters SET transcript=COALESCE(?,transcript), soap_note=COALESCE(?,soap_note),
                   status=COALESCE(?,status), duration_minutes=COALESCE(?,duration_minutes),
+                  ai_degraded=COALESCE(?,ai_degraded), ai_degradation_reason=COALESCE(?,ai_degradation_reason),
+                  ai_degraded_at=CASE WHEN ?=1 THEN COALESCE(ai_degraded_at, CURRENT_TIMESTAMP) ELSE ai_degraded_at END,
                   completed_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP ELSE completed_at END WHERE id=?`,
-      [transcript, soap_note, status, duration_minutes, status, encounterId])
+      [transcript, soap_note, status, duration_minutes,
+       ai_degraded === undefined ? null : (ai_degraded ? 1 : 0),
+       ai_degradation_reason || null,
+       ai_degraded ? 1 : null,
+       status, encounterId])
       .then(r => ({ changes: r.changes }));
   },
 
   getEncounterById: (id) => dbGet('SELECT * FROM encounters WHERE id = ?', [id]),
+
+  markEncounterAiDegraded: (encounterId, reason) => {
+    return dbRun(
+      `UPDATE encounters
+       SET ai_degraded = 1,
+           ai_degradation_reason = COALESCE(?, ai_degradation_reason),
+           ai_degraded_at = COALESCE(ai_degraded_at, CURRENT_TIMESTAMP)
+       WHERE id = ?`,
+      [reason || 'AI fallback mode used; clinician verification required', encounterId]
+    ).then(r => ({ changes: r.changes }));
+  },
+
+  createSafetyEvent: (data) => {
+    return dbRun(
+      `INSERT INTO safety_events (
+        agent_name, level, label, description, response_required,
+        patient_id, encounter_id, reported_by, root_cause
+      ) VALUES (?,?,?,?,?,?,?,?,?)`,
+      [
+        data.agent_name,
+        data.level,
+        data.label,
+        data.description,
+        data.response_required ? 1 : 0,
+        data.patient_id || null,
+        data.encounter_id || null,
+        data.reported_by || null,
+        data.root_cause || null
+      ]
+    ).then(r => ({ id: r.lastID }));
+  },
+
+  createAiInference: (data) => {
+    return dbRun(
+      `INSERT INTO ai_inferences (
+        request_id, model, model_version, system_hash, user_hash,
+        prompt_template_id, prompt_sha256, retrieval_snapshot_json,
+        temperature, max_tokens, raw_response_json, parsed_json,
+        input_tokens, output_tokens, latency_ms, encounter_id, patient_id,
+        fallback_to_mock_bool, error
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        data.request_id,
+        data.model,
+        data.model_version || data.model,
+        data.system_hash,
+        data.user_hash,
+        data.prompt_template_id || null,
+        data.prompt_sha256 || null,
+        data.retrieval_snapshot_json || null,
+        data.temperature ?? null,
+        data.max_tokens ?? null,
+        data.raw_response_json || null,
+        data.parsed_json || null,
+        data.input_tokens ?? null,
+        data.output_tokens ?? null,
+        data.latency_ms ?? null,
+        data.encounter_id || null,
+        data.patient_id || null,
+        data.fallback_to_mock_bool ? 1 : 0,
+        data.error || null
+      ]
+    ).then(r => ({ id: r.lastID }));
+  },
 
   // --- Vitals ---
   addVitals: (data) => {
@@ -1337,13 +1412,13 @@ const db_helpers = {
   createPrescription: (data) => {
     const { patient_id, encounter_id, medication_name, generic_name, dose, route,
             frequency, quantity, refills, instructions, indication, icd10_codes,
-            prescriber, prescribed_date, status } = data;
+            dosing_approval_id, prescriber, prescribed_date, status } = data;
     return dbRun(`INSERT INTO prescriptions (patient_id,encounter_id,medication_name,generic_name,
                   dose,route,frequency,quantity,refills,instructions,indication,icd10_codes,
-                  prescriber,prescribed_date,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                  dosing_approval_id,prescriber,prescribed_date,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [patient_id, encounter_id, medication_name, generic_name, dose, route, frequency,
-       quantity, refills, instructions, indication, icd10_codes, prescriber,
-       prescribed_date, status || 'draft'])
+       quantity, refills, instructions, indication, icd10_codes, dosing_approval_id || null,
+       prescriber, prescribed_date, status || 'draft'])
       .then(r => ({ id: r.lastID }));
   },
 
@@ -1461,20 +1536,23 @@ const db_helpers = {
 
   // --- Provider Preferences ---
   getProviderPreferences: (providerName, conditionCode) => {
+    const tenantId = process.env.TENANT_ID || 'default';
     if (conditionCode) {
-      return dbAll('SELECT * FROM provider_preferences WHERE provider_name = ? AND condition_code = ? ORDER BY confidence DESC',
-        [providerName, conditionCode]);
+      return dbAll('SELECT * FROM provider_preferences WHERE tenant_id = ? AND provider_name = ? AND condition_code = ? ORDER BY confidence DESC',
+        [tenantId, providerName, conditionCode]);
     }
-    return dbAll('SELECT * FROM provider_preferences WHERE provider_name = ? ORDER BY confidence DESC', [providerName]);
+    return dbAll('SELECT * FROM provider_preferences WHERE tenant_id = ? AND provider_name = ? ORDER BY confidence DESC',
+      [tenantId, providerName]);
   },
 
   upsertProviderPreference: async (data) => {
+    const tenant_id = data.tenant_id || process.env.TENANT_ID || 'default';
     const { provider_name, condition_code, condition_name, action_type, action_detail } = data;
     const detailStr = typeof action_detail === 'string' ? action_detail : JSON.stringify(action_detail);
 
     const existing = await dbGet(
-      'SELECT * FROM provider_preferences WHERE provider_name = ? AND condition_code = ? AND action_type = ? AND action_detail = ?',
-      [provider_name, condition_code, action_type, detailStr]
+      'SELECT * FROM provider_preferences WHERE tenant_id = ? AND provider_name = ? AND condition_code = ? AND action_type = ? AND action_detail = ?',
+      [tenant_id, provider_name, condition_code, action_type, detailStr]
     );
 
     if (existing) {
@@ -1484,9 +1562,9 @@ const db_helpers = {
         [newCount, newConf, existing.id])
         .then(() => ({ id: existing.id, confidence: newConf, frequency_count: newCount }));
     } else {
-      return dbRun(`INSERT INTO provider_preferences (provider_name,condition_code,condition_name,action_type,action_detail)
-                    VALUES (?,?,?,?,?)`,
-        [provider_name, condition_code, condition_name, action_type, detailStr])
+      return dbRun(`INSERT INTO provider_preferences (tenant_id,provider_name,condition_code,condition_name,action_type,action_detail)
+                    VALUES (?,?,?,?,?,?)`,
+        [tenant_id, provider_name, condition_code, condition_name, action_type, detailStr])
         .then(r => ({ id: r.lastID, confidence: 0.3, frequency_count: 1 }));
     }
   },

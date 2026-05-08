@@ -164,6 +164,27 @@ const CARE_GAP_DEFINITIONS = [
   }
 ];
 
+function normalizeInteractionSeverity(severity) {
+  const value = String(severity || '').toLowerCase();
+  if (['critical', 'serious', 'moderate', 'minor'].includes(value)) return value;
+  if (value === 'high' || value.includes('contraindicated')) return 'critical';
+  if (value === 'medium' || value.includes('major') || value.includes('serious')) return 'serious';
+  if (value.includes('minor') || value === 'low') return 'minor';
+  return 'moderate';
+}
+
+function normalizeLabName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function criticalValueAckSlaMinutes() {
+  const configured = parseInt(process.env.CRITICAL_VALUE_ACK_SLA_MINUTES || '15', 10);
+  return Number.isFinite(configured) && configured > 0 ? configured : 15;
+}
+
 // ==========================================
 // RED FLAG AGENT CLASS
 // ==========================================
@@ -196,10 +217,10 @@ class RedFlagAgent extends BaseAgent {
     const alerts = await this.scanForRedFlags(patientId);
 
     if (alerts.length > 0) {
-      // Report safety events for critical alerts
       const criticalAlerts = alerts.filter(a => a.severity === 'critical');
+      const criticalDispatches = [];
       for (const alert of criticalAlerts) {
-        this.reportSafetyEvent(1, `Critical red flag: ${alert.description}`, context);
+        criticalDispatches.push(await this._dispatchCriticalValue(alert, context));
       }
 
       this.audit('recommendation', {
@@ -208,16 +229,125 @@ class RedFlagAgent extends BaseAgent {
         totalAlerts: alerts.length,
         criticalCount: criticalAlerts.length,
         seriousCount: alerts.filter(a => a.severity === 'serious').length,
-        moderateCount: alerts.filter(a => a.severity === 'moderate').length
+        moderateCount: alerts.filter(a => a.severity === 'moderate').length,
+        criticalDispatchCount: criticalDispatches.length
       }, context);
+
+      return {
+        scanned: true,
+        patientId,
+        alertCount: alerts.length,
+        alerts,
+        criticalDispatches
+      };
     }
 
     return {
       scanned: true,
       patientId,
       alertCount: alerts.length,
-      alerts
+      alerts,
+      criticalDispatches: []
     };
+  }
+
+  async _dispatchCriticalValue(alert, context) {
+    const safetyEvent = this.reportSafetyEvent(1, `Critical red flag: ${alert.description}`, context);
+    const slaMinutes = criticalValueAckSlaMinutes();
+    const now = new Date();
+    const ackRequiredBy = new Date(now.getTime() + (slaMinutes * 60 * 1000)).toISOString();
+    const payload = {
+      alert,
+      safetyEventId: safetyEvent.id,
+      patientId: context.patient?.id || null,
+      encounterId: context.encounter?.id || null,
+      requiresAck: true,
+      ackStatus: 'pending',
+      ackSlaMinutes: slaMinutes,
+      ackRequiredBy,
+      unackedSafetyLevel: 1,
+      internalOnly: true
+    };
+
+    let message = null;
+    let status = 'queued';
+
+    try {
+      if (this.messageBus) {
+        message = await this.sendMessage(
+          'physician',
+          'CRITICAL_VALUE',
+          payload,
+          {
+            patientId: context.patient?.id || null,
+            encounterId: context.encounter?.id || null,
+            priority: 5
+          }
+        );
+      } else {
+        status = 'no_message_bus';
+        this.reportSafetyEvent(
+          1,
+          `Critical value alert could not be queued to physician: message bus unavailable. ${alert.description}`,
+          context
+        );
+      }
+    } catch (err) {
+      status = 'dispatch_failed';
+      this.reportSafetyEvent(
+        1,
+        `Critical value alert dispatch failed: ${err.message}. ${alert.description}`,
+        context
+      );
+    }
+
+    await this._recordCriticalValueTimeline(alert, context, {
+      ...payload,
+      messageId: message?.id || null,
+      dispatchStatus: status
+    });
+
+    return {
+      alertType: alert.type,
+      description: alert.description,
+      messageId: message?.id || null,
+      safetyEventId: safetyEvent.id,
+      ackRequiredBy,
+      status
+    };
+  }
+
+  async _recordCriticalValueTimeline(alert, context, dispatch) {
+    const patientId = context.patient?.id || dispatch.patientId;
+    if (!patientId) return;
+
+    try {
+      await dbRun(
+        `INSERT INTO vault_timeline
+         (patient_id, event_type, event_date, description, deduplicated, created_at)
+         VALUES (?, 'critical_value_alert', ?, ?, 0, CURRENT_TIMESTAMP)`,
+        [
+          patientId,
+          new Date().toISOString().split('T')[0],
+          JSON.stringify({
+            alert: {
+              type: alert.type,
+              severity: alert.severity,
+              description: alert.description,
+              details: alert.details
+            },
+            dispatch: {
+              messageId: dispatch.messageId,
+              status: dispatch.dispatchStatus,
+              ackRequiredBy: dispatch.ackRequiredBy,
+              ackSlaMinutes: dispatch.ackSlaMinutes
+            }
+          })
+        ]
+      );
+    } catch (err) {
+      console.warn('[RedFlag] Critical value timeline write failed:', err.message);
+    }
   }
 
   /**
@@ -229,13 +359,14 @@ class RedFlagAgent extends BaseAgent {
   async scanForRedFlags(patientId) {
     if (!patientId) throw new Error('patientId is required');
 
-    const [labAlerts, medAlerts, gapAlerts] = await Promise.all([
+    const [labAlerts, labTrendAlerts, medAlerts, gapAlerts] = await Promise.all([
       this._checkLabValues(patientId),
+      this._checkLabTrends(patientId),
       this._checkMedications(patientId),
       this._checkCareGaps(patientId)
     ]);
 
-    return [...labAlerts, ...medAlerts, ...gapAlerts];
+    return [...labAlerts, ...labTrendAlerts, ...medAlerts, ...gapAlerts];
   }
 
   /**
@@ -351,6 +482,75 @@ class RedFlagAgent extends BaseAgent {
     return alerts;
   }
 
+  async _checkLabTrends(patientId) {
+    const alerts = [];
+    const labs = await dbAll(
+      `SELECT * FROM labs
+       WHERE patient_id = ?
+       ORDER BY result_date DESC, id DESC`,
+      [patientId]
+    );
+
+    const byName = new Map();
+    for (const lab of labs) {
+      const name = normalizeLabName(lab.test_name);
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name).push(lab);
+    }
+
+    const creatinine = byName.get('creatinine') || [];
+    if (creatinine.length >= 2) {
+      const latest = parseFloat(creatinine[0].result_value);
+      const prior = parseFloat(creatinine[1].result_value);
+      if (Number.isFinite(latest) && Number.isFinite(prior) && prior > 0 && latest >= prior * 2) {
+        alerts.push({
+          severity: 'serious',
+          type: 'lab_trend_aki',
+          description: `Creatinine doubled from baseline: ${prior} to ${latest} mg/dL`,
+          details: {
+            test: 'Creatinine',
+            latest,
+            prior,
+            direction: 'rising',
+            threshold: '>=2x baseline',
+            latestDate: creatinine[0].result_date,
+            priorDate: creatinine[1].result_date
+          }
+        });
+      }
+    }
+
+    const sodium = byName.get('sodium') || [];
+    if (sodium.length >= 2) {
+      const latest = parseFloat(sodium[0].result_value);
+      const prior = parseFloat(sodium[1].result_value);
+      const latestDate = new Date(sodium[0].result_date).getTime();
+      const priorDate = new Date(sodium[1].result_date).getTime();
+      const hours = Math.abs(latestDate - priorDate) / (60 * 60 * 1000);
+      if (Number.isFinite(latest) && Number.isFinite(prior) && Number.isFinite(hours) && hours > 0) {
+        const correctionPer24h = Math.abs(latest - prior) / hours * 24;
+        if (correctionPer24h > 12) {
+          alerts.push({
+            severity: 'serious',
+            type: 'lab_trend_sodium_correction',
+            description: `Sodium changed too quickly: ${prior} to ${latest} mEq/L (${correctionPer24h.toFixed(1)} mEq/L per 24h)`,
+            details: {
+              test: 'Sodium',
+              latest,
+              prior,
+              correctionPer24h,
+              threshold: '>12 mEq/L per 24h',
+              latestDate: sodium[0].result_date,
+              priorDate: sodium[1].result_date
+            }
+          });
+        }
+      }
+    }
+
+    return alerts;
+  }
+
   /**
    * Check for medication interactions using the drug-safety-service if available.
    * Falls back to basic duplicate-class detection if the service is not loaded.
@@ -387,13 +587,16 @@ class RedFlagAgent extends BaseAgent {
     if (medications.length < 2) return alerts;
 
     // Use drug safety service if available
-    if (drugSafetyService && typeof drugSafetyService.checkDrugInteractions === 'function') {
+    if (drugSafetyService && (
+      typeof drugSafetyService.checkMedicationListInteractions === 'function' ||
+      typeof drugSafetyService.checkDrugInteractions === 'function'
+    )) {
       try {
-        const interactions = await drugSafetyService.checkDrugInteractions(medications);
+        const interactions = typeof drugSafetyService.checkMedicationListInteractions === 'function'
+          ? await drugSafetyService.checkMedicationListInteractions(medications)
+          : await drugSafetyService.checkDrugInteractions(medications);
         for (const interaction of (interactions || [])) {
-          const severity = interaction.severity === 'high' ? 'critical'
-            : interaction.severity === 'medium' ? 'serious'
-            : 'moderate';
+          const severity = normalizeInteractionSeverity(interaction.severity);
 
           alerts.push({
             severity,
@@ -404,6 +607,9 @@ class RedFlagAgent extends BaseAgent {
               drug2: interaction.drug2,
               interactionSeverity: interaction.severity,
               description: interaction.description,
+              source: interaction.source,
+              referenceUrl: interaction.referenceUrl,
+              pendingDdiCheck: !!interaction.pending_ddi_check,
               documentId: medDocs[0].id
             }
           });
@@ -534,5 +740,6 @@ class RedFlagAgent extends BaseAgent {
 module.exports = {
   RedFlagAgent,
   CRITICAL_LAB_THRESHOLDS,
-  CARE_GAP_DEFINITIONS
+  CARE_GAP_DEFINITIONS,
+  normalizeLabName
 };

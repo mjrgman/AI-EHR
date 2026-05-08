@@ -23,6 +23,7 @@ const { BaseAgent, AUTONOMY_TIER, ACTION_TYPE } = require('./base-agent');
 const engine = require('../domain/functional-med-engine');
 const cdsEngine = require('../cds-engine');
 const knowledgeBase = require('../domain/knowledge-base');
+const dosingService = require('../pharma/dosing-service');
 
 // Keywords that, when present in transcript or encounter notes, flag the
 // encounter for domain-logic classification. Client-side UI can also use
@@ -360,6 +361,51 @@ class DomainLogicAgent extends BaseAgent {
       ruleId: proposal.rule_id,
       ruleName: proposal.rule_name
     };
+
+    const doseAdjustment = await dosingService.assessDoseAdjustments(
+      dosingChange.medication,
+      dosingChange.proposedDose,
+      context
+    );
+    dosingChange.doseAdjustment = doseAdjustment;
+
+    if (doseAdjustment.requiresBlockingReview) {
+      this.reportSafetyEvent(
+        1,
+        `Dosing proposal blocked by renal/hepatic/pediatric adjustment gate: ${dosingChange.medication}. ` +
+        doseAdjustment.blocks.join(' | '),
+        context
+      );
+      this.audit(
+        ACTION_TYPE.OVERRIDE,
+        {
+          reason: 'dose_adjustment_gate_block',
+          dosingChange,
+          doseAdjustment
+        },
+        context
+      );
+      return {
+        approved: false,
+        approvalId: null,
+        response: {
+          status: 'blocked_by_dose_adjustment_gate',
+          reason: doseAdjustment.blocks.join(' | '),
+          doseAdjustment
+        },
+        doseAdjustment
+      };
+    }
+
+    if (doseAdjustment.requiresAdjustment) {
+      this.reportSafetyEvent(
+        3,
+        `Dosing proposal requires renal/hepatic/pediatric review: ${dosingChange.medication}. ` +
+        doseAdjustment.warnings.join(' | '),
+        context
+      );
+    }
+
     return this.requestDosingApproval(dosingChange, context);
   }
 }

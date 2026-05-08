@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clinical EHR UltraPlan Completion Proof - 2026-05-08</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #151a21;
+      --muted: #5b6472;
+      --line: #d7dde6;
+      --green: #087a42;
+      --blue: #0f5c9a;
+      --amber: #875b00;
+      --bg: #f7f9fb;
+      --panel: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Segoe UI, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    header {
+      padding: 28px 32px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 24px 40px;
+    }
+    h1, h2 { margin: 0; letter-spacing: 0; }
+    h1 { font-size: 30px; }
+    h2 { font-size: 18px; margin-bottom: 12px; }
+    .subhead { color: var(--muted); margin-top: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    section, .tile {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+    section { margin-bottom: 18px; }
+    .status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 5px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--green);
+      margin-right: 8px;
+    }
+    .boundary { background: var(--amber); }
+    .proof { background: var(--blue); }
+    ul { margin: 8px 0 0 20px; padding: 0; }
+    li { margin: 5px 0; }
+    code {
+      background: #eef2f7;
+      border: 1px solid #dce3ee;
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: Consolas, monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: #111827;
+      color: #f9fafb;
+      padding: 14px;
+      border-radius: 8px;
+      margin: 10px 0 0;
+    }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Clinical EHR UltraPlan Completion Proof</h1>
+    <div class="subhead">Codex Desktop / Kepler local-safe implementation and hard-test run, 2026-05-08.</div>
+  </header>
+  <main>
+    <div class="grid">
+      <div class="tile">
+        <span class="status">LOCAL HARDENING COMPLETE</span>
+        <p>Safe local P0/P1/P2/P3 UltraPlan work was implemented in the worktree and verified without using hidden Claude/Opus, browser rendering, live patient data, paid APIs, public deploys, or external sends.</p>
+      </div>
+      <div class="tile">
+        <span class="status proof">HARD TESTED</span>
+        <p>Final proof includes syntax checks, unit tests, full integration tests, dependency audit, lint, build, and whitespace verification.</p>
+      </div>
+      <div class="tile">
+        <span class="status boundary">BOUNDARIES</span>
+        <p>Production-only external lanes remain deferred: licensed DDI source, real Postgres parity, public deployment, and real pager/SMS provider wiring.</p>
+      </div>
+    </div>
+
+    <section>
+      <h2>Primary Changes</h2>
+      <ul>
+        <li>Closed prescription safety backdoors and kept direct/speech-created prescriptions draft-only unless server-side approval is present.</li>
+        <li>Added deterministic DDI fallback, critical-value dispatch, pregnancy gating, AI fallback warnings, and Postgres truth-boundary documentation.</li>
+        <li>Added lab synthesis before CDS, CSRF-protected portal sessions, LabCorp OAuth DB state, XML parser hardening, webhook SSRF/signature defenses, and tenant-scoped provider learning.</li>
+        <li>Added AI trust foundations: versioned prompt files, model allowlisting, prompt hashes, inference schema, and fallback/degraded encounter tracking.</li>
+        <li>Added renal/hepatic/pediatric dose-adjustment gating before Tier-3 dosing approval.</li>
+        <li>Added migration, security, portal, agent-ordering, allergy, lab-trend, and dose-adjustment regression tests.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Verification</h2>
+      <ul>
+        <li><code>npm run test:unit</code>: 78/78 passed.</li>
+        <li><code>npm test</code>: 315/315 passed after final dependency audit fix.</li>
+        <li><code>npm audit --omit=dev --audit-level=high</code>: 0 vulnerabilities.</li>
+        <li><code>npm run lint</code>: exit 0; warning-only baseline remains.</li>
+        <li><code>npm run build</code>: passed; Vite production build completed.</li>
+        <li><code>git diff --check</code>: exit 0; only Windows line-ending notices.</li>
+      </ul>
+      <pre>Verified worktree:
+C:\Users\micha\files\Clinical\EHR\.claude\worktrees\cool-merkle-46249b
+
+Proof files:
+CODEX_TAKEOVER_ULTRAPLAN_05-08-2026.md
+CODEX_EHR_ULTRAPLAN_COMPLETION_PROOF_05-08-2026.html
+C:\Users\micha\files\GSD\Code Dispatch\out\work_runs\20260508-155842-clinical-ehr-ultraplan-full-completion-hard-test.md</pre>
+    </section>
+
+    <section>
+      <h2>Final Classification</h2>
+      <p><strong>Local-safe UltraPlan hardening:</strong> complete and hard-tested.</p>
+      <p class="muted"><strong>Not claimed:</strong> public deploy, live pager/SMS, paid API, licensed external feed, production Postgres parity, external message/send, or hidden model-lane execution.</p>
+    </section>
+  </main>
+</body>
+</html>

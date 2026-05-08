@@ -1,19 +1,30 @@
 # Agentic EHR Deployment Guide
 
-Complete deployment guide for Agentic EHR, covering local development, single-server Docker deployment, and cloud HIPAA BAA deployment options.
+Deployment guide for Agentic EHR. The current tested runtime lane is local/single-server SQLite. Cloud managed-Postgres sections are planning references only until the Postgres adapter and migration parity tests exist.
 
 ## Table of Contents
 
-1. [Local Development](#local-development)
-2. [Docker Single-Server Deployment](#docker-single-server-deployment)
-3. [LabCorp Sandbox Setup](#labcorp-sandbox-setup)
-4. [Cloud Deployment (AWS/GCP/Azure)](#cloud-deployment)
-5. [HIPAA Compliance Checklist](#hipaa-compliance-checklist)
-6. [Backup Strategy](#backup-strategy)
-7. [Encryption & Key Management](#encryption--key-management)
-8. [Network Security](#network-security)
-9. [Cost Estimates](#cost-estimates)
-10. [Troubleshooting](#troubleshooting)
+1. [Current Database Backend Status](#current-database-backend-status)
+2. [Local Development](#local-development)
+3. [Docker Single-Server Deployment](#docker-single-server-deployment)
+4. [LabCorp Sandbox Setup](#labcorp-sandbox-setup)
+5. [Cloud Deployment (AWS/GCP/Azure)](#cloud-deployment)
+6. [HIPAA Compliance Checklist](#hipaa-compliance-checklist)
+7. [Backup Strategy](#backup-strategy)
+8. [Encryption & Key Management](#encryption--key-management)
+9. [Network Security](#network-security)
+10. [Cost Estimates](#cost-estimates)
+11. [Troubleshooting](#troubleshooting)
+
+---
+
+## Current Database Backend Status
+
+SQLite is the only supported runtime database backend today. Use `DATABASE_PATH`.
+
+PostgreSQL/RDS/Cloud SQL deployment sections are planning references only. Do not set `DATABASE_URL=postgresql://...` for this worktree; the server intentionally fails closed because `server/db/adapters/postgres.js` is not implemented and there are no Postgres migration parity tests yet.
+
+See `docs/DATABASE_BACKEND_STATUS.md` for the current completion criteria.
 
 ---
 
@@ -368,9 +379,11 @@ LabCorp.
 
 ## Cloud Deployment
 
-### AWS Deployment (ECS Fargate + RDS)
+### AWS Deployment (ECS Fargate + RDS) - planning only
 
-**Recommended for**: Medium practices (5-15 providers), multi-site deployments.
+**Status:** Not runnable from this worktree today. The PostgreSQL/RDS path requires a completed adapter and migration parity tests before it can be used. Use the SQLite single-server lane until then.
+
+**Future target for**: Medium practices (5-15 providers), multi-site deployments.
 
 #### Architecture
 
@@ -573,9 +586,11 @@ aws cloudwatch put-dashboard \
 | CloudWatch Logs | 50GB ingestion | $25 |
 | **Total** | | **$88/month** |
 
-### GCP Deployment (Cloud Run + Cloud SQL)
+### GCP Deployment (Cloud Run + Cloud SQL) - planning only
 
-**Recommended for**: Quick deployment, serverless scaling.
+**Status:** Not runnable from this worktree today. The PostgreSQL/Cloud SQL path requires a completed adapter and migration parity tests before it can be used. Use the SQLite single-server lane until then.
+
+**Future target for**: Quick deployment, serverless scaling.
 
 #### Architecture
 

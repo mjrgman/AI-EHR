@@ -500,15 +500,16 @@ function evaluateHeartScoreProtocol(context) {
 }
 
 // ==========================================
-// RXNORM-BASED INTERACTION CHECKING
+// DRUG SAFETY INTERACTION CHECKING
 // ==========================================
 
 /**
- * Check drug interactions using NLM RxNorm API data.
- * Supplements local rule-based checking with real pharmacological data.
+ * Check drug interactions using the drug-safety-service provider.
+ * Supplements local rule-based checking with deterministic DDI fixtures and
+ * any future provider that satisfies the same fail-closed contract.
  * Returns CDS suggestions for any interactions found.
  */
-async function evaluateRxNormInteractions(medications) {
+async function evaluateDrugSafetyInteractions(medications) {
   if (!drugSafetyService || !medications || medications.length < 2) return [];
 
   const suggestions = [];
@@ -540,11 +541,11 @@ async function evaluateRxNormInteractions(medications) {
           description: interaction.description,
           rationale: `Source: ${interaction.source}. Severity: ${interaction.severity}.`,
           suggested_action: [],
-          source: 'rxnorm_api'
+          source: interaction.pending_ddi_check ? 'ddi_provider_fail_closed' : 'drug_safety_service'
         });
       }
     } catch (err) {
-      console.warn(`[CDS] RxNorm interaction check failed for ${med.medication_name}: ${err.message}`);
+      console.warn(`[CDS] Drug safety interaction check failed for ${med.medication_name}: ${err.message}`);
     }
   }
 
@@ -567,12 +568,12 @@ async function evaluatePatientContext(encounterId, patientId, context) {
   suggestions.push(...evaluatePrescribingAdvisoryRules(rules, context.medications, context.chiefComplaint, context.transcript, context));
   suggestions.push(...evaluateHeartScoreProtocol(context));
 
-  // RxNorm-based interaction checking (supplements local rules)
+  // Drug-safety-service interaction checking (supplements local rules)
   try {
-    const rxnormSuggestions = await evaluateRxNormInteractions(context.medications);
-    suggestions.push(...rxnormSuggestions);
+    const drugSafetySuggestions = await evaluateDrugSafetyInteractions(context.medications);
+    suggestions.push(...drugSafetySuggestions);
   } catch (err) {
-    console.warn(`[CDS] RxNorm evaluation skipped: ${err.message}`);
+    console.warn(`[CDS] Drug safety interaction evaluation skipped: ${err.message}`);
   }
 
   // Deduplicate by title

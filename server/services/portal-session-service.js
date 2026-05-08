@@ -3,8 +3,10 @@
 const crypto = require('crypto');
 const db = require('../database');
 
-const COOKIE_NAME = 'portal_session';
+const COOKIE_NAME = '__Host-portal_session';
+const CSRF_COOKIE_NAME = '__Host-portal_csrf';
 const DEFAULT_TTL_HOURS = parseInt(process.env.PATIENT_PORTAL_SESSION_TTL_HOURS || '8', 10);
+const PORTAL_COOKIE_PATH = '/api/patient-portal';
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -23,26 +25,36 @@ function parseCookies(header) {
 function serializeCookie(name, value, overrides = {}) {
   const parts = [
     `${name}=${encodeURIComponent(value)}`,
-    `Path=${overrides.path || '/'}`,
-    'HttpOnly',
-    `SameSite=${overrides.sameSite || 'Lax'}`,
+    `Path=${overrides.path || PORTAL_COOKIE_PATH}`,
+    `SameSite=${overrides.sameSite || 'Strict'}`,
   ];
 
+  if (overrides.httpOnly !== false) {
+    parts.push('HttpOnly');
+  }
   if (overrides.maxAge !== undefined) {
     parts.push(`Max-Age=${overrides.maxAge}`);
   }
   if (overrides.expires) {
     parts.push(`Expires=${new Date(overrides.expires).toUTCString()}`);
   }
-  if (process.env.NODE_ENV === 'production') {
+  if (overrides.secure !== false) {
     parts.push('Secure');
   }
 
   return parts.join('; ');
 }
 
+function serializeCsrfCookie(token, overrides = {}) {
+  return serializeCookie(CSRF_COOKIE_NAME, token, {
+    ...overrides,
+    httpOnly: false,
+  });
+}
+
 async function createSession(patientId, req) {
   const token = crypto.randomBytes(48).toString('hex');
+  const csrfToken = crypto.randomBytes(32).toString('hex');
   const sessionHash = hashToken(token);
   const expiresAt = new Date(Date.now() + DEFAULT_TTL_HOURS * 60 * 60 * 1000).toISOString();
 
@@ -54,8 +66,10 @@ async function createSession(patientId, req) {
 
   return {
     token,
+    csrfToken,
     expiresAt,
     cookie: serializeCookie(COOKIE_NAME, token, { expires: expiresAt }),
+    csrfCookie: serializeCsrfCookie(csrfToken, { expires: expiresAt }),
   };
 }
 
@@ -96,14 +110,65 @@ async function revokeSession(req) {
 }
 
 function clearSessionCookie() {
+  return [
+    serializeCookie(COOKIE_NAME, '', {
+      maxAge: 0,
+      expires: new Date(0).toISOString(),
+    }),
+    serializeCsrfCookie('', {
+      maxAge: 0,
+      expires: new Date(0).toISOString(),
+    }),
+  ];
+}
+
+function safeCompare(a, b) {
+  if (!a || !b) return false;
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function requirePortalCsrf(req, res, next) {
+  const method = String(req.method || 'GET').toUpperCase();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    return next();
+  }
+
+  const cookies = parseCookies(req.headers.cookie);
+  const csrfCookie = cookies[CSRF_COOKIE_NAME];
+  const csrfHeader = req.headers['x-csrf-token'];
+  if (safeCompare(csrfHeader, csrfCookie)) {
+    return next();
+  }
+
+  const origin = req.headers.origin;
+  const host = req.headers.host;
+  if (origin && host) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost === host) {
+        return next();
+      }
+    } catch {
+      // Fall through to explicit CSRF failure.
+    }
+  }
+
+  return res.status(403).json({ error: 'Patient portal CSRF token required' });
+}
+
+function clearSessionCookieLegacy() {
   return serializeCookie(COOKIE_NAME, '', {
     maxAge: 0,
     expires: new Date(0).toISOString(),
   });
 }
 
-function attachSessionCookie(res, cookie) {
-  res.setHeader('Set-Cookie', cookie);
+function attachSessionCookie(res, cookie, csrfCookie = null) {
+  const cookies = Array.isArray(cookie) ? cookie : [cookie];
+  if (csrfCookie) cookies.push(csrfCookie);
+  res.setHeader('Set-Cookie', cookies);
 }
 
 async function requirePortalSession(req, res, next) {
@@ -135,11 +200,14 @@ async function requirePortalSession(req, res, next) {
 
 module.exports = {
   COOKIE_NAME,
+  CSRF_COOKIE_NAME,
   attachSessionCookie,
   clearSessionCookie,
+  clearSessionCookieLegacy,
   createSession,
   getSession,
   parseCookies,
+  requirePortalCsrf,
   requirePortalSession,
   revokeSession,
   serializeCookie,
