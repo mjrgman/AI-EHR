@@ -9,21 +9,24 @@ between them.
 
 ## The one-paragraph pitch
 
-Agentic EHR is a nine-module clinical workflow runtime — nine specialized
-agents with defined autonomy tiers, handoffs, and safety boundaries,
-assembled behind a single orchestrator. Instead of clicking through
-templates, physicians speak. The system listens, extracts structured
-clinical data, runs it through a clinical decision support engine, layers
-specialty-medicine rules on top, and surfaces draft orders and notes for
-physician approval. Nothing ever auto-executes: every dosing change, every
-prescription, every order is draft-only until a Tier 3 physician approves.
+Agentic EHR is a 14-module clinical workflow runtime — 11 encounter
+modules + 3 patient-data governance modules — with defined autonomy
+tiers, handoffs, and safety boundaries, assembled behind a single
+orchestrator. Instead of clicking through templates, physicians speak.
+The system listens, extracts structured clinical data, runs it through
+a clinical decision support engine, layers specialty-medicine rules on
+top, and surfaces draft orders and notes for physician approval. Nothing
+ever auto-executes: every dosing change, every prescription, every order
+is draft-only until a Tier 3 physician approves.
 
 ---
 
-## The 9 CATC modules
+## The 14 CATC modules
 
 CATC = **Clinical Agent Tracking & Coordination**. Every module declares
 its tier, its human counterpart, and its primary handoff.
+
+### Encounter modules (11) — what happens in a visit
 
 ```
 ┌────────────────┬────────────────┬─────────┬──────────────────────────────┐
@@ -39,14 +42,29 @@ its tier, its human counterpart, and its primary handoff.
 │ Orders         │ Clinical exec  │    3    │ Physician                    │
 │ Coding         │ Revenue / doc  │    2    │ Billing, Physician           │
 │ Quality        │ Oversight      │    2    │ Physician, Admin             │
+│ AWV            │ Preventive     │    2    │ Physician, Coding, Quality   │
 └────────────────┴────────────────┴─────────┴──────────────────────────────┘
 ```
 
-The tenth module — **Domain Logic** — is the specialty-medicine overlay
-added in Phase 1. It depends on CDS (`dependsOn: ['cds']`), which means
-the orchestrator guarantees CDS runs first and Domain Logic can only
-*add* to CDS — never override or suppress a CDS alert. This is the
-structural implementation of "standard of care is the guardrail."
+### Patient-data governance modules (3) — what data flows to and from the patient
+
+```
+┌────────────────┬─────────────────────────┬─────────┬──────────────────────────┐
+│ Module         │ Workflow band           │  Tier   │ Primary handoff          │
+├────────────────┼─────────────────────────┼─────────┼──────────────────────────┤
+│ PatientLink    │ Patient communication   │    2    │ Physician, Patient App   │
+│ Patient App    │ Patient-facing portal   │    1    │ PatientLink, MA, Triage  │
+│ MediVault      │ Patient data governance │    3    │ Physician, PatientLink   │
+└────────────────┴─────────────────────────┴─────────┴──────────────────────────┘
+```
+
+**Domain Logic** is the specialty-medicine overlay added in Phase 1. It depends on CDS (`dependsOn: ['cds']`), which means the orchestrator guarantees CDS runs first and Domain Logic can only *add* to CDS — never override or suppress a CDS alert. This is the structural implementation of "standard of care is the guardrail."
+
+**MediVault** is the patient-data-governance Tier 3 module added in Phase 3c. Its EHR-of-record vs vault-of-record boundary is documented separately in `MEDIVAULT_BOUNDARY.md`.
+
+**Annual Wellness Visit** is the preventive-visit Tier 2 module added to the encounter layer. It detects AWV encounter type, checks CMS component completeness, and hands billing support to Coding and Quality for clinician review.
+
+**The canonical 14-module roster** lives in `server/agents/module-registry.js` (`MODULE_ORDER` array). Documentation tables here, in `../MODULE_CATALOG.md`, and in `../VISION.md` are kept in sync with that registry.
 
 ---
 

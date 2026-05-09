@@ -1,7 +1,7 @@
 {
   "name": "mjr-ehr-interactive",
   "version": "1.0.0",
-  "description": "Agentic EHR with a 9-module clinical workflow runtime",
+  "description": "Agentic EHR with a 14-module clinical workflow runtime (11 encounter + 3 patient-data governance modules)",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
@@ -11,6 +11,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node test/run-tests.js",
+    "test:http-hardening": "node scripts/http-hardening-smoke.js",
     "test:unit": "node --test test/unit/*.test.js",
     "lint": "eslint server src --ext .js,.jsx,.mjs",
     "setup": "node scripts/setup.js",

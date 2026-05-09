@@ -9,10 +9,10 @@ document before opening your first PR.
 
 ## The CATC assembler model (read this first)
 
-Agentic EHR is not a monolithic AI assistant. It is a **9-module Clinical
-Agent Tracking & Coordination (CATC)** runtime — nine specialized agents with
-defined responsibilities, handoffs, and safety tiers, assembled behind a
-single orchestrator. The canonical map lives in
+Agentic EHR is not a monolithic AI assistant. It is a **14-module Clinical
+Agent Tracking & Coordination (CATC)** runtime: 11 encounter modules plus
+3 patient-data governance modules with defined responsibilities, handoffs,
+and safety tiers, assembled behind a single orchestrator. The canonical map lives in
 [`MODULE_CATALOG.md`](./MODULE_CATALOG.md) and the authoritative code source
 is [`server/agents/module-registry.js`](./server/agents/module-registry.js).
 
@@ -74,6 +74,13 @@ npm run create-user -- --help
 Public repo governance documents live in [`SECURITY.md`](./SECURITY.md),
 [`SUPPORT.md`](./SUPPORT.md), and [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
 Protected areas are owned through [`.github/CODEOWNERS`](./.github/CODEOWNERS).
+
+Patient-facing and patient-owned-data boundaries are documented in
+[`docs/PATIENT_PORTAL.md`](./docs/PATIENT_PORTAL.md),
+[`docs/PATIENT_VOICE.md`](./docs/PATIENT_VOICE.md), and
+[`docs/MEDIVAULT_BOUNDARY.md`](./docs/MEDIVAULT_BOUNDARY.md). Read the relevant
+boundary doc before changing portal sessions, patient voice routing, or
+MediVault export behavior.
 
 ---
 

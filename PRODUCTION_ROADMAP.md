@@ -1,26 +1,30 @@
 # Agentic EHR: Production Prototype Roadmap
 
-**From 9-Module Demo to FHIR-Compliant, AI-Native Clinical System**
+**From 14-Module Runtime to FHIR-Compliant, AI-Native Clinical System**
 
-Dr. Michael Renner | ImpactMed Consulting, LLC | April 2, 2026
-Repository: github.com/mjrgman/AI-EHR | Branch: main (f66be4a)
+Dr. Michael Renner | ImpactMed Consulting, LLC
+**Original:** April 2, 2026 (commit f66be4a) | **Last refreshed:** May 3, 2026
+Repository: github.com/mjrgman/AI-EHR | Branch: main
+
+> **Refresh note (2026-05-03):** Module count updated from "9" to "14" to align with `server/agents/module-registry.js` (11 encounter modules + 3 patient-data governance modules). Sprint 1-2 deliverables have substantially landed (FHIR R4 mappers exist for Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest; `server/db/adapters/postgres.js` shim is in place). Sprint 3 onward (RAG/pgvector, voice pipeline, Medplum) remain as planned.
 
 ---
 
 ## Executive Summary
 
-This roadmap converts the Agentic EHR from a working 9-module clinical demo into a production-grade prototype capable of FHIR interoperability, HIPAA-compliant AI layering, and integration with existing health systems. Five gaps separate the current state from a production prototype.
+This roadmap converts the Agentic EHR from a working 14-module clinical workflow runtime (11 encounter + 3 patient-data governance) into a production-grade prototype capable of FHIR interoperability, HIPAA-compliant AI layering, and integration with existing health systems. Five gaps separate the current state from a production prototype. The system is not starting from zero — it already has a multi-agent orchestrator, CDS engine, HIPAA middleware, billing/scheduling modules, and Docker deployment.
 
 ## Current State
 
 The system is **not** a demo. It already has:
 
-- **9-agent orchestrator** with dependency-aware parallel execution, message bus, agent memory
+- **Multi-agent orchestrator** (14 modules, dependency-aware parallel execution, message bus, agent memory) — see [`MODULE_CATALOG.md`](./MODULE_CATALOG.md) and [`server/agents/module-registry.js`](./server/agents/module-registry.js)
 - **CDS engine** with rule-based evaluation, HEART score protocol, antibiotic stewardship, drug interaction checks
-- **HIPAA middleware** with AES-256-GCM field-level encryption, RBAC, session tracking, audit logging, rate limiting
+- **HIPAA middleware** with AES-256-GCM field-level encryption (PBKDF2 100k iterations, per-record IV+salt), RBAC, session tracking, audit logging, rate limiting
 - **Claude API integration** with pattern-matching offline fallback
 - **Billing/scheduling** modules (Phase 2 complete)
 - **Docker deployment** with multi-stage build, nginx reverse proxy, health checks
+- **Test surface:** 275 tests across scenarios + HTTP boundary + RBAC + auth + portal + 77 unit tests, 100% pass (verified 2026-05-03)
 
 ## Five Gaps to Production
 

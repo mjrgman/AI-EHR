@@ -848,21 +848,10 @@ async function addRxNormColumns(db) {
   const tables = ['medications', 'prescriptions'];
   for (const table of tables) {
     try {
-      const cols = await new Promise((resolve, reject) => {
-        db.all(`PRAGMA table_info(${table})`, (err, rows) => {
-          if (err) reject(err); else resolve(rows);
-        });
-      });
+      const cols = await dbAllCompat(db, `PRAGMA table_info(${table})`);
       if (!cols.some(c => c.name === 'rxnorm_cui')) {
-        await new Promise((resolve, reject) => {
-          db.run(`ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`, (err) => {
-            if (err) reject(err);
-            else {
-              console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
-              resolve();
-            }
-          });
-        });
+        await dbRun(db, `ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`);
+        console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
       }
     } catch (err) {
       console.warn(`[MIGRATIONS] rxnorm_cui migration for ${table}: ${err.message}`);
@@ -929,22 +918,11 @@ async function addLabCorpColumns(db) {
     { name: 'labcorp_raw_pdf_path', type: 'TEXT' },
   ];
   try {
-    const cols = await new Promise((resolve, reject) => {
-      db.all('PRAGMA table_info(lab_orders)', (err, rows) => {
-        if (err) reject(err); else resolve(rows);
-      });
-    });
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(lab_orders)');
     for (const col of columns) {
       if (!cols.some(c => c.name === col.name)) {
-        await new Promise((resolve, reject) => {
-          db.run(`ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`, (err) => {
-            if (err) reject(err);
-            else {
-              console.log(`[MIGRATIONS] Added ${col.name} column to lab_orders`);
-              resolve();
-            }
-          });
-        });
+        await dbRun(db, `ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`[MIGRATIONS] Added ${col.name} column to lab_orders`);
       }
     }
   } catch (err) {

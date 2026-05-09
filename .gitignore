@@ -64,3 +64,22 @@ _eval_test
 
 # Manuscript scratch files (belong in AI_Book repo, not here)
 docs/BOOK_SSOT_*.md
+
+# HAL iteration artifacts (read-only inspections; live in HAL/ folder, not project repos)
+HAL_ITERATION_*.md
+HAL_ITERATION_*.preview.png
+
+# Render-MD-to-image artifacts (per global Preview Protocol — HTML is the canonical preview format)
+*.preview.png
+
+# Local PR-body drafts (used by gh pr create; not for repo)
+.git-pr-body*.md
+
+# Iteration scratch (autobetter prompts, opus/codex/grok plan files — convention: 00_ prefix)
+00_*.md
+
+# Rendered HTML preview artifacts (per Preview Protocol — HTML is the canonical preview, not for repo)
+# Ignore HTML at any depth EXCEPT index.html (the Vite app entry point)
+*.html
+!index.html
+*.preview.html

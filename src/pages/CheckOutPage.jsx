@@ -52,7 +52,7 @@ export default function CheckOutPage() {
 
   const { encounter, orders } = useEncounter(eid);
   const { patient } = usePatient(encounter?.patient_id);
-  const { workflow, timeline, transition } = useWorkflow(eid);
+  const { workflow, timeline } = useWorkflow(eid);
 
   // Load E/M suggestion from billing engine when encounter is ready
   useEffect(() => {
@@ -131,11 +131,8 @@ export default function CheckOutPage() {
       if (billingNotes) checkoutPayload.notes = billingNotes;
       await api.finalizeCheckout(encounterId, checkoutPayload);
 
-      // Transition workflow state
-      if (workflow?.current_state === 'signed') {
-        await transition('checked-out');
-      }
-
+      // The checkout endpoint finalizes billing and moves the workflow to checked-out.
+      // Keep the client from issuing a duplicate workflow transition afterward.
       // Mark encounter completed with follow-up date
       const updateData = { status: 'completed' };
       if (followUpDate) updateData.follow_up_date = followUpDate;

@@ -1,0 +1,243 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "effective_year": 2026,
+    "source": "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation-topics/uspstf-a-and-b-recommendations",
+    "scope": "Adult primary-care USPSTF Grade A and Grade B recommendations as of May 2026. Subset of ~37 recs synthesized from the source page on 2026-05-03. Updated annually.",
+    "last_synced": "2026-05-03",
+    "categories": ["cancer_screening", "cardiovascular", "diabetes_metabolic", "infectious_disease", "mental_health", "behavioral_counseling", "pregnancy_perinatal"]
+  },
+  "recommendations": [
+    {
+      "topic_key": "breast_cancer_screening",
+      "title": "Breast Cancer Screening",
+      "grade": "B",
+      "category": "cancer_screening",
+      "min_age": 40, "max_age": 74, "sex": "F",
+      "cadence_months": 24,
+      "recommendation_text": "Biennial screening mammography for women aged 40-74 years.",
+      "cpt_codes_satisfying": ["77067", "77065", "77066", "G0202"],
+      "last_updated": "2024-04"
+    },
+    {
+      "topic_key": "cervical_cancer_screening",
+      "title": "Cervical Cancer Screening",
+      "grade": "A",
+      "category": "cancer_screening",
+      "min_age": 21, "max_age": 65, "sex": "F",
+      "cadence_months": 36,
+      "recommendation_text": "Cytology every 3 years OR HPV testing (alone or co-test) every 5 years for women 21-65.",
+      "cpt_codes_satisfying": ["88142", "88143", "88147", "88148", "87624", "87625"],
+      "last_updated": "2018-08"
+    },
+    {
+      "topic_key": "colorectal_cancer_screening",
+      "title": "Colorectal Cancer Screening",
+      "grade": "A",
+      "category": "cancer_screening",
+      "min_age": 50, "max_age": 75,
+      "cadence_months": 120,
+      "recommendation_text": "Screening for all adults 50-75 using approved strategies (colonoscopy, FIT, Cologuard, etc.). Begin at 45 (Grade B).",
+      "cpt_codes_satisfying": ["45378", "45380", "45381", "45385", "82270", "G0328", "81528"],
+      "last_updated": "2021-05"
+    },
+    {
+      "topic_key": "lung_cancer_screening",
+      "title": "Lung Cancer Screening",
+      "grade": "B",
+      "category": "cancer_screening",
+      "min_age": 50, "max_age": 80,
+      "cadence_months": 12,
+      "risk_factors": ["20_pack_year_smoking_current_or_quit_within_15_years"],
+      "recommendation_text": "Annual low-dose CT for adults 50-80 with 20+ pack-year smoking history (current or quit within 15 years).",
+      "cpt_codes_satisfying": ["G0297"],
+      "last_updated": "2021-03"
+    },
+    {
+      "topic_key": "abdominal_aortic_aneurysm_screening",
+      "title": "Abdominal Aortic Aneurysm Screening",
+      "grade": "B",
+      "category": "cardiovascular",
+      "min_age": 65, "max_age": 75, "sex": "M",
+      "risk_factors": ["smoking_history"],
+      "one_time": true,
+      "recommendation_text": "One-time ultrasound screening for men 65-75 who have ever smoked.",
+      "cpt_codes_satisfying": ["76706", "G0389"],
+      "last_updated": "2019-12"
+    },
+    {
+      "topic_key": "hypertension_screening",
+      "title": "Hypertension Screening",
+      "grade": "A",
+      "category": "cardiovascular",
+      "min_age": 18,
+      "cadence_months": 12,
+      "exclude_if_diagnosis": ["I10", "I11", "I12", "I13", "I15", "I16"],
+      "recommendation_text": "Office BP measurement with out-of-office confirmation for adults 18+ without HTN diagnosis.",
+      "cpt_codes_satisfying": ["3074F", "3075F", "3077F", "3078F"],
+      "last_updated": "2021-04"
+    },
+    {
+      "topic_key": "statin_primary_prevention",
+      "title": "Statin Use for Primary Prevention of CVD",
+      "grade": "B",
+      "category": "cardiovascular",
+      "min_age": 40, "max_age": 75,
+      "risk_factors": ["one_or_more_cvd_risk_factor", "10_year_ascvd_risk_at_least_10_percent"],
+      "recommendation_text": "Clinician-prescribed statin for adults 40-75 with ≥1 CVD risk factor and ≥10% 10-year ASCVD risk.",
+      "last_updated": "2022-08"
+    },
+    {
+      "topic_key": "prediabetes_t2dm_screening",
+      "title": "Prediabetes and Type 2 Diabetes Screening",
+      "grade": "B",
+      "category": "diabetes_metabolic",
+      "min_age": 35, "max_age": 70,
+      "risk_factors": ["overweight_or_obesity"],
+      "cadence_months": 36,
+      "exclude_if_diagnosis": ["E10", "E11"],
+      "recommendation_text": "Screen adults 35-70 with overweight/obesity for prediabetes and T2DM. Refer prediabetes to prevention interventions.",
+      "cpt_codes_satisfying": ["83036", "82947", "82951"],
+      "last_updated": "2021-08"
+    },
+    {
+      "topic_key": "obesity_behavioral_intervention",
+      "title": "Adult Obesity: Intensive Behavioral Intervention",
+      "grade": "B",
+      "category": "diabetes_metabolic",
+      "min_age": 18,
+      "trigger_bmi_min": 30,
+      "recommendation_text": "Intensive multicomponent behavioral interventions for adults with BMI ≥30.",
+      "cpt_codes_satisfying": ["G0447", "G0473"],
+      "last_updated": "2018-09"
+    },
+    {
+      "topic_key": "hcv_screening",
+      "title": "Hepatitis C Virus Screening",
+      "grade": "B",
+      "category": "infectious_disease",
+      "min_age": 18, "max_age": 79,
+      "one_time": true,
+      "recommendation_text": "Universal HCV screening for adults 18-79.",
+      "cpt_codes_satisfying": ["86803", "G0472"],
+      "last_updated": "2020-03"
+    },
+    {
+      "topic_key": "hiv_screening",
+      "title": "HIV Infection Screening",
+      "grade": "A",
+      "category": "infectious_disease",
+      "min_age": 15, "max_age": 65,
+      "cadence_months": 12,
+      "recommendation_text": "Universal screening for adolescents/adults 15-65 (younger/older if at risk).",
+      "cpt_codes_satisfying": ["86701", "86703", "G0432", "G0435"],
+      "last_updated": "2019-06"
+    },
+    {
+      "topic_key": "latent_tb_screening",
+      "title": "Latent Tuberculosis Infection Screening",
+      "grade": "B",
+      "category": "infectious_disease",
+      "min_age": 18,
+      "risk_factors": ["high_tb_exposure_risk"],
+      "recommendation_text": "Screen at-risk asymptomatic adults for latent TB infection.",
+      "cpt_codes_satisfying": ["86480", "86481", "86580"],
+      "last_updated": "2023-05"
+    },
+    {
+      "topic_key": "depression_screening",
+      "title": "Depression Screening",
+      "grade": "B",
+      "category": "mental_health",
+      "min_age": 18,
+      "cadence_months": 12,
+      "recommendation_text": "Screen adults including pregnant/postpartum and 65+ for depression with follow-up plan.",
+      "cpt_codes_satisfying": ["G0444", "96127"],
+      "last_updated": "2023-06"
+    },
+    {
+      "topic_key": "anxiety_screening_adults",
+      "title": "Anxiety Disorders Screening (Adults)",
+      "grade": "B",
+      "category": "mental_health",
+      "min_age": 18, "max_age": 64,
+      "cadence_months": 12,
+      "recommendation_text": "Screen adults ≤64 for anxiety disorders.",
+      "cpt_codes_satisfying": ["96127"],
+      "last_updated": "2023-06"
+    },
+    {
+      "topic_key": "unhealthy_alcohol_use_screening",
+      "title": "Unhealthy Alcohol Use Screening + Brief Counseling",
+      "grade": "B",
+      "category": "behavioral_counseling",
+      "min_age": 18,
+      "cadence_months": 12,
+      "recommendation_text": "Screen adults 18+ (incl. pregnant) for risky/hazardous drinking; provide brief behavioral counseling.",
+      "cpt_codes_satisfying": ["G0442", "G0443"],
+      "last_updated": "2018-11"
+    },
+    {
+      "topic_key": "unhealthy_drug_use_screening",
+      "title": "Unhealthy Drug Use Screening",
+      "grade": "B",
+      "category": "behavioral_counseling",
+      "min_age": 18,
+      "cadence_months": 12,
+      "recommendation_text": "Screen adults 18+ via questioning about drug use.",
+      "last_updated": "2020-06"
+    },
+    {
+      "topic_key": "tobacco_cessation_nonpregnant",
+      "title": "Tobacco Smoking Cessation (Nonpregnant Adults)",
+      "grade": "A",
+      "category": "behavioral_counseling",
+      "min_age": 18,
+      "cadence_months": 12,
+      "recommendation_text": "Ask, advise cessation, and provide behavioral and/or pharmacologic interventions.",
+      "cpt_codes_satisfying": ["99406", "99407", "G0436", "G0437"],
+      "last_updated": "2021-01"
+    },
+    {
+      "topic_key": "falls_prevention_65plus",
+      "title": "Falls Prevention Interventions in Older Adults",
+      "grade": "B",
+      "category": "behavioral_counseling",
+      "min_age": 65,
+      "cadence_months": 12,
+      "risk_factors": ["increased_fall_risk"],
+      "recommendation_text": "Exercise interventions; multifactorial assessment for adults 65+ at increased fall risk.",
+      "last_updated": "2024-06"
+    },
+    {
+      "topic_key": "ipv_screening",
+      "title": "Intimate Partner Violence Screening",
+      "grade": "B",
+      "category": "behavioral_counseling",
+      "min_age": 18, "sex": "F",
+      "cadence_months": 12,
+      "recommendation_text": "Screen reproductive-age women including perinatal for IPV; provide intervention.",
+      "last_updated": "2025-06"
+    },
+    {
+      "topic_key": "osteoporosis_screening",
+      "title": "Osteoporosis Screening (Postmenopausal Women)",
+      "grade": "B",
+      "category": "cancer_screening",
+      "min_age": 65, "sex": "F",
+      "cadence_months": 24,
+      "recommendation_text": "Bone density screening for postmenopausal women per risk factors.",
+      "cpt_codes_satisfying": ["77080", "77081"],
+      "last_updated": "2025-01"
+    },
+    {
+      "topic_key": "folic_acid_supplementation",
+      "title": "Folic Acid Supplementation",
+      "grade": "A",
+      "category": "pregnancy_perinatal",
+      "min_age": 15, "max_age": 49, "sex": "F",
+      "recommendation_text": "Daily 0.4-0.8 mg folic acid for persons planning or able to become pregnant.",
+      "last_updated": "2023-08"
+    }
+  ]
+}

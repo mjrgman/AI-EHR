@@ -21,7 +21,7 @@ Built by Dr. Michael Renner / [ImpactMed Consulting, LLC](https://impactmedconsu
 - **HRT / Peptide / Functional Medicine support** — specialty-medicine `DomainLogicAgent` with Tier 3 dosing-approval gate, hormone/peptide keyword routing, and a dedicated Encounter tab (see [HRT & Peptide Support](#hrt--peptide-support))
 - **LabCorp integration** — pluggable client with OAuth2 + PDF/XML result parsing and mock mode for offline tests (see [LabCorp Integration](#labcorp-integration))
 - **MediVault patient-owned export** — one-click FHIR R4 Bundle download of the patient's full record via `GET /api/medivault/export/:patientId`
-- **Multi-agent architecture** — 10 specialized AI agents (physician, MA, front desk, phone triage, CDS, domain logic, quality, coding, orders, scribe, plus MediVault and PatientLink support modules) coordinated by an orchestrator via message bus
+- **Multi-agent architecture** — **14 specialized AI agents** in two layers: (1) **11 encounter modules** (phone triage, front desk, MA, physician, scribe, CDS, domain logic, orders, coding, quality, annual wellness visit) coordinated by an orchestrator via message bus, and (2) **3 patient-data governance modules** (PatientLink, Patient App, MediVault) running alongside the encounter pipeline. Canonical roster: `server/agents/module-registry.js`
 - **Provider learning** — adapts to individual physician documentation style and preferences
 - **Prescription and lab ordering** — structured orders from natural language
 - **Full audit trail** — HIPAA-compliant access logging on all PHI endpoints
@@ -32,7 +32,9 @@ Built by Dr. Michael Renner / [ImpactMed Consulting, LLC](https://impactmedconsu
 
 ## Clinical Modules
 
-The runtime is organized as nine explicit workflow modules with defined handoffs and safety boundaries.
+The runtime is organized as **14 workflow modules** with defined handoffs and safety boundaries — **11 encounter modules** (the visit workflow) and **3 patient-data governance modules** (the patient-data flow). The canonical roster lives in `server/agents/module-registry.js` (`MODULE_ORDER` array).
+
+### Encounter modules (11)
 
 | Module | Stage | Tier | Mission |
 |---|---|---|---|
@@ -43,14 +45,24 @@ The runtime is organized as nine explicit workflow modules with defined handoffs
 | Scribe | Encounter capture | 3 | Draft the SOAP note and structure encounter data |
 | CDS | Encounter support | 2 | Surface alerts, care gaps, and evidence-based suggestions |
 | Domain Logic | Specialty support | 3 | Layer HRT / peptide / functional-medicine rules on top of CDS with dosing approval gate |
-| Lab Synthesis | Result ingestion | 2 | Parse and normalize LabCorp PDF/XML results into the patient context |
 | Orders | Clinical execution | 3 | Assemble labs, imaging, referrals, and prescriptions for approval |
 | Coding | Revenue / documentation | 2 | Generate E&M support, ICD-10 mapping, and completeness feedback |
 | Quality | Oversight | 2 | Track care gaps, quality measures, and compliance readiness |
+| Annual Wellness Visit | Preventive visit | 2 | Detect AWV encounter type, enforce required CMS components, and surface G0438/G0439 plus add-on opportunities for clinician review |
+
+### Patient-data governance modules (3)
+
+| Module | Stage | Tier | Mission |
+|---|---|---|---|
+| PatientLink | Patient communication | 2 | Draft after-visit summaries, care-gap outreach, lab notifications, appointment reminders (6th-grade reading level) — all physician-approved before delivery |
+| Patient App | Patient-facing portal | 1 | Patient registration, scheduling, refill requests, lab-result viewing, secure messaging, voice interaction — clinical content read-only |
+| MediVault | Patient data governance | 3 | Patient-directed clinical record governance: ingest, dedup, reconcile, package by specialty, translate to plain language, monitor for red flags. See `docs/MEDIVAULT_BOUNDARY.md` |
+
+`LabSynthesisAgent` (`server/agents/lab-synthesis-agent.js`) is the LabCorp result-ingestion handler — see [LabCorp Integration](#labcorp-integration). It runs as part of the LabCorp integration's pipeline rather than as a top-level workflow module, which is why it is not in `MODULE_ORDER`.
 
 Patient-facing and patient-data-touching workflows stay inside authenticated, auditable boundaries. Tier 3 modules remain draft-only or recommendation-only until a physician approves them.
 
-See `MODULE_CATALOG.md` for the canonical module map.
+See `MODULE_CATALOG.md` for the canonical module map and per-module detail.
 
 ## Architecture
 
@@ -75,6 +87,7 @@ agentic-ehr/
 │   │   ├── domain-logic-agent.js    # HRT/peptide/functional-med (Tier 3, deps: ['cds'])
 │   │   ├── lab-synthesis-agent.js   # LabCorp result ingestion
 │   │   ├── quality-agent.js         # Quality measure tracking
+│   │   ├── awv-agent.js             # Annual Wellness Visit component checks
 │   │   ├── coding-agent.js          # ICD/CPT coding agent
 │   │   ├── orders-agent.js          # Lab/prescription ordering
 │   │   ├── scribe-agent.js          # Documentation scribe
@@ -407,9 +420,12 @@ Additional documentation is included in the repo:
 
 | File | Description |
 |------|-------------|
-| `MODULE_CATALOG.md` | Canonical 9-module runtime map and safety boundaries |
+| `MODULE_CATALOG.md` | Canonical 14-module runtime map and safety boundaries |
 | `VISION.md` | System architecture and design philosophy |
 | `docs/ARCHITECTURE.md` | Single-page architecture overview for external readers |
+| `docs/MEDIVAULT_BOUNDARY.md` | MediVault EHR-of-record vs vault-of-record boundary |
+| `docs/PATIENT_PORTAL.md` | Patient portal auth, route map, and patient-role RBAC boundary |
+| `docs/PATIENT_VOICE.md` | Patient portal voice and encounter voice routing |
 | `docs/DEMO_SCRIPT.md` | 3-minute demo walkthrough (ambient → specialty → LabCorp → export) |
 | `CONTRIBUTING.md` | How to contribute: agents, rules, integrations, tests |
 | `DEPLOYMENT.md` | Full deployment guide (local, Docker, cloud, LabCorp sandbox) |

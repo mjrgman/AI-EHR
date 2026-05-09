@@ -25,6 +25,8 @@ const { buildAuthRouter } = require('./routes/auth-routes');
 const patientPortalRouter = require('./routes/patient-portal');
 const { mountLabCorpRoutes } = require('./routes/labcorp-routes');
 const { mountMediVaultRoutes } = require('./routes/medivault-routes');
+const { mountCareManagementRoutes } = require('./routes/care-management-routes');
+const { mountHedisRoutes } = require('./routes/hedis-routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -280,6 +282,25 @@ mountLabCorpRoutes(app, { db });
 // audit-logger PHI_ROUTES entry (audit-logger.js) captures each export as a
 // vault_export READ for the central audit trail.
 mountMediVaultRoutes(app, { db });
+
+// Care Management engine routes (Phase 2 of primary-care deepening).
+// mountCareManagementRoutes registers:
+//   GET  /api/care-management/codes              → CPT/HCPCS catalog
+//   POST /api/care-management/eligibility        → per-program eligibility
+//   POST /api/care-management/billable           → monthly billable code computation
+//   POST /api/care-management/conflict-check     → stacking conflict pre-flight
+// Inherits /api/* auth pipeline. PHI inputs come from request body so the
+// caller is responsible for validating they have access to the patient first.
+mountCareManagementRoutes(app, { db });
+
+// HEDIS quality-measure adapter routes (Phase 6 of primary-care deepening).
+// mountHedisRoutes registers:
+//   GET  /api/quality/hedis/measures             → measure-ID list
+//   POST /api/quality/hedis/evaluate/:measureId  → single-measure eval for a patient
+//   POST /api/quality/hedis/all                  → all-measure eval for a patient
+// Inherits /api/* auth pipeline. PHI inputs come via request body — clinician
+// must already have access to the patient before calling.
+mountHedisRoutes(app, { db });
 
 // ==========================================
 // PATIENT ENDPOINTS
@@ -1891,6 +1912,15 @@ app.use((err, req, res, next) => {
   // CORS errors
   if (err.message && err.message.startsWith('CORS:')) {
     return res.status(403).json({ error: 'Forbidden: CORS policy violation' });
+  }
+
+  if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400 && 'body' in err)) {
+    logger.warn('Malformed JSON request rejected', {
+      method: req.method,
+      path: req.path,
+      ip: req.ip,
+    });
+    return res.status(400).json({ error: 'Malformed JSON request body' });
   }
 
   logger.error('Unhandled Express error', {
