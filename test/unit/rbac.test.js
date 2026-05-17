@@ -16,7 +16,8 @@ function mockReq({ role = 'guest', method = 'GET', headers = {}, session = null 
   return {
     method,
     path: '/api/test',
-    headers: { 'x-user-role': role, 'x-user-id': 'test-user', ...headers },
+    headers,
+    user: { role, username: 'test-user' },
     session,
   };
 }

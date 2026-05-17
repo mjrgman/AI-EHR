@@ -17,8 +17,11 @@ const http = require('http');
 const API_BASE = process.env.API_BASE || 'http://localhost:3000/api';
 const SCENARIOS_FILE = path.join(__dirname, 'clinical-scenarios.json');
 const RESULTS_DIR = path.join(__dirname, 'results');
+const TEST_USERNAME = process.env.TEST_USERNAME || process.env.EHR_TEST_USERNAME || 'scenario.runner';
+const TEST_PASSWORD = process.env.TEST_PASSWORD || process.env.EHR_TEST_PASSWORD || 'SecurePass!234';
 const requestContext = {
   sessionId: null,
+  token: null,
   userRole: process.env.TEST_USER_ROLE || 'physician',
   userId: process.env.TEST_USER_ID || `scenario-runner-${process.pid}`
 };
@@ -38,6 +41,9 @@ function request(method, urlPath, body = null) {
 
     if (requestContext.sessionId) {
       headers['x-session-id'] = requestContext.sessionId;
+    }
+    if (requestContext.token) {
+      headers.Authorization = `Bearer ${requestContext.token}`;
     }
 
     const options = {
@@ -87,6 +93,24 @@ async function checkServer() {
   } catch {
     return false;
   }
+}
+
+async function authenticate() {
+  const res = await api.post('/auth/login', {
+    username: TEST_USERNAME,
+    password: TEST_PASSWORD
+  });
+
+  if (res.status !== 200 || !res.data?.token) {
+    throw new Error(
+      `Scenario runner login failed for ${TEST_USERNAME}: HTTP ${res.status}. ` +
+      'Create the test clinician or set TEST_USERNAME/TEST_PASSWORD.'
+    );
+  }
+
+  requestContext.token = res.data.token;
+  requestContext.userRole = res.data.user?.role || requestContext.userRole;
+  requestContext.userId = res.data.user?.id ? String(res.data.user.id) : requestContext.userId;
 }
 
 async function runScenario(scenario) {
@@ -480,6 +504,9 @@ async function main() {
     process.exit(1);
   }
   console.log('Server is running.\n');
+
+  await authenticate();
+  console.log(`Authenticated scenario runner as ${TEST_USERNAME}.\n`);
 
   // Filter scenarios
   let toRun = allScenarios.scenarios;

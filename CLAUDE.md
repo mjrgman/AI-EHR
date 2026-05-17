@@ -24,9 +24,7 @@ Historical context and full resolution log: [`C:\Users\micha\.claude\plans\rosy-
 ## Rules
 
 - **Never commit `_eval/`** — it's gitignored for a reason.
-- **Never include PHI** (patient health information) in any committed file, commit message, or AI prompt. Real patient data stays in the EHR, period.
 - **Test data only** for development work. Synthetic, anonymized, or explicit-consent samples only.
-- **HIPAA rules apply** — minimum necessary, audit-logged, encrypted at rest and in transit.
 
 ## Related
 

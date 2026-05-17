@@ -22,6 +22,13 @@ const { mountHedisRoutes } = require('../../server/routes/hedis-routes');
 function startServer() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
+  app.use((req, _res, next) => {
+    req.user = {
+      role: req.headers['x-user-role'] || 'physician',
+      username: req.headers['x-user-id'] || 'unit-test-clinician'
+    };
+    next();
+  });
   mountCareManagementRoutes(app, { db: {} });
   mountHedisRoutes(app, { db: {} });
   return new Promise((resolve) => {

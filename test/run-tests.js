@@ -4650,6 +4650,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
 
     const after = await db.dbGet('SELECT COUNT(*) AS count FROM patient_messages WHERE patient_id = ?', [sarahId]);
     assert(after.count > before.count, 'message submission should create a patient_messages row');
+    const row = await db.dbGet(
+      'SELECT status FROM patient_messages WHERE patient_id = ? ORDER BY id DESC LIMIT 1',
+      [sarahId]
+    );
+    assertEqual(row.status, 'physician_review', 'portal messages should enter the care-team review queue');
   });
 
   await test('Patient Portal HTTP: symptom triage persists and returns routed urgency', async () => {
@@ -4748,7 +4753,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
 
     const result = spawnSync(
       process.execPath,
-      ['--test', ...unitFiles],
+      ['--test', '--test-concurrency=1', ...unitFiles],
       {
         cwd: path.resolve(__dirname, '..'),
         encoding: 'utf8',

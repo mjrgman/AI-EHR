@@ -22,10 +22,16 @@ const {
   ELIGIBILITY_WINDOW_DAYS,
 } = require('../../server/agents/awv-agent');
 
+const dateOnly = (date) => {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+};
+
 const dobAt = (years) => {
   const d = new Date();
   d.setFullYear(d.getFullYear() - years);
-  return d.toISOString().slice(0, 10);
+  return dateOnly(d);
 };
 
 describe('awv-agent: encounter type detection', () => {

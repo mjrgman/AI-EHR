@@ -16,6 +16,13 @@ const { mountCareManagementRoutes } = require('../../server/routes/care-manageme
 function startServer() {
   const app = express();
   app.use(express.json());
+  app.use((req, _res, next) => {
+    req.user = {
+      role: req.headers['x-user-role'] || 'physician',
+      username: req.headers['x-user-id'] || 'unit-test-clinician'
+    };
+    next();
+  });
   mountCareManagementRoutes(app, { db: {} });
   return new Promise((resolve) => {
     const server = app.listen(0, '127.0.0.1', () => {
