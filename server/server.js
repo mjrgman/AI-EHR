@@ -83,13 +83,14 @@ app.use(helmet({
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map(s => s.trim());
+const isDevelopment = (process.env.NODE_ENV || 'development') === 'development';
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (server-to-server, curl, mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (process.env.NODE_ENV === 'development') return callback(null, true);
+    if (isDevelopment) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -1377,7 +1378,10 @@ app.post('/api/cds/evaluate', async (req, res) => {
       context.providerName, context.problems
     );
 
-    const ruleSuggestions = await cds.evaluatePatientContext(encounterId, patientId, context);
+    let ruleSuggestions = await cds.evaluatePatientContext(encounterId, patientId, context);
+    if (ruleSuggestions.length === 0) {
+      ruleSuggestions = await db.getEncounterSuggestions(encounterId, 'pending');
+    }
 
     // Persist provider suggestions too
     const savedProvSuggestions = [];
@@ -1850,7 +1854,7 @@ app.get('/api/audit/stats', async (req, res) => {
   }
 });
 
-app.get('/api/audit/sessions', async (req, res) => {
+app.get('/api/audit/sessions', rbac.requireRole('admin'), async (req, res) => {
   try {
     const result = await audit.getAuditSessions({
       page: parseInt(req.query.page, 10) || 1,
@@ -1881,7 +1885,7 @@ app.get('/api/audit/patient/:id', async (req, res) => {
   }
 });
 
-app.get('/api/audit/export', async (req, res) => {
+app.get('/api/audit/export', rbac.requireRole('admin'), async (req, res) => {
   try {
     const result = await audit.queryAuditLogs({
       page: 1,

@@ -271,7 +271,7 @@ router.post('/message', async (req, res) => {
       message_type: 'general',
       subject: subject || 'Message from Patient Portal',
       content: message,
-      status: 'submitted',
+      status: 'physician_review',
       tier: 2,
       sent_at: new Date().toISOString(),
     });

@@ -22,6 +22,34 @@ let db = null;
 const SESSION_TIMEOUT_MINUTES = 15;
 const SESSION_TIMEOUT_MS = SESSION_TIMEOUT_MINUTES * 60 * 1000;
 
+// S-C4 hardening: identity must come from authenticated context.
+// Header-based identity (x-user-id / x-user-role) is honored ONLY when
+// NODE_ENV=development AND ENABLE_DEV_AUTH_BYPASS=true (matching auth.js).
+function resolveIdentityForAudit(req) {
+  if (req.user?.role) {
+    return {
+      userId: req.user.username || req.user.sub || 'authenticated',
+      userRole: req.user.role,
+    };
+  }
+  if (req.session?.userRole) {
+    return {
+      userId: req.session.userId || 'session',
+      userRole: req.session.userRole,
+    };
+  }
+  const devBypass =
+    process.env.NODE_ENV === 'development' &&
+    process.env.ENABLE_DEV_AUTH_BYPASS === 'true';
+  if (devBypass && req.headers['x-user-role']) {
+    return {
+      userId: req.headers['x-user-id'] || 'dev-bypass',
+      userRole: req.headers['x-user-role'],
+    };
+  }
+  return { userId: 'anonymous', userRole: 'guest' };
+}
+
 // Rate limit tracking: userKey -> { count, resetTime }
 const rateLimitStore = new Map();
 
@@ -448,10 +476,10 @@ function sessionTracker(req, res, next) {
   // Extract session from header or cookie
   const sessionId = req.headers['x-session-id'] || req.cookies?.sessionId;
 
-  // Extract user info from JWT (set by auth.requireAuth middleware) or fallback
-  const userId = req.user?.username || req.headers['x-user-id'] || 'anonymous';
-  const userRole = req.user?.role || req.headers['x-user-role'] || 'guest';
-  
+  // Extract user info from JWT (set by auth.requireAuth middleware), session, or
+  // dev-bypass header — never directly from headers in production.
+  const { userId, userRole } = resolveIdentityForAudit(req);
+
   const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
   const userAgent = req.get('user-agent') || 'unknown';
   
@@ -538,9 +566,8 @@ function securityHeaders(req, res, next) {
  * Rate limiting middleware
  */
 function rateLimiter(req, res, next) {
-  const userId = req.session?.userId || req.headers['x-user-id'] || 'anonymous';
-  const userRole = req.session?.userRole || req.headers['x-user-role'] || 'guest';
-  
+  const { userId, userRole } = resolveIdentityForAudit(req);
+
   const rateCheck = checkRateLimit(userId, userRole);
   
   res.setHeader('X-RateLimit-Remaining', rateCheck.remaining);

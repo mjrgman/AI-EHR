@@ -96,8 +96,8 @@ const HRT_RULES = [
           requiresDosingApproval: true,
           payload: {
             medication: 'Testosterone cypionate',
-            currentDose: '{{currentDose}}',
-            proposedDose: '{{currentDose + 20 mg}}',
+            currentDose: 'current documented testosterone dose',
+            proposedDose: 'clinician-calculated incremental increase, typically 20 mg weekly or 20%',
             route: 'IM',
             frequency: 'weekly',
             rationale: 'Trough T < 400 ng/dL with persistent symptoms'

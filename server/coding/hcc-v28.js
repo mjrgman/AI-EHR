@@ -12,7 +12,8 @@
  *   3. buildHCCReport(icd10s, text) — full per-encounter HCC capture report
  *
  * Data source: server/seed/hcc_v28_seed.json (curated primary-care subset).
- * Full CMS-mapping CSV ingestion lives in scripts/build-hcc-v28-seed.js (TODO).
+ * Full CMS-mapping CSV ingestion belongs in scripts/build-hcc-v28-seed.js when
+ * the curated subset is expanded.
  *
  * Caching: the seed is loaded into module scope on first call. The DB-backed
  * lookup path (when scripts/build-hcc-v28-seed.js populates the table) takes

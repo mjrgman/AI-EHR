@@ -722,7 +722,7 @@ ${carryforward.map(c => `### ${c.condition}
     }
 
     // Notification delivery channels — only declare what is actually wired up.
-    // Email/SMS delivery requires Twilio + SendGrid integration (TODO, separate PR);
+    // Email/SMS delivery requires a separate Twilio + SendGrid integration.
     // until those land, advertising them here would be a false promise to patients
     // who depend on these notifications for appointments and refills.
     return {
@@ -739,7 +739,7 @@ ${carryforward.map(c => `### ${c.condition}
       channels: ['portal'],
       pendingChannels: { email: 'not_configured', sms: 'not_configured' },
       deliveryNote: 'Only portal in-app delivery is implemented. ' +
-                    'Email/SMS delivery requires Twilio + SendGrid integration (TODO).',
+                    'Email/SMS delivery requires a separate Twilio + SendGrid integration.',
       readyToSend: true
     };
   }

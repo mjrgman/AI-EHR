@@ -574,15 +574,44 @@ function getPhiScopeFields(roleName) {
  * Middleware: require one or more roles
  * Usage: app.get('/api/patients', rbac.requireRole('physician', 'nurse_practitioner'), handler)
  */
+// S-C4 hardening: identity must come from authenticated context only.
+// In production, header-based identity (x-user-id / x-user-role) is rejected.
+// In development, headers are honored ONLY when ENABLE_DEV_AUTH_BYPASS=true,
+// matching the gate in security/auth.js.
+function resolveIdentity(req) {
+  // Primary: req.user (set by auth.requireAuth from JWT)
+  if (req.user?.role) {
+    return {
+      role: req.user.role,
+      id: req.user.username || req.user.sub || 'authenticated',
+      source: 'jwt',
+    };
+  }
+  // Secondary: validated session set by HIPAA sessionTracker
+  if (req.session?.userRole) {
+    return {
+      role: req.session.userRole,
+      id: req.session.userId || 'session',
+      source: 'session',
+    };
+  }
+  // Tertiary: dev-only header bypass, gated by explicit env flag
+  const devBypass =
+    process.env.NODE_ENV === 'development' &&
+    process.env.ENABLE_DEV_AUTH_BYPASS === 'true';
+  if (devBypass && req.headers['x-user-role']) {
+    return {
+      role: req.headers['x-user-role'],
+      id: req.headers['x-user-id'] || 'dev-bypass',
+      source: 'dev-header',
+    };
+  }
+  return { role: 'guest', id: 'anonymous', source: 'unauthenticated' };
+}
+
 function requireRole(...allowedRoles) {
   return (req, res, next) => {
-    // In development mode, default to physician role for testing
-    // In production, this MUST come from authenticated session/JWT
-    const isDev = process.env.NODE_ENV !== 'production';
-    const defaultRole = isDev ? 'physician' : 'guest';
-
-    const userRole = req.session?.userRole || req.headers['x-user-role'] || defaultRole;
-    const userId = req.session?.userId || req.headers['x-user-id'] || 'anonymous';
+    const { role: userRole, id: userId } = resolveIdentity(req);
 
     // Attach role to request for downstream middleware
     req.userRole = userRole;
@@ -607,9 +636,8 @@ function requireRole(...allowedRoles) {
  */
 function requirePermission(action, resourceType) {
   return (req, res, next) => {
-    const userRole = req.session?.userRole || req.headers['x-user-role'] || 'guest';
-    const userId = req.session?.userId || req.headers['x-user-id'] || 'anonymous';
-    
+    const { role: userRole, id: userId } = resolveIdentity(req);
+
     if (!authorize(userRole, resourceType, action)) {
       console.warn(
         `[RBAC] Permission denied: user ${userId} (role: ${userRole}) ` +
@@ -633,8 +661,8 @@ function requirePermission(action, resourceType) {
  * Usage: app.get('/api/patients/:id', rbac.filterResponse, handler)
  */
 function filterResponse(req, res, next) {
-  const userRole = req.session?.userRole || req.headers['x-user-role'] || 'guest';
-  
+  const { role: userRole } = resolveIdentity(req);
+
   // Wrap res.json to filter response
   const originalJson = res.json.bind(res);
   res.json = function(data) {
@@ -652,9 +680,8 @@ function filterResponse(req, res, next) {
  */
 function requireResourceAccess(resourceType) {
   return (req, res, next) => {
-    const userRole = req.session?.userRole || req.headers['x-user-role'] || 'guest';
-    const userId = req.session?.userId || req.headers['x-user-id'] || 'anonymous';
-    
+    const { role: userRole, id: userId } = resolveIdentity(req);
+
     // Determine action from HTTP method
     const action = {
       'GET': 'access',

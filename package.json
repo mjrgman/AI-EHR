@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "test": "node test/run-tests.js",
     "test:http-hardening": "node scripts/http-hardening-smoke.js",
-    "test:unit": "node --test test/unit/*.test.js",
+    "test:unit": "node --test --test-concurrency=1 test/unit/*.test.js",
     "lint": "eslint server src --ext .js,.jsx,.mjs",
     "setup": "node scripts/setup.js",
     "create-user": "node scripts/create-user.js"

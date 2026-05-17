@@ -343,9 +343,9 @@ class IngestionAgent extends BaseAgent {
     };
   }
 
-  // Future: OCR integration
+  // Future OCR integration sketch
   // async ocrDocument(imageBuffer) {
-  //   // TODO: Integrate Tesseract.js for on-device OCR
+  //   // Integrate Tesseract.js for on-device OCR
   //   // const Tesseract = require('tesseract.js');
   //   // const { data: { text, confidence } } = await Tesseract.recognize(imageBuffer, 'eng');
   //   // return { text, confidence: confidence / 100 };

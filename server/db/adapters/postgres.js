@@ -1,8 +1,9 @@
 /**
- * PostgreSQL Adapter for Agentic EHR (STUB)
+ * PostgreSQL Adapter for Agentic EHR (planned adapter)
  *
- * This is a placeholder for the PostgreSQL migration.
- * Implement this adapter when scaling beyond SQLite.
+ * This adapter is intentionally unavailable until the PostgreSQL migration
+ * is implemented. Runtime code should continue using SQLite unless a
+ * PostgreSQL implementation and verification packet are added.
  *
  * Required: npm install pg
  *
@@ -21,7 +22,7 @@ const adapter = {
   type: 'postgres',
 
   async init() {
-    // TODO: Implement
+    // Planned implementation:
     // const { Pool } = require('pg');
     // pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 20 });
     // await pool.query('SELECT 1');
@@ -29,7 +30,7 @@ const adapter = {
   },
 
   async run(sql, params = []) {
-    // TODO: translate ? → $1, $2, ...
+    // Planned implementation: translate ? placeholders to PostgreSQL bind indexes.
     throw new Error('Not implemented');
   },
 
@@ -42,7 +43,7 @@ const adapter = {
   },
 
   close() {
-    // TODO: pool.end()
+    // Planned implementation: close the PostgreSQL connection pool.
   },
 };
 

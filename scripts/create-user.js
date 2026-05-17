@@ -2,7 +2,7 @@
 
 const path = require('path');
 
-process.env.DATABASE_PATH = process.env.DATABASE_PATH || path.join(__dirname, '../data/ehr.db');
+process.env.DATABASE_PATH = process.env.DATABASE_PATH || path.join(__dirname, '../data/mjr-ehr.db');
 
 const auth = require('../server/security/auth');
 const db = require('../server/database');

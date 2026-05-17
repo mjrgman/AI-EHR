@@ -27,6 +27,7 @@
 const express = require('express');
 const { buildPatientBundle } = require('../medivault');
 const { sendFhir, sendError } = require('../fhir/utils/fhir-response');
+const rbac = require('../security/rbac');
 
 /**
  * Mount the MediVault routes onto an Express app.
@@ -47,7 +48,7 @@ function mountMediVaultRoutes(app, { db } = {}) {
   // ----------------------------------------------------------
   // GET /api/medivault/export/:patientId
   // ----------------------------------------------------------
-  router.get('/medivault/export/:patientId', async (req, res) => {
+  router.get('/medivault/export/:patientId', rbac.requireRole('physician', 'nurse_practitioner', 'system'), async (req, res) => {
     const patientId = Number(req.params.patientId);
     if (!Number.isFinite(patientId) || patientId <= 0) {
       return sendError(res, 400, 'invalid', 'patientId must be a positive integer');

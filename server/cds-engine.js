@@ -592,10 +592,13 @@ async function evaluatePatientContext(encounterId, patientId, context) {
   const saved = [];
   for (const s of unique) {
     const existing = await db.dbGet(
-      'SELECT id FROM cds_suggestions WHERE encounter_id = ? AND title = ? AND status = ?',
+      'SELECT * FROM cds_suggestions WHERE encounter_id = ? AND title = ? AND status = ?',
       [encounterId, s.title, 'pending']
     );
-    if (existing) continue; // Skip duplicate
+    if (existing) {
+      saved.push(existing);
+      continue;
+    }
 
     const result = await db.createSuggestion({
       encounter_id: encounterId,
