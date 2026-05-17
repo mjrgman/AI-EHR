@@ -9,9 +9,15 @@ export default function Card({ children, className = '', ...props }) {
 }
 
 export function CardHeader({ children, className = '', action }) {
+  const simpleTitle = typeof children === 'string' || typeof children === 'number';
+
   return (
     <div className={`px-5 py-4 border-b border-gray-100 flex items-center justify-between ${className}`}>
-      <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-500">{children}</h3>
+      {simpleTitle ? (
+        <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-500">{children}</h3>
+      ) : (
+        children
+      )}
       {action}
     </div>
   );

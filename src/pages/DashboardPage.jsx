@@ -222,6 +222,7 @@ export default function DashboardPage() {
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <h2 className="section-header m-0">Patients</h2>
                   <TouchButton
+                    type="button"
                     variant="primary"
                     size="sm"
                     icon="+"

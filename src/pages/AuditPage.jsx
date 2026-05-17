@@ -111,7 +111,12 @@ function AuditDetailPanel({ log, onClose }) {
       <div className="relative w-full max-w-md h-full bg-white shadow-2xl border-l border-gray-200 overflow-y-auto animate-slide-in-right">
         <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between z-10">
           <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-500">Audit Detail</h3>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close audit detail"
+            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+          >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -297,14 +302,19 @@ export default function AuditPage() {
           <p className="text-sm text-gray-500 mt-0.5">HIPAA compliance trail &middot; All system activity</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={fetchData}
+          <button
+            type="button"
+            onClick={fetchData}
+            aria-label="Refresh audit log"
             className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
             title="Refresh">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
-          <button onClick={handleExport}
+          <button
+            type="button"
+            onClick={handleExport}
             className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -379,9 +389,11 @@ export default function AuditPage() {
 
             {/* Date range */}
             <input type="date" value={filters.date_from} onChange={e => updateFilter('date_from', e.target.value)}
+              aria-label="From date"
               className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               title="From date" />
             <input type="date" value={filters.date_to} onChange={e => updateFilter('date_to', e.target.value)}
+              aria-label="To date"
               className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               title="To date" />
 

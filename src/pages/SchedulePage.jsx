@@ -158,14 +158,26 @@ export default function SchedulePage() {
       {/* Date navigation */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => setSelectedDate(d => shiftDate(d, -1))}>
+          <TouchButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-label="Previous day"
+            onClick={() => setSelectedDate(d => shiftDate(d, -1))}
+          >
             &#x2190;
           </TouchButton>
           <div className="text-center min-w-[180px]">
             <p className="font-semibold text-gray-900">{formatDisplayDate(selectedDate)}</p>
             <p className="text-xs text-gray-400">{selectedDate}</p>
           </div>
-          <TouchButton variant="secondary" size="sm" onClick={() => setSelectedDate(d => shiftDate(d, 1))}>
+          <TouchButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-label="Next day"
+            onClick={() => setSelectedDate(d => shiftDate(d, 1))}
+          >
             &#x2192;
           </TouchButton>
         </div>
@@ -176,10 +188,10 @@ export default function SchedulePage() {
             onChange={e => setSelectedDate(e.target.value)}
             className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
-          <TouchButton variant="secondary" size="sm" onClick={() => setSelectedDate(toDateStr(new Date()))}>
+          <TouchButton type="button" variant="secondary" size="sm" onClick={() => setSelectedDate(toDateStr(new Date()))}>
             Today
           </TouchButton>
-          <TouchButton variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
+          <TouchButton type="button" variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
             + New Appointment
           </TouchButton>
         </div>
@@ -203,7 +215,14 @@ export default function SchedulePage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <span>New Appointment</span>
-              <button onClick={() => setShowNewForm(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+              <button
+                type="button"
+                onClick={() => setShowNewForm(false)}
+                aria-label="Close new appointment form"
+                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+              >
+                &times;
+              </button>
             </div>
           </CardHeader>
           <CardBody>
@@ -301,7 +320,7 @@ export default function SchedulePage() {
             <p className="text-gray-500 font-medium">No appointments scheduled</p>
             <p className="text-sm text-gray-400 mt-1">for {formatDisplayDate(selectedDate)}</p>
             <div className="mt-4">
-              <TouchButton variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
+              <TouchButton type="button" variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
                 Schedule an Appointment
               </TouchButton>
             </div>
@@ -378,8 +397,10 @@ export default function SchedulePage() {
                         ) : null}
                         {appt.status !== 'completed' && appt.status !== 'no-show' && appt.status !== 'cancelled' && (
                           <button
+                            type="button"
                             onClick={() => handleDelete(appt.id)}
                             disabled={isUpdating}
+                            aria-label={`Cancel appointment for ${appt.patient_last_name ? `${appt.patient_first_name} ${appt.patient_last_name}` : `patient ${appt.patient_id}`} at ${formatTime(appt.appointment_time)}`}
                             className="text-xs px-2 py-1.5 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
                             title="Cancel appointment"
                           >

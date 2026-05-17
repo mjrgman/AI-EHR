@@ -9,6 +9,12 @@ const ROLE_COLORS = {
   provider: { bg: 'bg-emerald-700', badge: 'bg-emerald-400' },
 };
 
+const NAV_ITEMS = [
+  { path: '/', label: 'Dashboard' },
+  { path: '/schedule', label: 'Schedule' },
+  { path: '/audit', label: 'Audit Log' },
+];
+
 export default function AppShell({ children }) {
   const { currentRole, providerName, roleConfig, logout, user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -48,6 +54,7 @@ export default function AppShell({ children }) {
 
   const formatTime = (date) => date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const formatDate = (date) => date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const isActiveNav = (path) => (path === '/' ? location.pathname === '/' : location.pathname.startsWith(path));
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -66,6 +73,8 @@ export default function AppShell({ children }) {
         <div className="flex h-14 items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <button
+              type="button"
+              aria-label="Open navigation"
               onClick={() => setSidebarOpen((open) => !open)}
               className="rounded-lg p-2 transition-colors hover:bg-white/10 lg:hidden"
             >
@@ -73,13 +82,29 @@ export default function AppShell({ children }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <button className="flex items-center gap-2" onClick={() => navigate('/')}>
+            <button type="button" className="flex items-center gap-2" onClick={() => navigate('/')}>
               <span className="rounded-full bg-white/10 px-2 py-1 text-xs font-semibold tracking-[0.2em]">AI</span>
               <div className="text-left">
                 <h1 className="text-base font-bold leading-tight tracking-tight">MJR-EHR</h1>
                 <p className="hidden text-[10px] leading-tight opacity-75 sm:block">Intelligent Clinical Agent</p>
               </div>
             </button>
+            <nav className="ml-3 hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
+              {NAV_ITEMS.map((item) => (
+                <button
+                  key={item.path}
+                  type="button"
+                  onClick={() => navigate(item.path)}
+                  className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                    isActiveNav(item.path)
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-white/85 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
           </div>
 
           <div className="hidden items-center gap-3 text-sm md:flex">
@@ -102,6 +127,9 @@ export default function AppShell({ children }) {
 
             <div className="relative">
               <button
+                type="button"
+                aria-label="Open session menu"
+                aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
                 className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-sm transition-colors hover:bg-white/20"
               >
@@ -125,6 +153,7 @@ export default function AppShell({ children }) {
                     </div>
                     <div className="border-t border-gray-100 px-4 pt-3">
                       <button
+                        type="button"
                         onClick={handleLogout}
                         disabled={loggingOut}
                         className="w-full rounded-lg border border-red-100 px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
@@ -153,19 +182,16 @@ export default function AppShell({ children }) {
           <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setSidebarOpen(false)} />
           <aside className="fixed bottom-0 left-0 top-14 z-50 w-72 overflow-y-auto border-r border-gray-100 bg-white shadow-xl lg:hidden">
             <nav className="p-3">
-              {[
-                { path: '/', label: 'Dashboard' },
-                { path: '/schedule', label: 'Schedule' },
-                { path: '/audit', label: 'Audit Log' },
-              ].map((item) => (
+              {NAV_ITEMS.map((item) => (
                 <button
                   key={item.path}
+                  type="button"
                   onClick={() => {
                     navigate(item.path);
                     setSidebarOpen(false);
                   }}
                   className={`w-full rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${
-                    location.pathname === item.path ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                    isActiveNav(item.path) ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
                   {item.label}
