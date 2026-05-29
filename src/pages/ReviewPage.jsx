@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Save, PenLine } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -164,8 +165,8 @@ export default function ReviewPage() {
       <div className="max-w-4xl mx-auto p-4 space-y-4 mc-reveal-stagger">
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => navigate('/encounter/' + encounterId)}>
-            &#x2190; Continue Editing
+          <TouchButton variant="ghost" size="sm" icon={<ArrowLeft size={16} />} onClick={() => navigate('/encounter/' + encounterId)}>
+            Continue Editing
           </TouchButton>
           <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} />
         </div>
@@ -208,6 +209,7 @@ export default function ReviewPage() {
               <TouchButton
                 variant="primary"
                 size="sm"
+                icon={<Save size={15} />}
                 onClick={handleSaveSoap}
                 loading={saving}
                 disabled={!soapDirty}
@@ -388,17 +390,23 @@ export default function ReviewPage() {
           </CardBody>
         </Card>
 
-        {/* Action Buttons */}
+        {/* Action Buttons. Sign Encounter is the terminal positive/complete
+            action — confident brand success green with a signing icon. Continue
+            Editing is a quiet secondary so the sign path reads as the hero. */}
         <div className="flex gap-3 pb-6">
           <TouchButton
             variant="secondary"
+            size="lg"
+            icon={<ArrowLeft size={16} />}
             onClick={() => navigate('/encounter/' + encounterId)}
             className="flex-1"
           >
-            &#x2190; Continue Editing
+            Continue Editing
           </TouchButton>
           <TouchButton
             variant="success"
+            size="lg"
+            icon={<PenLine size={18} />}
             onClick={handleSign}
             loading={signing}
             disabled={!canSign}

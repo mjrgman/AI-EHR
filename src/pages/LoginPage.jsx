@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { ShieldCheck, KeyRound, UserCog } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage() {
@@ -70,15 +71,18 @@ export default function LoginPage() {
 
           <div className="mt-9 grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-300">Auth</p>
+              <KeyRound size={18} strokeWidth={2} className="text-white/55" aria-hidden="true" />
+              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-300">Auth</p>
               <p className="mt-2 text-sm leading-6 text-white/80">JWT access token plus refresh rotation.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-300">Portal</p>
+              <ShieldCheck size={18} strokeWidth={2} className="text-white/55" aria-hidden="true" />
+              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-300">Portal</p>
               <p className="mt-2 text-sm leading-6 text-white/80">Patient access is isolated behind a separate session.</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-300">Bootstrap</p>
+              <UserCog size={18} strokeWidth={2} className="text-white/55" aria-hidden="true" />
+              <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-300">Bootstrap</p>
               <p className="mt-2 text-sm leading-6 text-white/80">First user via <code className="font-mono text-xs text-white/90">npm run create-user</code>.</p>
             </div>
           </div>
@@ -92,7 +96,13 @@ export default function LoginPage() {
 
       {/* ── Sign-in panel — warm ivory ground, offWhite card ── */}
       <section className="flex min-h-screen items-center justify-center px-4 py-10 sm:px-8">
-        <div className="mc-card mc-reveal w-full max-w-md p-8 shadow-mc-xl sm:p-10">
+        <div className="mc-card mc-reveal relative w-full max-w-md p-8 shadow-mc-xl sm:p-10">
+          {/* The single gold moment on the sign-in side: a refined gold key-line
+              crowning the card. One genuine accent, not decoration. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-gold-500/0 via-gold-500 to-gold-500/0"
+          />
           {/* Compact brand mark — visible on small screens where the panel is hidden */}
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <span className="flex h-8 w-8 items-center justify-center rounded-full border border-gold-400/60 bg-gold-500/10 text-[11px] font-bold tracking-[0.12em] text-gold-600">

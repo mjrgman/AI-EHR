@@ -7,6 +7,15 @@ import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import {
+  ChevronLeft,
+  ChevronRight,
+  CalendarPlus,
+  CalendarDays,
+  CalendarX,
+  LogIn,
+  CheckCircle2,
+} from 'lucide-react';
 
 const STATUS_LABELS = {
   scheduled: { label: 'Scheduled', variant: 'routine' },
@@ -162,30 +171,31 @@ export default function SchedulePage() {
       </div>
 
       {/* Date navigation */}
-      <div className="flex items-center justify-between gap-3 flex-wrap rounded-2xl border border-slate-100 bg-offWhite-100 px-4 py-3 shadow-mc">
+      <div className="flex items-center justify-between gap-3 flex-wrap rounded-2xl border border-slate-100 bg-offWhite-100 px-4 py-3 shadow-mc-lg">
         <div className="flex items-center gap-2">
           <TouchButton
             type="button"
             variant="secondary"
             size="sm"
             aria-label="Previous day"
+            icon={<ChevronLeft className="w-4 h-4" strokeWidth={2.25} />}
             onClick={() => setSelectedDate(d => shiftDate(d, -1))}
-          >
-            &#x2190;
-          </TouchButton>
-          <div className="text-center min-w-[180px]">
-            <p className="font-display text-lg font-semibold text-navy-700 tracking-tight">{formatDisplayDate(selectedDate)}</p>
-            <p className="text-xs text-slate-400">{selectedDate}</p>
+          />
+          <div className="flex items-center gap-2.5 min-w-[180px] justify-center px-1">
+            <CalendarDays className="w-4 h-4 text-gold-500 flex-shrink-0" strokeWidth={2} aria-hidden="true" />
+            <div className="text-center">
+              <p className="font-display text-lg font-semibold text-navy-700 tracking-tight leading-tight">{formatDisplayDate(selectedDate)}</p>
+              <p className="text-xs text-slate-400 tabular-nums">{selectedDate}</p>
+            </div>
           </div>
           <TouchButton
             type="button"
             variant="secondary"
             size="sm"
             aria-label="Next day"
+            icon={<ChevronRight className="w-4 h-4" strokeWidth={2.25} />}
             onClick={() => setSelectedDate(d => shiftDate(d, 1))}
-          >
-            &#x2192;
-          </TouchButton>
+          />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input
@@ -197,8 +207,14 @@ export default function SchedulePage() {
           <TouchButton type="button" variant="secondary" size="sm" onClick={() => setSelectedDate(toDateStr(new Date()))}>
             Today
           </TouchButton>
-          <TouchButton type="button" variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
-            + New Appointment
+          <TouchButton
+            type="button"
+            variant="primary"
+            size="sm"
+            icon={<CalendarPlus className="w-4 h-4" strokeWidth={2.25} />}
+            onClick={() => setShowNewForm(true)}
+          >
+            New Appointment
           </TouchButton>
         </div>
       </div>
@@ -321,12 +337,20 @@ export default function SchedulePage() {
         <LoadingSpinner message="Loading schedule..." />
       ) : appointments.length === 0 ? (
         <Card>
-          <CardBody className="text-center py-12">
-            <span className="text-4xl mb-3 inline-block opacity-80">📅</span>
+          <CardBody className="text-center py-14">
+            <span className="mb-4 inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-ivory-200 border border-slate-100 shadow-mc">
+              <CalendarDays className="w-8 h-8 text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+            </span>
             <h3 className="font-display text-lg font-semibold text-navy-700">No appointments scheduled</h3>
             <p className="text-sm text-slate-500 mt-1">for {formatDisplayDate(selectedDate)}</p>
-            <div className="mt-4">
-              <TouchButton type="button" variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
+            <div className="mt-5">
+              <TouchButton
+                type="button"
+                variant="primary"
+                size="sm"
+                icon={<CalendarPlus className="w-4 h-4" strokeWidth={2.25} />}
+                onClick={() => setShowNewForm(true)}
+              >
                 Schedule an Appointment
               </TouchButton>
             </div>
@@ -373,23 +397,26 @@ export default function SchedulePage() {
                               <button
                                 onClick={() => handleStatusChange(appt.id, 'confirmed')}
                                 disabled={isUpdating}
-                                className="text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 transition-colors disabled:opacity-50 font-medium"
+                                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 transition-colors disabled:opacity-50 font-medium"
                               >
+                                <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
                                 Confirm
                               </button>
                             )}
                             <button
                               onClick={() => handleCheckin(appt)}
                               disabled={isUpdating}
-                              className="text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 transition-colors disabled:opacity-50 font-semibold"
+                              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 transition-colors disabled:opacity-50 font-semibold"
                             >
+                              <LogIn className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
                               Check In
                             </button>
                             <button
                               onClick={() => handleStatusChange(appt.id, 'no-show')}
                               disabled={isUpdating}
-                              className="text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus:ring-2 focus:ring-danger-500 focus:ring-offset-1"
+                              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus:ring-2 focus:ring-danger-500 focus:ring-offset-1"
                             >
+                              <CalendarX className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
                               No-Show
                             </button>
                           </>

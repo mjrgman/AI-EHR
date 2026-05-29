@@ -88,13 +88,15 @@ function AgentCard({ name, agentResult, expanded, onToggle }) {
   const timeMs = agentResult?.executionTimeMs;
 
   return (
-    <div className={`rounded-lg border border-slate-100 shadow-mc ${meta.bg} overflow-hidden`}>
+    <div className={`rounded-xl border border-slate-100 shadow-mc hover:shadow-mc-lg transition-all duration-200 ${meta.bg} overflow-hidden`}>
       <button
         onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-navy-50/40 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <Icon size={18} className={meta.color} />
+          <span className="grid place-items-center w-8 h-8 rounded-lg bg-offWhite-100 shadow-mc">
+            <Icon size={16} className={meta.color} />
+          </span>
           <div className="text-left">
             <div className="font-medium text-sm text-navy-700">{meta.label} Agent</div>
             <div className="text-xs text-slate-500">{meta.description}</div>
@@ -509,11 +511,13 @@ export default function AgentPanel({ encounterId, patientId }) {
   const results = activeTab === 'encounter' ? pipelineResult : preVisitResults;
 
   return (
-    <div className="bg-offWhite-100 rounded-xl border border-slate-100 overflow-hidden">
+    <div className="mc-card">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-offWhite-100">
-        <div className="flex items-center gap-2">
-          <Bot size={20} className="text-navy-600" />
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-offWhite-100 to-navy-50/50">
+        <div className="flex items-center gap-2.5">
+          <span className="grid place-items-center w-9 h-9 rounded-xl bg-navy-50 text-navy-600 shadow-mc">
+            <Bot size={18} />
+          </span>
           <div>
             <h3 className="font-display text-sm font-semibold tracking-tight text-navy-700">AI Clinical Agents</h3>
             <p className="text-xs text-slate-400">9-agent intelligent pipeline</p>

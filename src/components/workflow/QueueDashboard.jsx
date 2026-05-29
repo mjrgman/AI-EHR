@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ClipboardCheck } from 'lucide-react';
 import api, { safeLog } from '../../api/client';
 import WorkflowTracker from './WorkflowTracker';
 
@@ -22,13 +23,20 @@ export default function QueueDashboard() {
 
   if (loading) return <div className="animate-pulse p-4 text-slate-400">Loading queue...</div>;
   const active = workflows.filter(wf => wf.current_state !== 'checked-out');
-  if (active.length === 0) return <div className="text-center py-8 text-slate-400"><p className="text-3xl mb-2 opacity-80">&#x1F4CB;</p><p>No active encounters.</p></div>;
+  if (active.length === 0) return (
+    <div className="flex flex-col items-center py-10 text-slate-400">
+      <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-ivory-200 text-slate-400 ring-1 ring-slate-100">
+        <ClipboardCheck size={24} strokeWidth={1.75} aria-hidden="true" />
+      </span>
+      <p className="text-sm text-slate-500">No active encounters.</p>
+    </div>
+  );
 
   return (
     <div className="space-y-2 mc-reveal-stagger">
       {active.map(wf => (
         <div key={wf.encounter_id} onClick={() => navigate((ROUTES[wf.current_state] || '/encounter') + '/' + wf.encounter_id)}
-          className="bg-offWhite-100 rounded-xl border border-slate-100 shadow-mc p-4 hover:border-gold-300 hover:shadow-mc-lg cursor-pointer transition-all active:scale-[0.99]">
+          className="bg-offWhite-100 rounded-xl border border-slate-100 shadow-mc p-4 hover:border-navy-200 hover:shadow-mc-lg hover:-translate-y-px cursor-pointer transition-all active:scale-[0.99] active:translate-y-0">
           <div className="flex items-center justify-between mb-2">
             <div>
               <span className="font-semibold text-navy-700">{wf.patient_first_name || 'Patient'} {wf.patient_last_name || ''}</span>

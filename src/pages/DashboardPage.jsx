@@ -8,7 +8,9 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import Modal from '../components/common/Modal';
 import { useToast } from '../components/common/Toast';
 import QueueDashboard from '../components/workflow/QueueDashboard';
+import StatTile from '../components/workflow/StatTile';
 import { useAuth } from '../context/AuthContext';
+import { Hourglass, DoorOpen, Stethoscope, CheckCircle2, Users, ClipboardList, UserPlus, Search } from 'lucide-react';
 
 // Queue summary cards. The `key` for each card MUST be a canonical workflow
 // engine state (hyphenated vocab from server/workflow-engine.js STATES, mirrored
@@ -18,14 +20,16 @@ import { useAuth } from '../context/AuthContext';
 // test/unit/dashboard-queue-config.test.js asserts every key below is a member
 // of the canonical STATE_CONFIG key set (single source of truth).
 //
-// `accent`/`dot` are presentation-only Measured Canon brand classes layered on
-// the .mc-stat-card surface. `key` + `label` are unchanged (the test parses
-// `key:` and asserts the four canonical states + four-card count).
+// `icon`/`tone` are presentation-only Measured Canon props consumed by the
+// StatTile primitive (lucide-react icon + on-brand state color). `key` + `label`
+// are unchanged (the test parses `key:` and asserts the four canonical states +
+// four-card count). `tone` is disciplined: gold marks the single live attention
+// beat (Waiting), navy carries in-flight authority, success marks complete.
 const QUEUE_CONFIG = [
-  { key: 'checked-in', label: 'Waiting', accent: 'text-gold-600', dot: 'bg-gold-500', icon: '⏳' },
-  { key: 'roomed', label: 'Roomed', accent: 'text-slate-600', dot: 'bg-slate-400', icon: '🚪' },
-  { key: 'provider-examining', label: 'With Provider', accent: 'text-navy-600', dot: 'bg-navy-500', icon: '👨‍⚕️' },
-  { key: 'signed', label: 'Signed', accent: 'text-success-600', dot: 'bg-success-500', icon: '✅' },
+  { key: 'checked-in', label: 'Waiting', tone: 'gold', icon: Hourglass },
+  { key: 'roomed', label: 'Roomed', tone: 'slate', icon: DoorOpen },
+  { key: 'provider-examining', label: 'With Provider', tone: 'navy', icon: Stethoscope },
+  { key: 'signed', label: 'Signed', tone: 'success', icon: CheckCircle2 },
 ];
 
 const NEW_PATIENT_FIELDS = [
@@ -191,32 +195,29 @@ export default function DashboardPage() {
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2.5 text-sm">
-            <span className="inline-flex items-center gap-2 rounded-full border border-navy-100 bg-navy-50 px-3.5 py-1.5 font-medium text-navy-700">
-              <span className="text-base" aria-hidden="true">{'👥'}</span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-navy-100 bg-navy-50 px-3.5 py-1.5 font-medium text-navy-700 shadow-mc">
+              <Users size={15} strokeWidth={2.25} className="text-navy-600" aria-hidden="true" />
               {dashboard?.patient_count ?? patients.length} Patients
             </span>
-            <span className="inline-flex items-center gap-2 rounded-full border border-success-100 bg-success-50 px-3.5 py-1.5 font-medium text-success-700">
-              <span className="text-base" aria-hidden="true">{'📋'}</span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-success-100 bg-success-50 px-3.5 py-1.5 font-medium text-success-700 shadow-mc">
+              <ClipboardList size={15} strokeWidth={2.25} className="text-success-600" aria-hidden="true" />
               {dashboard?.active_encounters ?? 0} Active Encounters
             </span>
           </div>
         </header>
 
-        {/* Queue count summary cards */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Queue count summary cards — redesigned KPI tiles (lucide icon in a
+            tinted chip, large serif number, no arbitrary dots). Gold tone on
+            "Waiting" is the dashboard's single live attention beat. */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {QUEUE_CONFIG.map((q) => (
-            <div key={q.key} className="mc-stat-card mc-card-hover">
-              <div className="flex items-center justify-between">
-                <span className="text-xl leading-none" aria-hidden="true">{q.icon}</span>
-                <span className={`h-2 w-2 rounded-full ${q.dot}`} aria-hidden="true" />
-              </div>
-              <div className={`mt-1 font-display text-3xl font-semibold tabular-nums ${q.accent}`}>
-                {queueCounts[q.key] ?? 0}
-              </div>
-              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                {q.label}
-              </div>
-            </div>
+            <StatTile
+              key={q.key}
+              icon={q.icon}
+              label={q.label}
+              tone={q.tone}
+              value={queueCounts[q.key] ?? 0}
+            />
           ))}
         </div>
 
@@ -232,16 +233,22 @@ export default function DashboardPage() {
                     type="button"
                     variant="primary"
                     size="sm"
-                    icon="+"
+                    icon={<UserPlus size={16} strokeWidth={2.25} />}
                     onClick={() => setShowNewPatient(true)}
                   >
                     Add New Patient
                   </TouchButton>
                 </div>
-                <div className="mt-3">
+                <div className="relative mt-3">
+                  <Search
+                    size={16}
+                    strokeWidth={2}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    aria-hidden="true"
+                  />
                   <input
                     type="text"
-                    className="input-clinical w-full"
+                    className="input-clinical w-full pl-9"
                     placeholder="Search by name or MRN..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -265,7 +272,7 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={patient.id}
-                          className="flex items-center gap-3 py-3 px-1 hover:bg-ivory-200 rounded-lg transition-colors group"
+                          className="flex items-center gap-3 rounded-xl px-2 py-3 transition-all duration-150 hover:bg-ivory-200 hover:shadow-mc group"
                         >
                           {/* Avatar */}
                           <button
@@ -293,9 +300,10 @@ export default function DashboardPage() {
                             </div>
                           </button>
 
-                          {/* New Visit Button */}
+                          {/* New Visit — a PRIMARY action, navy filled (not
+                              success-green; green is reserved for complete states). */}
                           <TouchButton
-                            variant="success"
+                            variant="primary"
                             size="sm"
                             loading={startingVisit === patient.id}
                             disabled={startingVisit !== null}

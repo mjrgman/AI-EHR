@@ -179,8 +179,10 @@ export default function PreVisitPanel({ patientId, encounterId }) {
     <div className="bg-offWhite-100 rounded-xl border border-slate-100 shadow-mc overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-offWhite-100 to-navy-50">
-        <div className="flex items-center gap-2">
-          <FileText size={20} className="text-navy-600" />
+        <div className="flex items-center gap-2.5">
+          <span className="grid place-items-center w-9 h-9 rounded-xl bg-navy-50 text-navy-600 shadow-mc">
+            <FileText size={18} />
+          </span>
           <div>
             <h3 className="font-display text-sm font-semibold tracking-tight text-navy-700">Pre-Visit Intelligence Briefing</h3>
             <p className="text-xs text-slate-500">Synopsis-based patient preparation</p>

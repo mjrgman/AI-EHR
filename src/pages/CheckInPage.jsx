@@ -11,6 +11,13 @@ import AllergyBadges from '../components/patient/AllergyBadges';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { useToast } from '../components/common/Toast';
+import {
+  ArrowLeft,
+  AlertTriangle,
+  ShieldCheck,
+  Clock,
+  Send,
+} from 'lucide-react';
 
 const APPOINTMENT_TYPES = [
   'Follow-Up',
@@ -137,6 +144,7 @@ export default function CheckInPage() {
         <TouchButton
           variant="secondary"
           className="mt-4"
+          icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
           onClick={() => navigate('/')}
         >
           Back to Dashboard
@@ -158,9 +166,10 @@ export default function CheckInPage() {
           <TouchButton
             variant="ghost"
             size="sm"
+            icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
             onClick={() => navigate('/')}
           >
-            &larr; Dashboard
+            Dashboard
           </TouchButton>
           <WorkflowTracker
             timeline={timeline}
@@ -172,15 +181,16 @@ export default function CheckInPage() {
         {/* Arrival Timestamp */}
         <div className="flex items-center gap-2 text-sm text-slate-600">
           <Badge variant="info">Arrived</Badge>
+          <Clock className="w-3.5 h-3.5 text-slate-400" strokeWidth={2} aria-hidden="true" />
           <span className="font-medium tabular-nums">{formatTimestamp(arrivalTime)}</span>
         </div>
 
         {/* Allergy Alerts — prominent danger treatment */}
         {!isLoading && (
           hasAllergies ? (
-            <div className="rounded-2xl border-2 border-danger-300 bg-danger-50 shadow-mc overflow-hidden">
+            <div className="rounded-2xl border-2 border-danger-300 bg-danger-50 shadow-mc-lg overflow-hidden">
               <div className="flex items-center gap-2 bg-danger-500 px-5 py-2.5">
-                <span className="text-white text-base leading-none" aria-hidden="true">&#x26A0;</span>
+                <AlertTriangle className="w-4 h-4 text-white flex-shrink-0" strokeWidth={2.5} aria-hidden="true" />
                 <h3 className="font-display text-sm font-bold uppercase tracking-[0.12em] text-white m-0">
                   Allergy Alerts
                 </h3>
@@ -198,7 +208,8 @@ export default function CheckInPage() {
                 <h3 className="section-header m-0">Allergy Alerts</h3>
               </CardHeader>
               <CardBody>
-                <p className="text-success-700 bg-success-50 border border-success-100 rounded-lg px-3 py-2 text-sm font-medium">
+                <p className="inline-flex items-center gap-2 text-success-700 bg-success-50 border border-success-100 rounded-lg px-3 py-2 text-sm font-medium">
+                  <ShieldCheck className="w-4 h-4 flex-shrink-0" strokeWidth={2.25} aria-hidden="true" />
                   No known allergies (NKA)
                 </p>
               </CardBody>
@@ -336,6 +347,7 @@ export default function CheckInPage() {
                     variant="success"
                     size="lg"
                     className="flex-1"
+                    icon={<Send className="w-5 h-5" strokeWidth={2.25} />}
                     onClick={handleCheckIn}
                     loading={submitting}
                     disabled={submitting || !chiefComplaint.trim()}

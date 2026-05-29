@@ -11,6 +11,14 @@ import Badge from '../components/common/Badge';
 import PatientBanner from '../components/patient/PatientBanner';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Check,
+  Printer,
+  Sparkles,
+  CalendarClock,
+} from 'lucide-react';
 
 const FOLLOW_UP_INTERVALS = [
   { label: '1 week', days: 7 },
@@ -181,10 +189,8 @@ export default function CheckOutPage() {
             <Card>
               <CardBody className="text-center py-10">
                 {/* Animated checkmark */}
-                <div className="animate-checkmark inline-flex items-center justify-center w-20 h-20 rounded-full bg-success-100 mb-5">
-                  <svg className="w-10 h-10 text-success-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
+                <div className="animate-checkmark inline-flex items-center justify-center w-20 h-20 rounded-full bg-success-100 ring-4 ring-success-50 mb-5">
+                  <Check className="w-10 h-10 text-success-600" strokeWidth={3} aria-hidden="true" />
                 </div>
 
                 <h2 className="font-display text-2xl font-semibold text-navy-700 mb-1">Encounter Complete</h2>
@@ -269,10 +275,20 @@ export default function CheckOutPage() {
 
                 {/* Action buttons (hidden on print) */}
                 <div className="no-print space-y-2">
-                  <TouchButton variant="secondary" onClick={handlePrint} className="w-full">
+                  <TouchButton
+                    variant="secondary"
+                    icon={<Printer className="w-4 h-4" strokeWidth={2.25} />}
+                    onClick={handlePrint}
+                    className="w-full"
+                  >
                     Print After-Visit Summary
                   </TouchButton>
-                  <TouchButton variant="primary" onClick={() => navigate('/')} className="w-full">
+                  <TouchButton
+                    variant="primary"
+                    icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
+                    onClick={() => navigate('/')}
+                    className="w-full"
+                  >
                     Back to Dashboard
                   </TouchButton>
                 </div>
@@ -298,18 +314,21 @@ export default function CheckOutPage() {
 
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => navigate('/review/' + encounterId)}>
-            &#x2190; Back to Review
+          <TouchButton
+            variant="secondary"
+            size="sm"
+            icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
+            onClick={() => navigate('/review/' + encounterId)}
+          >
+            Back to Review
           </TouchButton>
           <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} />
         </div>
 
         {/* Signed confirmation banner */}
-        <div className="bg-success-50 border border-success-100 rounded-xl p-4 flex items-center gap-3 shadow-mc">
-          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-success-100 flex items-center justify-center">
-            <svg className="w-5 h-5 text-success-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+        <div className="bg-success-50 border border-success-100 rounded-xl p-4 flex items-center gap-3 shadow-mc-lg">
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-success-100 ring-2 ring-success-50 flex items-center justify-center">
+            <CheckCircle2 className="w-5 h-5 text-success-600" strokeWidth={2.5} aria-hidden="true" />
           </div>
           <div>
             <p className="font-semibold text-success-700">Encounter Signed</p>
@@ -410,7 +429,8 @@ export default function CheckOutPage() {
               </div>
             </div>
             {followUpDate && (
-              <p className="text-sm text-slate-600 mt-2">
+              <p className="inline-flex items-center gap-1.5 text-sm text-slate-600 mt-2">
+                <CalendarClock className="w-4 h-4 text-slate-400" strokeWidth={2} aria-hidden="true" />
                 Follow-up scheduled for <span className="font-semibold text-navy-700">{formatDate(followUpDate)}</span>
               </p>
             )}
@@ -428,7 +448,10 @@ export default function CheckOutPage() {
                 {/* Suggested level badge */}
                 <div className="bg-navy-50 border border-navy-100 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-semibold text-gold-600 uppercase tracking-wide">AI Suggestion</span>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gold-600 uppercase tracking-wide">
+                      <Sparkles className="w-3.5 h-3.5 text-gold-500" strokeWidth={2.25} aria-hidden="true" />
+                      AI Suggestion
+                    </span>
                     <span className="font-bold text-navy-700 text-base">{charge.em_suggestion.code}</span>
                     <Badge variant="routine" className="capitalize">{charge.em_suggestion.mdmLevel} complexity</Badge>
                     <span className="text-xs text-slate-600">{charge.em_suggestion.rvu} wRVU</span>
@@ -499,6 +522,7 @@ export default function CheckOutPage() {
         {/* Complete Checkout */}
         <TouchButton
           variant="success"
+          icon={<Check className="w-5 h-5" strokeWidth={2.5} />}
           onClick={handleCheckOut}
           loading={checkingOut}
           className="w-full"

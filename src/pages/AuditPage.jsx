@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  ShieldCheck, FileText, Lock, Users, AlertTriangle, Search,
+  RefreshCw, Download, X,
+} from 'lucide-react';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import Badge from '../components/common/Badge';
+import StatTile from '../components/workflow/StatTile';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import api, { safeLog } from '../api/client';
 
@@ -29,26 +34,6 @@ const RESOURCE_OPTIONS = [
 // ==========================================
 // HELPER COMPONENTS
 // ==========================================
-
-function StatCard({ label, value, icon, accent = 'blue' }) {
-  const accents = {
-    blue: 'border-navy-500 bg-navy-50 text-navy-700',
-    amber: 'border-gold-500 bg-gold-50 text-gold-700',
-    green: 'border-success-500 bg-success-50 text-success-700',
-    red: 'border-danger-500 bg-danger-50 text-danger-700',
-  };
-  return (
-    <div className={`rounded-xl border-l-4 p-4 shadow-mc ${accents[accent]}`}>
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider opacity-70">{label}</p>
-          <p className="mt-1 text-2xl font-bold">{value ?? '-'}</p>
-        </div>
-        <span className="text-2xl opacity-40">{icon}</span>
-      </div>
-    </div>
-  );
-}
 
 function formatTimestamp(ts) {
   if (!ts) return '-';
@@ -116,9 +101,7 @@ function AuditDetailPanel({ log, onClose }) {
             aria-label="Close audit detail"
             className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-ivory-200 hover:text-slate-600"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X size={20} strokeWidth={2} aria-hidden="true" />
           </button>
         </div>
 
@@ -129,10 +112,8 @@ function AuditDetailPanel({ log, onClose }) {
             <StatusDot code={log.response_status} />
             <span className="text-xs text-slate-500">HTTP {log.response_status}</span>
             {log.phi_accessed ? (
-              <span className="ml-auto flex items-center gap-1 text-xs font-medium text-gold-700">
-                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                </svg>
+              <span className="ml-auto flex items-center gap-1 rounded-md border border-danger-200 bg-danger-50 px-2 py-0.5 text-xs font-semibold text-danger-700">
+                <Lock size={13} strokeWidth={2.5} aria-hidden="true" />
                 PHI
               </span>
             ) : null}
@@ -154,7 +135,7 @@ function AuditDetailPanel({ log, onClose }) {
               <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">PHI Fields Accessed</p>
               <div className="flex flex-wrap gap-1.5">
                 {phiFields.map(f => (
-                  <span key={f} className="rounded-md border border-gold-200 bg-gold-50 px-2 py-0.5 font-mono text-xs text-gold-700">{f}</span>
+                  <span key={f} className="rounded-md border border-danger-200 bg-danger-50 px-2 py-0.5 font-mono text-xs text-danger-700">{f}</span>
                 ))}
               </div>
             </div>
@@ -291,10 +272,10 @@ export default function AuditPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="mc-page-title flex items-center gap-2">
-            <svg className="h-6 w-6 text-gold-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+          <h1 className="mc-page-title flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <ShieldCheck size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
             Audit Log
           </h1>
           <p className="mt-1 text-sm text-slate-500">HIPAA compliance trail &middot; All system activity</p>
@@ -306,39 +287,26 @@ export default function AuditPage() {
             aria-label="Refresh audit log"
             className="rounded-lg px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-ivory-200 hover:text-navy-700"
             title="Refresh">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
+            <RefreshCw size={16} strokeWidth={2} aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={handleExport}
-            className="flex items-center gap-1.5 rounded-lg bg-navy-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-700">
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+            className="flex items-center gap-1.5 rounded-lg bg-navy-600 px-3 py-2 text-sm font-medium text-white shadow-mc transition-all hover:bg-navy-700 hover:shadow-mc-lg">
+            <Download size={16} strokeWidth={2} aria-hidden="true" />
             Export CSV
           </button>
         </div>
       </div>
 
-      {/* Stats bar */}
+      {/* Stats bar — StatTile hierarchy; PHI is the single gold moment (the
+          audit's whole reason to exist), error count carries danger. */}
       {stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard label="Total Events" value={stats.total_events?.toLocaleString()} icon="#" accent="blue" />
-          <StatCard label="PHI Accesses" value={stats.phi_access_count?.toLocaleString()} icon="!" accent="amber" />
-          <StatCard
-            label="Unique Users"
-            value={stats.by_user?.length || 0}
-            icon="@"
-            accent="green"
-          />
-          <StatCard
-            label="Errors"
-            value={stats.recent_errors?.length || 0}
-            icon="X"
-            accent="red"
-          />
+          <StatTile icon={FileText} label="Total Events" value={stats.total_events?.toLocaleString() ?? '-'} tone="navy" />
+          <StatTile icon={Lock} label="PHI Accesses" value={stats.phi_access_count?.toLocaleString() ?? '-'} tone="gold" />
+          <StatTile icon={Users} label="Unique Users" value={stats.by_user?.length || 0} tone="slate" />
+          <StatTile icon={AlertTriangle} label="Errors" value={stats.recent_errors?.length || 0} tone="danger" />
         </div>
       )}
 
@@ -348,9 +316,7 @@ export default function AuditPage() {
           <div className="flex flex-wrap items-center gap-2">
             {/* Search */}
             <div className="relative min-w-[200px] flex-1">
-              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
+              <Search size={16} strokeWidth={2} aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 ref={searchRef}
                 type="text"
@@ -378,10 +344,8 @@ export default function AuditPage() {
             {/* PHI toggle */}
             <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors hover:bg-ivory-200">
               <input type="checkbox" checked={filters.phi_only} onChange={e => updateFilter('phi_only', e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-gold-600 focus:ring-gold-500" />
-              <svg className="h-3.5 w-3.5 text-gold-600" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-              </svg>
+                className="h-3.5 w-3.5 rounded border-slate-300 text-danger-600 focus:ring-danger-500" />
+              <Lock size={14} strokeWidth={2.25} aria-hidden="true" className="text-danger-600" />
               <span className="text-slate-600">PHI Only</span>
             </label>
 
@@ -416,9 +380,7 @@ export default function AuditPage() {
           <LoadingSpinner message="Loading audit trail..." />
         ) : logs.length === 0 ? (
           <div className="py-16 text-center">
-            <svg className="mx-auto mb-3 h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+            <FileText size={48} strokeWidth={1.5} aria-hidden="true" className="mx-auto mb-3 text-slate-300" />
             <p className="text-sm text-slate-500">No audit entries found</p>
             {hasActiveFilters && (
               <button onClick={clearFilters} className="mt-2 text-sm font-medium text-navy-600 hover:text-navy-700">
@@ -481,9 +443,7 @@ export default function AuditPage() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       {log.phi_accessed ? (
-                        <svg className="mx-auto h-4 w-4 text-gold-600" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                        </svg>
+                        <Lock size={16} strokeWidth={2.25} aria-label="PHI accessed" className="mx-auto text-danger-600" />
                       ) : (
                         <span className="text-slate-200">-</span>
                       )}

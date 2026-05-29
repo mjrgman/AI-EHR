@@ -1,4 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  CalendarDays, Pill, FlaskConical, MessageSquare, Stethoscope,
+  ClipboardCheck, CheckCircle2, LogOut, ShieldCheck,
+} from 'lucide-react';
 import { portalApi } from '../api/client';
 
 const TABS = [
@@ -72,16 +76,25 @@ function VerifyIdentity({ loading, error, onVerify }) {
             Portal access runs on a dedicated patient session. Once verified, every refill request, secure message, and triage submission is tied to your server-side portal identity.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-navy-100 bg-navy-50 p-4">
+            <div className="rounded-2xl border border-navy-100 bg-navy-50 p-4 shadow-mc">
+              <span className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-navy-100 text-navy-700">
+                <CalendarDays size={16} strokeWidth={2} aria-hidden="true" />
+              </span>
               <p className="text-xs font-semibold uppercase tracking-wide text-navy-700">Appointments</p>
               <p className="mt-2 text-sm text-slate-600">Check upcoming visits and self check-in when available.</p>
             </div>
-            <div className="rounded-2xl border border-success-100 bg-success-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-success-700">Messaging</p>
+            <div className="rounded-2xl border border-navy-100 bg-navy-50 p-4 shadow-mc">
+              <span className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-navy-100 text-navy-700">
+                <MessageSquare size={16} strokeWidth={2} aria-hidden="true" />
+              </span>
+              <p className="text-xs font-semibold uppercase tracking-wide text-navy-700">Messaging</p>
               <p className="mt-2 text-sm text-slate-600">Secure refill and care-team requests persist into the shared workflow.</p>
             </div>
-            <div className="rounded-2xl border border-gold-200 bg-gold-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gold-700">Triage</p>
+            <div className="rounded-2xl border border-navy-100 bg-navy-50 p-4 shadow-mc">
+              <span className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-navy-100 text-navy-700">
+                <Stethoscope size={16} strokeWidth={2} aria-hidden="true" />
+              </span>
+              <p className="text-xs font-semibold uppercase tracking-wide text-navy-700">Triage</p>
               <p className="mt-2 text-sm text-slate-600">Report symptoms with a severity score so the team can route urgent follow-up.</p>
             </div>
           </div>
@@ -133,8 +146,11 @@ function DashboardView({ appointments, medications, labs, patientName }) {
 
   return (
     <div className="mc-reveal-stagger grid gap-4 lg:grid-cols-3">
-      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
-        <p className="text-sm font-semibold uppercase tracking-wide text-gold-700">Welcome</p>
+      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-xl">
+        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <CalendarDays size={16} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
+          Welcome
+        </p>
         <h3 className="mt-2 font-display text-2xl font-semibold text-navy-700">{patientName}</h3>
         {upcoming ? (
           <div className="mt-5 rounded-2xl border border-navy-100 bg-navy-50 p-4">
@@ -146,17 +162,23 @@ function DashboardView({ appointments, medications, labs, patientName }) {
           <p className="mt-5 text-sm text-slate-600">No upcoming appointments are scheduled.</p>
         )}
       </div>
-      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
-        <p className="text-sm font-semibold uppercase tracking-wide text-success-700">Medications</p>
+      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-xl">
+        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <Pill size={16} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
+          Medications
+        </p>
         <p className="mt-3 font-display text-4xl font-semibold text-navy-700">{medications.length}</p>
         <p className="mt-1 text-sm text-slate-600">Active medications on file</p>
         <p className="mt-5 text-sm text-slate-600">{refillPending.length} refill requests currently under review.</p>
       </div>
-      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
-        <p className="text-sm font-semibold uppercase tracking-wide text-gold-700">Lab results</p>
+      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-xl">
+        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
+          <FlaskConical size={16} strokeWidth={2} aria-hidden="true" className={abnormalLabs.length > 0 ? 'text-gold-600' : 'text-navy-600'} />
+          Lab results
+        </p>
         <p className="mt-3 font-display text-4xl font-semibold text-navy-700">{labs.length}</p>
         <p className="mt-1 text-sm text-slate-600">Recent results available</p>
-        <p className="mt-5 text-sm text-slate-600">{abnormalLabs.length} flagged results need clinician review.</p>
+        <p className={`mt-5 text-sm font-medium ${abnormalLabs.length > 0 ? 'text-gold-700' : 'text-slate-600'}`}>{abnormalLabs.length} flagged results need clinician review.</p>
       </div>
     </div>
   );
@@ -322,8 +344,9 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
                     <button
                       onClick={() => checkInAppointment(appointment.id)}
                       disabled={activeCheckInId === appointment.id}
-                      className="rounded-xl bg-success-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-success-700 disabled:bg-success-300"
+                      className="flex items-center gap-1.5 rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white shadow-mc transition hover:bg-navy-700 hover:shadow-mc-lg disabled:bg-slate-400"
                     >
+                      <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" />
                       {activeCheckInId === appointment.id ? 'Checking in...' : 'Check in'}
                     </button>
                   ) : null}
@@ -502,8 +525,9 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
       <button
         type="submit"
         disabled={submitting}
-        className="mt-6 rounded-2xl bg-danger-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-danger-700 disabled:bg-danger-300"
+        className="mt-6 flex items-center gap-1.5 rounded-2xl bg-navy-600 px-5 py-3 text-base font-semibold text-white shadow-mc transition hover:bg-navy-700 hover:shadow-mc-lg disabled:bg-slate-400"
       >
+        <Stethoscope size={18} strokeWidth={2} aria-hidden="true" />
         {submitting ? 'Submitting...' : 'Send symptom report'}
       </button>
     </form>
@@ -512,12 +536,15 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
 
 function VisitPrepView({ checklist }) {
   return (
-    <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
-      <h3 className="font-display text-2xl font-semibold text-navy-700">Visit checklist</h3>
+    <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg">
+      <h3 className="flex items-center gap-2 font-display text-2xl font-semibold text-navy-700">
+        <ClipboardCheck size={22} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
+        Visit checklist
+      </h3>
       <ul className="mt-5 space-y-3">
         {checklist.map((item) => (
           <li className="flex items-start gap-3 text-sm leading-6 text-slate-700" key={item}>
-            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-gold-500" />
+            <CheckCircle2 size={18} strokeWidth={2} aria-hidden="true" className="mt-0.5 flex-shrink-0 text-success-600" />
             <span>{item}</span>
           </li>
         ))}
@@ -728,7 +755,7 @@ export default function PatientPortal() {
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-gold-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-gold-500" aria-hidden="true" />
+              <ShieldCheck size={15} strokeWidth={2.25} aria-hidden="true" className="text-gold-600" />
               Patient Portal
             </p>
             <h1 className="mt-2 font-display text-3xl font-semibold text-navy-700">{patientName}</h1>
@@ -736,8 +763,9 @@ export default function PatientPortal() {
           </div>
           <button
             onClick={handleLogout}
-            className="rounded-2xl border border-slate-200 bg-offWhite-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-ivory-200"
+            className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-offWhite-100 px-4 py-2 text-sm font-semibold text-slate-700 shadow-mc transition hover:border-slate-300 hover:bg-ivory-200"
           >
+            <LogOut size={15} strokeWidth={2} aria-hidden="true" />
             End portal session
           </button>
         </div>

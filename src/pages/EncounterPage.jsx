@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft, Mic, Square, FileText, Save, Sparkles, ClipboardCheck,
+  Pill, FlaskConical, Camera, Send, Download, RefreshCw, CheckCircle2,
+} from 'lucide-react';
 import api, { safeLog } from '../api/client';
 import { exportPatient as exportMediVaultPatient } from '../api/medivault';
 import { usePatient } from '../hooks/usePatient';
@@ -108,8 +112,8 @@ function RxModalForm({ onSubmit, onClose }) {
           onChange={e => set('instructions', e.target.value)} placeholder="Take with food..." />
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
-        <TouchButton variant="success" size="sm"
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="primary" size="sm"
           disabled={!form.medication_name || !form.dose}
           onClick={() => onSubmit(form)}>
           Add Prescription
@@ -159,7 +163,7 @@ function LabModalForm({ onSubmit, onClose }) {
           onChange={e => set('special_instructions', e.target.value)} />
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
         <TouchButton variant="primary" size="sm" disabled={!form.test_name}
           onClick={() => onSubmit(form)}>
           Add Lab Order
@@ -213,7 +217,7 @@ function ImagingModalForm({ onSubmit, onClose }) {
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
         <TouchButton variant="primary" size="sm"
           disabled={!form.body_part || !form.indication}
           onClick={() => onSubmit(form)}>
@@ -255,8 +259,8 @@ function ReferralModalForm({ onSubmit, onClose }) {
           onChange={e => set('notes', e.target.value)} />
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
-        <TouchButton variant="warning" size="sm"
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="primary" size="sm"
           disabled={!form.specialty || !form.reason}
           onClick={() => onSubmit(form)}>
           Add Referral
@@ -664,7 +668,9 @@ export default function EncounterPage() {
           <span className="text-xs text-slate-400">Saving...</span>
         )}
         {autoSaveStatus === 'saved' && (
-          <span className="text-xs font-medium text-success-600">Saved</span>
+          <span className="flex items-center gap-1 text-xs font-medium text-success-600">
+            <CheckCircle2 size={13} /> Saved
+          </span>
         )}
       </div>
 
@@ -700,6 +706,7 @@ export default function EncounterPage() {
               <TouchButton
                 variant={speech.isListening ? 'danger' : 'primary'}
                 size="sm"
+                icon={speech.isListening ? <Square size={16} /> : <Mic size={16} />}
                 onClick={speech.isListening ? speech.stopListening : speech.startListening}
               >
                 {speech.isListening ? 'Stop Recording' : 'Record'}
@@ -707,6 +714,7 @@ export default function EncounterPage() {
             )}
             <TouchButton
               variant="secondary" size="sm"
+              icon={<Sparkles size={16} />}
               onClick={handleExtract} loading={extracting}
               disabled={!transcript.trim()}
             >
@@ -714,6 +722,7 @@ export default function EncounterPage() {
             </TouchButton>
             <TouchButton
               variant="secondary" size="sm"
+              icon={<FileText size={16} />}
               onClick={handleGenerateNote} loading={generating}
               disabled={!transcript.trim()}
             >
@@ -721,6 +730,7 @@ export default function EncounterPage() {
             </TouchButton>
             <TouchButton
               variant="secondary" size="sm"
+              icon={<Save size={16} />}
               onClick={handleSaveTranscript}
               disabled={!transcript.trim()}
             >
@@ -829,19 +839,21 @@ export default function EncounterPage() {
           </div>
         </CardHeader>
         <CardBody className="space-y-4">
-          {/* 4 order type buttons */}
+          {/* Order-entry actions. Disciplined semantics: the two highest-frequency
+              orders (Rx, Lab) are NAVY primary; Imaging + Referral are matching
+              ivory/slate OUTLINE secondaries — one consistent treatment, no rainbow. */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <TouchButton variant="success" size="sm" onClick={() => setActiveModal('rx')}>
-              + Add Rx
+            <TouchButton variant="primary" size="sm" icon={<Pill size={16} />} onClick={() => setActiveModal('rx')}>
+              Add Rx
             </TouchButton>
-            <TouchButton variant="primary" size="sm" onClick={() => setActiveModal('lab')}>
-              + Add Lab
+            <TouchButton variant="primary" size="sm" icon={<FlaskConical size={16} />} onClick={() => setActiveModal('lab')}>
+              Add Lab
             </TouchButton>
-            <TouchButton variant="secondary" size="sm" onClick={() => setActiveModal('imaging')}>
-              + Add Imaging
+            <TouchButton variant="secondary" size="sm" icon={<Camera size={16} />} onClick={() => setActiveModal('imaging')}>
+              Add Imaging
             </TouchButton>
-            <TouchButton variant="warning" size="sm" onClick={() => setActiveModal('referral')}>
-              + Add Referral
+            <TouchButton variant="secondary" size="sm" icon={<Send size={16} />} onClick={() => setActiveModal('referral')}>
+              Add Referral
             </TouchButton>
           </div>
 
@@ -902,11 +914,16 @@ export default function EncounterPage() {
         </CardBody>
       </Card>
 
-      {/* Review & Sign + MediVault Export Buttons */}
+      {/* Review & Sign + MediVault Export Buttons.
+          Review & Sign is the encounter's positive/complete moment — confident
+          brand success green, with an icon to reinforce it. Export is a quiet
+          secondary so it never competes with the primary path. */}
       <div className="flex gap-3 pb-4">
         <TouchButton
           variant="success"
+          size="lg"
           className="flex-1"
+          icon={<ClipboardCheck size={18} />}
           onClick={() => navigate('/review/' + encounterId)}
           disabled={!canReviewSign}
         >
@@ -914,6 +931,8 @@ export default function EncounterPage() {
         </TouchButton>
         <TouchButton
           variant="secondary"
+          size="lg"
+          icon={<Download size={16} />}
           onClick={handleMediVaultExport}
           disabled={!(encounter?.patient_id || patient?.id)}
           title="Download this patient's full record as a FHIR R4 Bundle (patient-owned)"
@@ -966,7 +985,7 @@ export default function EncounterPage() {
 
       {/* Re-evaluate button */}
       <div className="pt-2">
-        <TouchButton variant="secondary" size="sm" className="w-full" onClick={evaluate}>
+        <TouchButton variant="secondary" size="sm" className="w-full" icon={<RefreshCw size={15} />} onClick={evaluate}>
           Re-evaluate CDS
         </TouchButton>
       </div>
@@ -983,8 +1002,8 @@ export default function EncounterPage() {
 
       {/* Workflow Bar */}
       <div className="bg-offWhite-100 border-b border-slate-100 px-4 py-2 flex items-center justify-between">
-        <TouchButton variant="secondary" size="sm" onClick={() => navigate('/')}>
-          &#x2190; Dashboard
+        <TouchButton variant="ghost" size="sm" icon={<ArrowLeft size={16} />} onClick={() => navigate('/')}>
+          Dashboard
         </TouchButton>
         <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} compact />
       </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { AlertTriangle } from 'lucide-react';
 import Badge from '../common/Badge';
 
 function calcAge(dob) {
@@ -30,9 +31,9 @@ export default function PatientBanner({ patient, compact = false }) {
           </div>
         </div>
         {allergies.length > 0 && (
-          <div className="flex items-center gap-2 rounded-xl border border-danger-200 bg-danger-50 px-3 py-1.5">
-            <span className="flex items-center gap-1 text-sm font-semibold uppercase tracking-wide text-danger-600">
-              <span aria-hidden="true">&#x26A0;</span> Allergies
+          <div className="flex items-center gap-2 rounded-xl border border-danger-200 bg-danger-50 px-3 py-1.5 shadow-mc">
+            <span className="flex items-center gap-1.5 text-sm font-semibold uppercase tracking-wide text-danger-700">
+              <AlertTriangle size={15} strokeWidth={2.5} aria-hidden="true" /> Allergies
             </span>
             <div className="flex flex-wrap items-center gap-1.5">
               {allergies.map((a, i) => <Badge key={a.id || a.allergen || i} variant="danger">{a.allergen}</Badge>)}

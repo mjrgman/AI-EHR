@@ -59,6 +59,7 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 12px rgba(26,58,82,0.07), 0 24px 64px rgba(26,58,82,0.22)' }}
         className={`relative bg-offWhite-100 rounded-2xl shadow-mc-xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}
       >
         {title && (

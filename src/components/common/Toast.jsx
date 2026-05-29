@@ -35,7 +35,10 @@ function ToastItem({ toast, onRemove }) {
   }, [toast, onRemove]);
 
   return (
-    <div className={`${exiting ? 'toast-exit' : 'toast-enter'} flex items-start gap-3 px-4 py-3 rounded-xl border shadow-mc-lg ${COLORS[toast.type]} max-w-sm w-full`}>
+    <div
+      style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 12px rgba(26,58,82,0.08), 0 16px 40px rgba(26,58,82,0.16)' }}
+      className={`${exiting ? 'toast-exit' : 'toast-enter'} flex items-start gap-3 px-4 py-3 rounded-xl border ${COLORS[toast.type]} max-w-sm w-full`}
+    >
       <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${ICON_COLORS[toast.type]}`}>
         {ICONS[toast.type]}
       </span>

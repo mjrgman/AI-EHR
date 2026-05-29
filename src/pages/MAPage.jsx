@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Sparkles, X, Send } from 'lucide-react';
 import api, { safeLog } from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -234,8 +235,8 @@ export default function MAPage() {
 
       {/* Workflow Bar */}
       <div className="bg-offWhite-100 border-b border-slate-100 px-4 py-2 flex items-center justify-between">
-        <TouchButton variant="secondary" size="sm" onClick={() => navigate('/')}>
-          &#x2190; Dashboard
+        <TouchButton variant="ghost" size="sm" icon={<ArrowLeft size={16} />} onClick={() => navigate('/')}>
+          Dashboard
         </TouchButton>
         <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} />
       </div>
@@ -286,8 +287,9 @@ export default function MAPage() {
                 </TouchButton>
                 {speech.transcript && (
                   <TouchButton
-                    variant="success"
+                    variant="primary"
                     size="sm"
+                    icon={<Sparkles size={16} />}
                     onClick={extractVitalsFromSpeech}
                     loading={extractingVoice}
                   >
@@ -295,7 +297,7 @@ export default function MAPage() {
                   </TouchButton>
                 )}
                 {speech.transcript && (
-                  <TouchButton variant="ghost" size="sm" onClick={speech.resetTranscript}>
+                  <TouchButton variant="ghost" size="sm" icon={<X size={15} />} onClick={speech.resetTranscript}>
                     Clear
                   </TouchButton>
                 )}
@@ -456,10 +458,12 @@ export default function MAPage() {
           </CardBody>
         </Card>
 
-        {/* Save Button */}
+        {/* Save Button — terminal complete action (vitals done, handing off to
+            the provider): confident brand success green with a send icon. */}
         <TouchButton
           variant="success"
           size="lg"
+          icon={<Send size={18} />}
           onClick={handleSave}
           loading={saving}
           className="w-full"

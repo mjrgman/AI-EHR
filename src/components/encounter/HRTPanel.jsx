@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { Syringe, BrainCircuit } from 'lucide-react';
 import Card, { CardHeader, CardBody } from '../common/Card';
 import Badge from '../common/Badge';
 import EmptyState from '../common/EmptyState';
@@ -51,7 +52,7 @@ export default function HRTPanel({
         <CardBody>
           {regimens.length === 0 ? (
             <EmptyState
-              icon={"\u{1F489}"}
+              icon={<Syringe size={26} strokeWidth={1.75} className="text-navy-400" aria-hidden="true" />}
               title="No active HRT / peptide therapies"
               message="When a hormone or peptide therapy is prescribed for this patient, it will appear here with dose, schedule, and monitoring labs due."
             />
@@ -77,7 +78,7 @@ export default function HRTPanel({
         <CardBody>
           {pendingSuggestions.length === 0 ? (
             <EmptyState
-              icon={"\u{1F9E0}"}
+              icon={<BrainCircuit size={26} strokeWidth={1.75} className="text-navy-400" aria-hidden="true" />}
               title="No pending proposals"
               message="Hormone/peptide-related CDS and Domain Logic suggestions will appear here for review before any dosing change."
             />

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Plus, ChevronRight, CalendarPlus } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useToast } from '../components/common/Toast';
@@ -187,10 +188,10 @@ export default function PatientPage() {
       <div className="mc-page mc-reveal-stagger space-y-4">
         {/* Top bar */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => navigate('/')}>
-            &#x2190; Back
+          <TouchButton variant="secondary" size="sm" icon={<ArrowLeft size={16} strokeWidth={2} />} onClick={() => navigate('/')}>
+            Back
           </TouchButton>
-          <TouchButton variant="primary" onClick={startEncounter}>
+          <TouchButton variant="primary" icon={<CalendarPlus size={18} strokeWidth={2} />} onClick={startEncounter}>
             New Encounter
           </TouchButton>
         </div>
@@ -235,8 +236,8 @@ export default function PatientPage() {
           <Card>
             <CardHeader
               action={
-                <TouchButton variant="ghost" size="sm" onClick={() => setProblemModalOpen(true)}>
-                  + Add
+                <TouchButton variant="primary" size="sm" icon={<Plus size={15} strokeWidth={2.5} />} onClick={() => setProblemModalOpen(true)}>
+                  Add
                 </TouchButton>
               }
             >
@@ -251,8 +252,8 @@ export default function PatientPage() {
           <Card>
             <CardHeader
               action={
-                <TouchButton variant="ghost" size="sm" onClick={() => setMedModalOpen(true)}>
-                  + Add
+                <TouchButton variant="primary" size="sm" icon={<Plus size={15} strokeWidth={2.5} />} onClick={() => setMedModalOpen(true)}>
+                  Add
                 </TouchButton>
               }
             >
@@ -267,8 +268,8 @@ export default function PatientPage() {
           <Card>
             <CardHeader
               action={
-                <TouchButton variant="ghost" size="sm" onClick={() => setAllergyModalOpen(true)}>
-                  + Add
+                <TouchButton variant="primary" size="sm" icon={<Plus size={15} strokeWidth={2.5} />} onClick={() => setAllergyModalOpen(true)}>
+                  Add
                 </TouchButton>
               }
             >
@@ -316,7 +317,7 @@ export default function PatientPage() {
                   {encounters.map((enc) => (
                     <div
                       key={enc.id}
-                      className="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors hover:bg-ivory-200"
+                      className="group flex cursor-pointer items-center justify-between px-5 py-3 transition-colors hover:bg-ivory-200"
                       onClick={() => goToEncounter(enc)}
                     >
                       <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -346,7 +347,7 @@ export default function PatientPage() {
                         >
                           {enc.workflow_state || enc.status || 'unknown'}
                         </Badge>
-                        <span className="text-sm text-slate-300">&#x203A;</span>
+                        <ChevronRight size={16} strokeWidth={2} aria-hidden="true" className="text-slate-300 transition-colors group-hover:text-slate-400" />
                       </div>
                     </div>
                   ))}
