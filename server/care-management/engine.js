@@ -10,7 +10,6 @@
  *            Implementation plan: docs/research/PRIMARY_CARE_IMPLEMENTATION_PLAN_2026-05-03.md §4.
  */
 
-const codes = require('./codes');
 const stacking = require('./stacking-rules');
 const eligibility = require('./eligibility');
 const { determineAPCMLevel } = require('../coding/apcm');

@@ -33,6 +33,23 @@ if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
   );
 }
 
+// sec-dev-bypass-header-12: the x-user-id / x-user-role header-trust bypass is
+// gated on NODE_ENV==='development' && ENABLE_DEV_AUTH_BYPASS==='true' (see
+// requireAuth below, plus mirrored gates in rbac.js and hipaa-middleware.js).
+// Those gates already make the bypass INERT in production (the NODE_ENV check
+// fails closed). This boot-time assertion is defense-in-depth against the
+// single-misconfig failure mode: if a production process is ever started with
+// the bypass flag set, refuse to boot rather than risk full header-trust
+// impersonation. Production must NEVER carry this flag.
+if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEV_AUTH_BYPASS === 'true') {
+  throw new Error(
+    '[AUTH] FATAL: ENABLE_DEV_AUTH_BYPASS must NOT be set in production. The ' +
+    'x-user-id/x-user-role header-trust bypass is a development-only convenience and would ' +
+    'permit unauthenticated impersonation of any role. Unset ENABLE_DEV_AUTH_BYPASS in the ' +
+    'production environment.'
+  );
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
 const BCRYPT_ROUNDS = 12;

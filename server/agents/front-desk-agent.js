@@ -81,10 +81,10 @@ class FrontDeskAgent extends BaseAgent {
    * Request info is extracted from context.requestInfo (A-H5: matches base class 2-param contract).
    *
    * @param {PatientContext} context - Must include context.requestInfo for front desk actions
-   * @param {Object} agentResults - Results from previously-run agents
+   * @param {Object} _agentResults - Results from previously-run agents
    * @returns {Promise<Object>}
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const requestInfo = context.requestInfo || {};
     // Support action from either requestInfo (direct call) or context.frontDeskRequest (pipeline)
     const fdReq = context.frontDeskRequest || {};
@@ -376,7 +376,6 @@ class FrontDeskAgent extends BaseAgent {
     const allergies = context.allergies || [];
     const labs = context.labs || [];
     const referrals = context.referrals || [];
-    const vitals = context.vitals || {};
 
     // 1. Patient Identity & Demographics
     const identity = {
@@ -538,7 +537,7 @@ class FrontDeskAgent extends BaseAgent {
   /**
    * Assess preventive care status.
    */
-  _assessPreventiveCareStatus(patient, labs, referrals) {
+  _assessPreventiveCareStatus(patient, labs, _referrals) {
     const age = this._age(patient.dob);
     const status = [];
 

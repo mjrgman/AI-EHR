@@ -34,11 +34,11 @@ function toFhirCondition(prob) {
       clinicalStatus,
       clinicalStatus
     ),
-    verificationStatus: codeableConcept(
-      'http://terminology.hl7.org/CodeSystem/condition-ver-status',
-      'confirmed',
-      'Confirmed'
-    ),
+    // verificationStatus intentionally omitted: the problems table carries no
+    // clinical-certainty column, so hardcoding 'confirmed' would assert a
+    // certainty the source data does not support. Per FHIR R4, verificationStatus
+    // is optional; omitting is more truthful than fabricating 'confirmed'.
+    // (fhir-condition-recordeddate-12)
     category: [codeableConcept(
       'http://terminology.hl7.org/CodeSystem/condition-category',
       'encounter-diagnosis',
@@ -46,6 +46,13 @@ function toFhirCondition(prob) {
     )],
     subject: reference('Patient', prob.patient_id)
   };
+
+  // recordedDate — the dateTime the condition was first recorded in the system.
+  // The problems table's created_at is the record-insertion timestamp, which is
+  // the correct FHIR semantic for recordedDate (distinct from onsetDateTime).
+  if (prob.created_at) {
+    resource.recordedDate = prob.created_at;
+  }
 
   // ICD-10-CM code
   if (prob.icd10_code) {

@@ -10,7 +10,7 @@ import {
   Bot, FileText, Shield, ClipboardList, DollarSign, Activity,
   CheckCircle, AlertCircle, Clock, ChevronDown, ChevronRight,
   Play, Loader2, AlertTriangle, Zap, Phone, UserCheck,
-  Stethoscope, Heart, User
+  Stethoscope, Heart
 } from 'lucide-react';
 import api from '../../api/client';
 

@@ -254,7 +254,7 @@ async function issueRefreshToken(clientId, userId, scopes) {
 /**
  * Log token issuance to audit_log (fire-and-forget).
  */
-async function logTokenIssued(user, grantType, scopes, ip) {
+async function logTokenIssued(user, grantType, scopes, _ip) {
   try {
     await db.dbRun(`
       INSERT INTO audit_log (
@@ -272,7 +272,7 @@ async function logTokenIssued(user, grantType, scopes, ip) {
 /**
  * Log token denial to audit_log (fire-and-forget).
  */
-async function logTokenDenied(username, reason, ip) {
+async function logTokenDenied(username, reason, _ip) {
   try {
     await db.dbRun(`
       INSERT INTO audit_log (

@@ -16,6 +16,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const { ageAsOf } = require('../utils/date-helpers');
 
 let cachedSeed = null;
 const SEED_PATH = path.join(__dirname, '..', 'seed', 'uspstf_recommendations_seed.json');
@@ -35,11 +36,10 @@ function clearCache() {
 // ==========================================
 
 function ageInYears(dob) {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  if (isNaN(birth.getTime())) return null;
-  const ageMs = Date.now() - birth.getTime();
-  return Math.floor(ageMs / (365.25 * 24 * 60 * 60 * 1000));
+  // Calendar-based completed-years age (year diff adjusted by month/day) via the
+  // shared helper, so leap-year boundaries don't off-by-one. Was previously
+  // ms/365.25 (age-calc-leap-11).
+  return ageAsOf(dob, new Date());
 }
 
 // ==========================================

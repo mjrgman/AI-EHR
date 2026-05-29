@@ -14,7 +14,7 @@
  *
  * Matching contract:
  *   - All keywords are lowercase (enforced by a unit test).
- *   - `isHrtRelevant` lowercases the concatenated hay ONCE and does a single
+ *   - `isHRTRelevant` lowercases the concatenated hay ONCE and does a single
  *     substring scan per keyword — this is cheap enough to run on every
  *     CDS suggestion render without memoization.
  *   - A missing/empty/null suggestion returns false (no hay to match).
@@ -46,7 +46,7 @@ export const HRT_KEYWORDS = [
  *   { title?, description?, rule_type?, category?, suggestion_type? }
  * @returns {boolean}
  */
-export function isHrtRelevant(suggestion) {
+export function isHRTRelevant(suggestion) {
   if (!suggestion) return false;
   const hay = [
     suggestion.title,
@@ -89,7 +89,7 @@ export const DOMAIN_KEYWORDS = {
  * @param {string|null|undefined} text — encounter transcript or note fragment
  * @returns {Array<string>} category keys from DOMAIN_KEYWORDS that matched
  */
-export function detectHrtCategories(text) {
+export function detectHRTCategories(text) {
   if (!text) return [];
   const lowered = String(text).toLowerCase();
   const matches = [];

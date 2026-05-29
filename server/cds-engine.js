@@ -43,7 +43,7 @@ function monthsSince(dateStr) {
 // EVALUATE BY RULE TYPE
 // ==========================================
 
-function evaluateVitalRules(rules, vitals, context) {
+function evaluateVitalRules(rules, vitals, _context) {
   if (!vitals || Object.keys(vitals).length === 0) return [];
   const suggestions = [];
 
@@ -267,7 +267,7 @@ function evaluateDifferentialRules(rules, chiefComplaint, transcript, context) {
   return suggestions;
 }
 
-function evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, transcript, context) {
+function evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, transcript, _context) {
   if (!medications || medications.length === 0) return [];
   const text = `${chiefComplaint || ''} ${transcript || ''}`.toLowerCase();
   const suggestions = [];
@@ -311,7 +311,7 @@ function evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, tr
   return suggestions;
 }
 
-function evaluateScreeningRules(rules, problems, labs, context) {
+function evaluateScreeningRules(rules, problems, labs, _context) {
   if (!problems || problems.length === 0) return [];
   const suggestions = [];
 

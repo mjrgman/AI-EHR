@@ -117,7 +117,7 @@ function firstCoding(codeableConcept) {
 }
 
 // FHIR gender → internal sex
-const GENDER_TO_SEX = { male: 'M', female: 'F', other: 'Other', unknown: 'Other' };
+const _GENDER_TO_SEX = { male: 'M', female: 'F', other: 'Other', unknown: 'Other' };
 
 // FHIR AllergyIntolerance criticality → internal severity
 const CRITICALITY_MAP = { low: 'mild', high: 'severe', 'unable-to-assess': 'moderate' };

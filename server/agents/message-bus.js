@@ -117,7 +117,7 @@ class MessageBus extends EventEmitter {
 
     try {
       // Persist to database
-      const result = await this.db.dbRun(
+      const _result = await this.db.dbRun(
         `INSERT INTO agent_messages
           (id, from_agent, to_agent, message_type, payload, priority, status, patient_id, encounter_id, request_id, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,

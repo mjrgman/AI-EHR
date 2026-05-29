@@ -18,7 +18,6 @@
 const { BaseAgent, AUTONOMY_TIER } = require('./base-agent');
 const { dbRun, dbGet, dbAll, getPatientById, getEncounterById,
         getPatientMedications, getPatientProblems, getPatientLabs } = require('../database');
-const { isClaudeEnabled } = require('../ai-client');
 
 // ==========================================
 // DATABASE INITIALIZATION

@@ -35,7 +35,9 @@ The physician talks. The MA talks. The patient calls. The agents listen, triage,
 
 ## III. Agent Architecture
 
-The system operates through **14 specialized agents** - 11 encounter modules and 3 patient-data governance modules - each mapped to a real human role or clinical function in the practice. Every agent has a defined scope of authority, escalation pathways, and a learning memory. The 11 encounter agents are: Phone Triage, Front Desk, MA, Physician (pre-visit), and Scribe, CDS, Domain Logic, Orders, Coding, Quality, Annual Wellness Visit (encounter pipeline). The 3 patient-data governance agents are: PatientLink, Patient App, and MediVault.
+The system is designed around **14 specialized modules** - 11 encounter modules and 3 patient-data governance modules - each mapped to a real human role or clinical function in the practice. Every module has a defined scope of authority, escalation pathways, and a learning memory. The 11 encounter modules are: Phone Triage, Front Desk, MA, Physician (pre-visit), and Scribe, CDS, Domain Logic, Orders, Coding, Quality, Annual Wellness Visit (encounter pipeline). The 3 patient-data governance modules are: PatientLink, Patient App, and MediVault.
+
+**Runtime status:** 10 of these modules are registered and run in the agent orchestrator today — Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic, Orders, Coding, and Quality. Annual Wellness Visit (`AWVAgent`), PatientLink, Patient App, and MediVault's agent pipeline are **built but not yet wired into the orchestrator** (MediVault surfaces only FHIR export today). See `MODULE_CATALOG.md` → "Runtime wiring status" for the per-module detail.
 
 ### Canonical Module Map
 
@@ -500,7 +502,7 @@ This is not a stateless system. Every agent has persistent memory.
 - Base agent class with status tracking, timing, event emission
 - Orchestrator with dependency-aware parallel execution
 - Shared patient context schema
-- Encounter runtime operational (Scribe, CDS, Orders, Coding, Quality, Annual Wellness Visit) as the foundation of the broader 14-module system
+- Encounter runtime operational (Scribe, CDS, Domain Logic, Orders, Coding, Quality) as the foundation of the broader 14-module system. Annual Wellness Visit is built (`AWVAgent`) but not yet registered in the orchestrator; AWV component checks currently run as an inline fallback in the Quality agent.
 
 **To be built:**
 - Phone Triage Agent (voice AI integration)

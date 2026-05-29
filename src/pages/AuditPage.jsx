@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import Badge from '../components/common/Badge';
 import LoadingSpinner from '../components/common/LoadingSpinner';
@@ -199,7 +198,6 @@ function AuditDetailPanel({ log, onClose }) {
 // ==========================================
 
 export default function AuditPage() {
-  const { currentRole } = useAuth();
   const navigate = useNavigate();
   const searchRef = useRef(null);
 

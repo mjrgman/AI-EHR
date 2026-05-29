@@ -4,7 +4,7 @@ import Badge from '../common/Badge';
 import EmptyState from '../common/EmptyState';
 import HRTRegimenCard from './HRTRegimenCard';
 import PeptideCalculator from './PeptideCalculator';
-import { HRT_KEYWORDS, isHrtRelevant } from '../../utils/hrt-keywords.mjs';
+import { HRT_KEYWORDS, isHRTRelevant } from '../../utils/hrt-keywords.mjs';
 
 /**
  * HRTPanel — fourth encounter tab for HRT / Peptide / functional-medicine work.
@@ -14,7 +14,7 @@ import { HRT_KEYWORDS, isHrtRelevant } from '../../utils/hrt-keywords.mjs';
  *
  *   1. Active Regimens      — list of current HRT/peptide therapies
  *   2. Proposed Changes     — CDS + Domain Logic suggestions filtered to
- *                             HRT/peptide relevance via `isHrtRelevant`
+ *                             HRT/peptide relevance via `isHRTRelevant`
  *   3. Peptide Calculator   — dose-to-U100-units math for compounded peptides
  *
  * Keyword list lives in `src/utils/hrt-keywords.mjs` so it can be shared with
@@ -27,7 +27,7 @@ export default function HRTPanel({
   suggestions = [],
 }) {
   const relevantSuggestions = useMemo(
-    () => (suggestions || []).filter(isHrtRelevant),
+    () => (suggestions || []).filter(isHRTRelevant),
     [suggestions]
   );
   const pendingSuggestions = useMemo(
@@ -115,4 +115,4 @@ export default function HRTPanel({
 
 // Re-export so existing consumers (EncounterPage) can keep their import path
 // unchanged while the canonical source of truth lives in src/utils/.
-export { HRT_KEYWORDS, isHrtRelevant };
+export { HRT_KEYWORDS, isHRTRelevant };

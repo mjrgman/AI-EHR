@@ -1,7 +1,10 @@
 /**
  * Agentic EHR Agent System — Entry Point
  *
- * 9-Agent Clinical Pipeline:
+ * 10-Agent Clinical Pipeline (the agents actually registered with the
+ * orchestrator below). The broader 14-module catalog in MODULE_CATALOG.md
+ * is a superset: AWV, PatientLink, Patient App, and MediVault are built but
+ * not registered here — they are standalone/route-driven/governance modules.
  *
  *   PRE-VISIT AGENTS (run on-demand, before patient arrives):
  *     Phone Triage Agent — call handling, symptom triage, routing
@@ -11,6 +14,7 @@
  *
  *   ENCOUNTER AGENTS (run during/after the visit):
  *     Phase 1 (parallel): Scribe + CDS
+ *     Phase 1b: Domain Logic (Tier 3 specialty layer, depends on CDS)
  *     Phase 2 (parallel): Orders + Coding
  *     Phase 3: Quality
  *
@@ -63,7 +67,9 @@ function getOrchestrator(db) {
     }
     orchestrator = new AgentOrchestrator(db);
 
-    // Register all 9 agents
+    // Register all 10 agents (4 pre-visit + 6 encounter).
+    // AWV, PatientLink, Patient App, and MediVault from the 14-module catalog
+    // are intentionally NOT registered here — they are standalone/route-driven.
     // Pre-visit agents (no encounter dependencies — run on-demand)
     orchestrator
       .register(new PhoneTriageAgent())

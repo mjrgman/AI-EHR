@@ -12,13 +12,13 @@ Repository: github.com/mjrgman/AI-EHR | Branch: main
 
 ## Executive Summary
 
-This roadmap converts the Agentic EHR from a working 14-module clinical workflow runtime (11 encounter + 3 patient-data governance) into a production-grade prototype capable of FHIR interoperability, HIPAA-compliant AI layering, and integration with existing health systems. Five gaps separate the current state from a production prototype. The system is not starting from zero — it already has a multi-agent orchestrator, CDS engine, HIPAA middleware, billing/scheduling modules, and Docker deployment.
+This roadmap converts the Agentic EHR from a 14-module clinical workflow catalog (11 encounter + 3 patient-data governance) into a production-grade prototype capable of FHIR interoperability, HIPAA-compliant AI layering, and integration with existing health systems. Of those 14 cataloged modules, 10 are registered and run in the orchestrator runtime today; the remaining 4 (AWV, PatientLink, Patient App, MediVault) are built but not yet wired into the orchestrator. Five gaps separate the current state from a production prototype. The system is not starting from zero — it already has a multi-agent orchestrator, CDS engine, HIPAA middleware, billing/scheduling modules, and Docker deployment.
 
 ## Current State
 
 The system is **not** a demo. It already has:
 
-- **Multi-agent orchestrator** (14 modules, dependency-aware parallel execution, message bus, agent memory) — see [`MODULE_CATALOG.md`](./MODULE_CATALOG.md) and [`server/agents/module-registry.js`](./server/agents/module-registry.js)
+- **Multi-agent orchestrator** (10 registered agents — Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic, Orders, Coding, Quality — with dependency-aware parallel execution, message bus, agent memory). The 14-module catalog is a superset: AWV, PatientLink, Patient App, and MediVault are built but not registered in the orchestrator (standalone/route-driven/governance). See [`MODULE_CATALOG.md`](./MODULE_CATALOG.md) and [`server/agents/module-registry.js`](./server/agents/module-registry.js)
 - **CDS engine** with rule-based evaluation, HEART score protocol, antibiotic stewardship, drug interaction checks
 - **HIPAA middleware** with AES-256-GCM field-level encryption (PBKDF2 100k iterations, per-record IV+salt), RBAC, session tracking, audit logging, rate limiting
 - **Claude API integration** with pattern-matching offline fallback

@@ -20,7 +20,7 @@ const rbac = require('../security/rbac');
 
 const HEDIS_ROLES = ['physician', 'nurse_practitioner', 'ma', 'billing', 'system'];
 
-function mountHedisRoutes(app, { db } = {}) {
+function mountHedisRoutes(app, { db: _db } = {}) {
   if (!app || typeof app.use !== 'function') {
     throw new Error('mountHedisRoutes: app is required');
   }

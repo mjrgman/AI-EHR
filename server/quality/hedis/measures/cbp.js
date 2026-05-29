@@ -31,6 +31,8 @@
  *            NCQA HEDIS MY 2026 specs.
  */
 
+const { ageAsOf } = require('../../../utils/date-helpers');
+
 const MEASURE_ID = 'CBP';
 const CERTIFIED = false;
 const DISCLAIMER =
@@ -57,13 +59,6 @@ const QUALIFYING_ENCOUNTER_TOKENS = [
   'outpatient', 'office', 'visit', 'telehealth', 'telephone',
   'e-visit', 'evisit', 'virtual', 'encounter', 'wellness', 'preventive'
 ];
-
-function ageAsOf(dob, asOfDate) {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  if (isNaN(birth.getTime())) return null;
-  return Math.floor((asOfDate.getTime() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-}
 
 function hasActiveDiagnosis(problems, prefixes) {
   return (problems || []).some(p => {

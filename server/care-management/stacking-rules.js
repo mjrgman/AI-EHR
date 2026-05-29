@@ -13,7 +13,7 @@
  * Reference: docs/research/PRIMARY_CARE_DEEPENING_RESEARCH_2026-05-03.md §4.8.
  */
 
-const { CCM_CODES, PCM_CODES, TCM_CODES, BHI_CODES, RPM_CODES, RTM_CODES, APCM_CODES } = require('./codes');
+const { CCM_CODES, PCM_CODES, TCM_CODES, RPM_CODES, RTM_CODES, APCM_CODES } = require('./codes');
 
 const CCM_CPTS = new Set(Object.keys(CCM_CODES));
 const PCM_CPTS = new Set(Object.keys(PCM_CODES));

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 
 export function useCDS(encounterId, patientId, options = {}) {
@@ -6,13 +6,15 @@ export function useCDS(encounterId, patientId, options = {}) {
   const [suggestions, setSuggestions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const intervalRef = useRef(null);
 
   const refresh = useCallback(async () => {
     if (!encounterId) return;
     try {
       const data = await api.getSuggestions(encounterId);
-      setSuggestions(data);
+      // Normalize: the GET endpoint may return a bare array today, but guard
+      // against a wrapped `{ suggestions: [...] }` shape or a null/undefined
+      // body so the downstream `.filter()` calls never throw.
+      setSuggestions(Array.isArray(data) ? data : (data?.suggestions || []));
       setError(null);
     } catch (err) {
       setError(err.message);

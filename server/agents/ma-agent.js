@@ -31,7 +31,7 @@ class MAAgent extends BaseAgent {
     this.approvedResponses = options.approvedResponses || this._buildApprovedResponses();
   }
 
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const { requestType, payload } = context.maRequest || {};
 
     if (!requestType) {
@@ -307,7 +307,7 @@ class MAAgent extends BaseAgent {
     const { vitals, labs } = context;
 
     if (protocol.conditions) {
-      for (const [condition, requiredValue] of Object.entries(protocol.conditions)) {
+      for (const [condition, _requiredValue] of Object.entries(protocol.conditions)) {
         let conditionMet = false;
 
         switch (condition) {
@@ -361,7 +361,7 @@ class MAAgent extends BaseAgent {
     return Math.max(0, max - (dispensed + 1));
   }
 
-  _buildVitalsChecklist(problems) {
+  _buildVitalsChecklist(_problems) {
     const checklist = [
       { vital: 'Temperature', required: true },
       { vital: 'Blood Pressure (sitting)', required: true },
@@ -387,7 +387,7 @@ class MAAgent extends BaseAgent {
     return questionnaires;
   }
 
-  _buildMAAlerts(medications, allergies, problems) {
+  _buildMAAlerts(medications, allergies, _problems) {
     const alerts = [];
 
     if (allergies && allergies.length > 0) {

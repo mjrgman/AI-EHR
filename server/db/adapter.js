@@ -14,7 +14,6 @@
  *   const rows = await db.all('SELECT * FROM patients WHERE id = ?', [1]);
  */
 
-const path = require('path');
 const logger = require('../utils/logger').child({ _module: 'db' });
 
 // ==========================================

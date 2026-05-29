@@ -6,7 +6,7 @@
  * Spec: https://hl7.org/fhir/R4/practitioner.html
  */
 
-const { codeableConcept, identifier } = require('../utils/fhir-response');
+const { codeableConcept } = require('../utils/fhir-response');
 
 // Internal role → FHIR PractitionerRole code
 const ROLE_MAP = {

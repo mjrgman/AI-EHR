@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api, { safeLog } from '../api/client';
 import { exportPatient as exportMediVaultPatient } from '../api/medivault';
@@ -10,13 +10,11 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useHRTKeywords } from '../hooks/useHRTKeywords';
 import { useToast } from '../components/common/Toast';
 import PatientBanner from '../components/patient/PatientBanner';
-import ProblemList from '../components/patient/ProblemList';
-import MedList from '../components/patient/MedList';
 import VitalsDisplay from '../components/patient/VitalsDisplay';
 import LabResults from '../components/patient/LabResults';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import CDSSuggestionList from '../components/encounter/CDSSuggestionList';
-import HRTPanel, { isHrtRelevant } from '../components/encounter/HRTPanel';
+import HRTPanel, { isHRTRelevant } from '../components/encounter/HRTPanel';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
@@ -279,10 +277,10 @@ export default function EncounterPage() {
 
   // --- Hooks ---
   const { encounter, orders, update: updateEncounter, refresh: refreshEncounter } = useEncounter(eid);
-  const { patient, refresh: refreshPatient } = usePatient(encounter?.patient_id);
+  const { patient } = usePatient(encounter?.patient_id);
   const { workflow, timeline, transition } = useWorkflow(eid);
   const {
-    suggestions, pending, accepted, evaluate, accept, reject, refresh: refreshCDS,
+    suggestions, pending, evaluate, accept, reject, refresh: refreshCDS,
   } = useCDS(eid, encounter?.patient_id, { pollInterval: 5000, autoEvaluate: true });
   const speech = useSpeechRecognition();
 
@@ -310,7 +308,7 @@ export default function EncounterPage() {
 
   // Count of HRT/peptide-relevant pending suggestions — drives the tab badge.
   const hrtPendingCount = useMemo(
-    () => (pending || []).filter(isHrtRelevant).length,
+    () => (pending || []).filter(isHRTRelevant).length,
     [pending]
   );
 
@@ -364,6 +362,12 @@ export default function EncounterPage() {
       });
       speech.resetTranscript();
     }
+    // `speech` is a fresh object literal every render (useSpeechRecognition),
+    // so we intentionally key this effect on the two primitive fields we read.
+    // `speech.resetTranscript` is a stable useCallback; adding the whole `speech`
+    // object would re-run this transcript-append on every render. Behavior is
+    // intentional and load-bearing — do not widen this dep list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speech.transcript, speech.isListening]);
 
   // --- Auto-save transcript with 2s debounce ---

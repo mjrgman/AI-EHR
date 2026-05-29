@@ -1559,7 +1559,7 @@ const billing_helpers = {
     dbRun(`INSERT OR IGNORE INTO charges (encounter_id, patient_id, provider_name)
            VALUES (?, ?, ?)`,
       [encounter_id, patient_id, provider_name])
-      .then(r => dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])),
+      .then(_r => dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])),
 
   getChargeByEncounter: (encounter_id) =>
     dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id]),

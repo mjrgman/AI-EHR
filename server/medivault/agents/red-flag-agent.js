@@ -18,7 +18,7 @@
  */
 
 const { BaseAgent, AUTONOMY_TIER } = require('../../agents/base-agent');
-const { dbRun, dbGet, dbAll } = require('../../database');
+const { dbGet, dbAll } = require('../../database');
 
 // Attempt to load drug safety service (optional dependency)
 let drugSafetyService = null;
@@ -196,10 +196,10 @@ class RedFlagAgent extends BaseAgent {
    * Process: scan for all red flags for the patient.
    *
    * @param {Object} context - Patient context
-   * @param {Object} agentResults - Results from previously-run agents
+   * @param {Object} _agentResults - Results from previously-run agents
    * @returns {Promise<Object>} Red flag scan result
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const patientId = context.patient?.id;
 
     if (!patientId) {
@@ -452,7 +452,7 @@ class RedFlagAgent extends BaseAgent {
     // Extract medication names
     const medications = [];
     for (const line of lines) {
-      const medMatch = line.match(/^\s*[-*]?\s*([A-Za-z][A-Za-z\s\-]+?)(?:\s+\d|\s*$)/);
+      const medMatch = line.match(/^\s*[-*]?\s*([A-Za-z][A-Za-z\s-]+?)(?:\s+\d|\s*$)/);
       if (medMatch) {
         medications.push(medMatch[1].trim());
       }

@@ -36,7 +36,7 @@ const SERVER_START_TIME = Date.now();
 // PROCESS-LEVEL ERROR HANDLERS (must be first)
 // ==========================================
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, _promise) => {
   logger.error('Unhandled Promise Rejection', {
     reason: reason instanceof Error ? reason.message : String(reason),
     stack: reason instanceof Error ? reason.stack : undefined,
@@ -398,7 +398,7 @@ app.post('/api/patients/extract-from-speech', async (req, res) => {
     const trimmed = sanitizeString(transcript, 10000);
 
     // Use AI to extract patient demographics
-    const extracted = await aiClient.extractClinicalData(trimmed, {});
+    const _extracted = await aiClient.extractClinicalData(trimmed, {});
 
     // Pattern matching for demographics
     const nameMatch = trimmed.match(/(?:name is|patient|called)\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)/i);
@@ -1912,7 +1912,7 @@ app.get('/api/audit/export', rbac.requireRole('admin'), async (req, res) => {
 // GLOBAL ERROR HANDLER (must be after all routes)
 // ==========================================
 
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   // CORS errors
   if (err.message && err.message.startsWith('CORS:')) {
     return res.status(403).json({ error: 'Forbidden: CORS policy violation' });

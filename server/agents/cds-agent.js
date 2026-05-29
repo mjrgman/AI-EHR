@@ -122,10 +122,10 @@ class CDSAgent extends BaseAgent {
 
   /**
    * @param {PatientContext} context
-   * @param {Object} agentResults
+   * @param {Object} _agentResults
    * @returns {Promise<CDSResult>}
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const suggestions = [];
 
     // 1. Run the existing CDS rule engine

@@ -32,6 +32,17 @@ The code-level source of truth lives in `server/agents/module-registry.js`.
 
 The first 11 rows above are the **encounter modules** (Phone Triage through Annual Wellness Visit - the workflow that produces a clinical encounter). The last 3 rows are the **patient-data governance modules** (PatientLink, Patient App, MediVault - the workflow that delivers data to and from the patient). They are listed in the runtime registry in the same `MODULE_ORDER` array, but they answer different questions: encounter modules answer "what happens in a visit", governance modules answer "what data flows to and from the patient outside the visit".
 
+### Runtime wiring status (orchestrator vs. catalog)
+
+The catalog above is the design map. The **agent orchestrator** (`server/agents/index.js`) actually registers **10 of these 14 modules** as runtime agents: Phone Triage, Front Desk, Medical Assistant, Physician, Scribe, CDS, Domain Logic, Orders, Coding, and Quality. The remaining 4 are **built but not wired into the orchestrator**:
+
+- **Annual Wellness Visit** — `AWVAgent` is a complete `BaseAgent` subclass (`dependsOn: ['scribe','cds']`) but is **not registered** with the orchestrator and is never invoked through the pipeline. AWV component checking that does run today is an inline fallback inside `quality-agent.js` (`_checkAWVComponents`), not the standalone agent. Status: **built, not wired.**
+- **PatientLink** — only the `toPlainLanguage()` helper is imported into the patient-portal route; the `PatientLinkAgent` class (after-visit summaries, care-gap drafting, etc.) is **not instantiated** in production. Status: **built, not wired.**
+- **MediVault** — all 6 MediVault agents (ingestion, dedup, reconciliation, packaging, translation, red-flag) instantiate, but the only HTTP surface is `GET /medivault/export/:patientId` (FHIR export). The dedup → reconcile → red-flag flow has **no production entry point** (message-bus handlers are pass-through with no listeners). Status: **FHIR export surfaced; full agent pipeline built, not wired.**
+- **Patient App** — patient-facing portal surface; its agent-side governance flow shares MediVault/PatientLink wiring above. Status: **portal routes present; agent governance flow not fully wired.**
+
+When these modules are registered/surfaced, update this note and the orchestrator comment in `server/agents/index.js` together.
+
 ## Patient control and safety boundaries
 
 - Phone Triage: verified caller context and approved triage protocols only; emergency routing must be explicit.

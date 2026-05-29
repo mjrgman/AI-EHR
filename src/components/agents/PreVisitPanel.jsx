@@ -9,12 +9,12 @@
  * Usage: <PreVisitPanel patientId={pid} encounterId={eid} />
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
-  FileText, AlertTriangle, CheckCircle, Clock, Loader2,
-  ClipboardList, Pill, AlertCircle, Shield, Activity,
+  FileText, AlertTriangle, CheckCircle, Loader2,
+  ClipboardList, Pill, AlertCircle, Shield,
   Stethoscope, RefreshCw, ChevronDown, ChevronRight,
-  Heart, Syringe, Eye, UserCheck
+  Heart, Syringe, UserCheck
 } from 'lucide-react';
 import api from '../../api/client';
 
@@ -168,7 +168,6 @@ export default function PreVisitPanel({ patientId, encounterId }) {
   const allergies = sections.allergies || [];
   const preventiveCare = sections.preventiveCareGaps || sections.preventive || [];
   const visitReason = sections.visitReason || sections.reason || '';
-  const surgicalHistory = sections.surgicalHistory || [];
   const treatmentCarryforward = sections.treatmentCarryforward || sections.carryforward || [];
   const proposedLabs = preVisitLabs?.proposed_labs || [];
   const vitalsChecklist = maPrep?.vitals_checklist || [];
@@ -312,7 +311,7 @@ export default function PreVisitPanel({ patientId, encounterId }) {
       ) : !loading && (
         <div className="p-8 text-center">
           <UserCheck size={32} className="mx-auto text-gray-600 mb-3" />
-          <div className="text-gray-500 text-sm">Click "Generate Briefing" to prepare pre-visit intelligence</div>
+          <div className="text-gray-500 text-sm">Click &quot;Generate Briefing&quot; to prepare pre-visit intelligence</div>
           <div className="text-gray-600 text-xs mt-1">Synopsis-style summary replaces template chart review</div>
         </div>
       )}

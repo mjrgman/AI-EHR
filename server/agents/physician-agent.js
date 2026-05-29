@@ -22,7 +22,7 @@ class PhysicianAgent extends BaseAgent {
     this.decisionLog = [];
   }
 
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const { requestType, payload } = context.physicianRequest || {};
 
     if (!requestType) {
@@ -102,7 +102,7 @@ class PhysicianAgent extends BaseAgent {
     };
   }
 
-  _generateDirective(escalation, responseTemplate, context) {
+  _generateDirective(escalation, responseTemplate, _context) {
     const directive = {
       directive_id: crypto.randomUUID(),
       in_response_to: escalation.escalation_id,
@@ -290,7 +290,7 @@ ${signature}
   }
 
   async learnFromEncounter(context, learningPayload) {
-    const { originalNote, editedNote, finalOrders } = learningPayload;
+    const { originalNote, editedNote } = learningPayload;
 
     if (originalNote && editedNote) {
       this._learnDocumentationStyle(originalNote, editedNote);

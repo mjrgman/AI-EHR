@@ -23,7 +23,7 @@ const rbac = require('../security/rbac');
 
 const CARE_MANAGEMENT_ROLES = ['physician', 'nurse_practitioner', 'billing', 'system'];
 
-function mountCareManagementRoutes(app, { db } = {}) {
+function mountCareManagementRoutes(app, { db: _db } = {}) {
   if (!app || typeof app.use !== 'function') {
     throw new Error('mountCareManagementRoutes: app is required');
   }

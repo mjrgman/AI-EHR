@@ -39,10 +39,10 @@ class ScribeAgent extends BaseAgent {
    * Process an encounter transcript.
    *
    * @param {PatientContext} context
-   * @param {Object} agentResults - Not used (Scribe has no dependencies)
+   * @param {Object} _agentResults - Not used (Scribe has no dependencies)
    * @returns {Promise<ScribeResult>}
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const transcript = context.encounter?.transcript || '';
     const patient = context.patient || {};
     const existingVitals = context.vitals || {};

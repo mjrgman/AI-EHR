@@ -36,7 +36,7 @@ const FHIR_CLASS_MAP = {
  * Resolve a Patient reference string like "Patient/42" → 42.
  * Returns null if the format is unexpected.
  */
-function resolvePatientRef(ref) {
+function _resolvePatientRef(ref) {
   if (!ref) return null;
   const match = String(ref).match(/^Patient\/(\d+)$/);
   return match ? parseInt(match[1], 10) : null;

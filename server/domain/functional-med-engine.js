@@ -76,7 +76,7 @@ const LAB_ALIASES = {
 };
 
 function normalizeLabName(s) {
-  return (s || '').toLowerCase().replace(/[_\s\-(),.\/]/g, '');
+  return (s || '').toLowerCase().replace(/[_\s\-(),./]/g, '');
 }
 
 function findLabValue(labs, code) {

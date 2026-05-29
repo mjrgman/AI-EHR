@@ -75,7 +75,12 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (!providerName) return;
-    setAuditContext(providerName, user?.role || currentRole);
+    // Audit context records the canonical raw `user.role`, not the UI bucket.
+    // `currentRole` (roleConfig.key) is a distinct value space — the display
+    // bucket derived via getRoleConfig — and must NOT be substituted here.
+    // The effect only runs when `providerName` is set, which implies an
+    // authenticated user with a `role`, so no fallback is needed.
+    setAuditContext(providerName, user?.role);
   }, [currentRole, providerName, user?.role]);
 
   const value = useMemo(() => ({

@@ -16,7 +16,7 @@
  */
 
 const { BaseAgent, AUTONOMY_TIER } = require('../../agents/base-agent');
-const { dbRun, dbGet, dbAll } = require('../../database');
+const { dbRun, dbAll } = require('../../database');
 
 // ==========================================
 // SPECIALTY CONFIGURATIONS
@@ -186,10 +186,10 @@ class SpecialtyPackagingAgent extends BaseAgent {
    * Process: generate a specialty packet if specialty is specified in context.
    *
    * @param {Object} context - Patient context with optional specialty field
-   * @param {Object} agentResults - Results from previously-run agents
+   * @param {Object} _agentResults - Results from previously-run agents
    * @returns {Promise<Object>} Packaging result
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const patientId = context.patient?.id;
     const specialty = context.specialty || context.referralSpecialty || null;
 

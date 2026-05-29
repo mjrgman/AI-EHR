@@ -16,7 +16,7 @@
  *   - datetime → TIMESTAMPTZ
  */
 
-const logger = require('../../utils/logger').child({ _module: 'postgres' });
+const _logger = require('../../utils/logger').child({ _module: 'postgres' });
 
 const adapter = {
   type: 'postgres',
@@ -29,16 +29,16 @@ const adapter = {
     throw new Error('PostgreSQL adapter not yet implemented. Contributions welcome.');
   },
 
-  async run(sql, params = []) {
+  async run(sql, _params = []) {
     // Planned implementation: translate ? placeholders to PostgreSQL bind indexes.
     throw new Error('Not implemented');
   },
 
-  async get(sql, params = []) {
+  async get(sql, _params = []) {
     throw new Error('Not implemented');
   },
 
-  async all(sql, params = []) {
+  async all(sql, _params = []) {
     throw new Error('Not implemented');
   },
 

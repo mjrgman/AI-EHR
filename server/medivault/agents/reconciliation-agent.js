@@ -18,7 +18,7 @@
  */
 
 const { BaseAgent, AUTONOMY_TIER } = require('../../agents/base-agent');
-const { dbRun, dbGet, dbAll } = require('../../database');
+const { dbRun, dbAll } = require('../../database');
 
 // ==========================================
 // EXPECTED DATA CATEGORIES
@@ -70,10 +70,10 @@ class ReconciliationAgent extends BaseAgent {
    * Process: run full reconciliation for the patient.
    *
    * @param {Object} context - Patient context
-   * @param {Object} agentResults - Results from previously-run agents
+   * @param {Object} _agentResults - Results from previously-run agents
    * @returns {Promise<Object>} Reconciliation result
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const patientId = context.patient?.id;
 
     if (!patientId) {
@@ -139,7 +139,7 @@ class ReconciliationAgent extends BaseAgent {
 
       for (const line of lines) {
         // Extract medication name (first word group before dose info)
-        const medMatch = line.match(/^\s*[-*]?\s*([A-Za-z][A-Za-z\s\-]+?)(?:\s+\d|\s*$)/);
+        const medMatch = line.match(/^\s*[-*]?\s*([A-Za-z][A-Za-z\s-]+?)(?:\s+\d|\s*$)/);
         if (!medMatch) continue;
 
         const medName = medMatch[1].trim().toLowerCase();
@@ -199,7 +199,6 @@ class ReconciliationAgent extends BaseAgent {
     if (docs.length === 0) return [];
 
     const allergies = new Map();
-    const allergyPattern = /\b(?:allerg(?:y|ies|ic)\s*(?:to|:)?|NKDA|no\s*known\s*(?:drug\s*)?allergies)\b/gi;
     const allergenExtract = /allerg(?:y|ic)\s*(?:to|:)\s*([^,;\n]+)/gi;
 
     for (const doc of docs) {

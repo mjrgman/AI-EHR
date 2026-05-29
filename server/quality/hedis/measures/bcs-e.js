@@ -17,6 +17,8 @@
  *            NCQA HEDIS MY 2026 specs.
  */
 
+const { ageAsOf } = require('../../../utils/date-helpers');
+
 const MEASURE_ID = 'BCS-E';
 const MIN_AGE = 50;
 const MAX_AGE = 74;
@@ -38,14 +40,6 @@ const MASTECTOMY_PROCEDURE_CODES = new Set([
 
 // Hospice
 const HOSPICE_DX = ['Z51.5'];
-
-function ageAsOf(dob, asOfDate) {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  if (isNaN(birth.getTime())) return null;
-  const ms = asOfDate.getTime() - birth.getTime();
-  return Math.floor(ms / (365.25 * 24 * 60 * 60 * 1000));
-}
 
 function isMastectomy(problems, procedures) {
   const hasBilateralDx = (problems || []).some(p => BILATERAL_MASTECTOMY_DX.includes(String(p.icd10_code || '').toUpperCase()));

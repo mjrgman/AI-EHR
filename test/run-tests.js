@@ -3716,7 +3716,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   // ==========================================
   // Phase 3a: hrt-keywords — CDS suggestion filter for the HRT/Peptide tab
   //
-  // HRTPanel uses isHrtRelevant() to pull hormone/peptide-related CDS +
+  // HRTPanel uses isHRTRelevant() to pull hormone/peptide-related CDS +
   // Domain Logic suggestions out of the shared suggestion stream. The filter
   // is a simple keyword match over title/description/rule_type/category/
   // suggestion_type, but the keyword list is load-bearing: miss a term and
@@ -3748,48 +3748,48 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(HRT_KEYWORDS.includes('tirzepatide'), true);
   });
 
-  await test('Phase 3a: hrt-keywords — isHrtRelevant returns false for null/undefined/empty', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
-    assertEqual(isHrtRelevant(null), false);
-    assertEqual(isHrtRelevant(undefined), false);
-    assertEqual(isHrtRelevant({}), false);
-    assertEqual(isHrtRelevant({ title: '', description: '', rule_type: '' }), false);
+  await test('Phase 3a: hrt-keywords — isHRTRelevant returns false for null/undefined/empty', async () => {
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    assertEqual(isHRTRelevant(null), false);
+    assertEqual(isHRTRelevant(undefined), false);
+    assertEqual(isHRTRelevant({}), false);
+    assertEqual(isHRTRelevant({ title: '', description: '', rule_type: '' }), false);
   });
 
   await test('Phase 3a: hrt-keywords — matches testosterone in title (case-insensitive)', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Testosterone Replacement Initiation', description: '', rule_type: 'dosing' };
-    assertEqual(isHrtRelevant(s), true);
+    assertEqual(isHRTRelevant(s), true);
   });
 
   await test('Phase 3a: hrt-keywords — matches semaglutide in description', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'GLP-1 agonist', description: 'Start semaglutide 0.25 mg SC weekly', rule_type: 'prescribing' };
-    assertEqual(isHrtRelevant(s), true);
+    assertEqual(isHRTRelevant(s), true);
   });
 
   await test('Phase 3a: hrt-keywords — matches peptide in category field', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Titration reminder', description: '', category: 'peptide-dosing' };
-    assertEqual(isHrtRelevant(s), true);
+    assertEqual(isHRTRelevant(s), true);
   });
 
   await test('Phase 3a: hrt-keywords — does NOT match unrelated hypertension suggestion', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Blood pressure control', description: 'Consider lisinopril 10 mg daily', rule_type: 'prescribing' };
-    assertEqual(isHrtRelevant(s), false);
+    assertEqual(isHRTRelevant(s), false);
   });
 
   await test('Phase 3a: hrt-keywords — does NOT match diabetes without a GLP-1 keyword', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Diabetes management', description: 'A1c elevated, consider metformin', rule_type: 'screening' };
-    assertEqual(isHrtRelevant(s), false);
+    assertEqual(isHRTRelevant(s), false);
   });
 
   // ==========================================
   // Phase 3b: hrt-keywords — transcript classification (voice routing)
   //
-  // `detectHrtCategories(text)` scans an encounter transcript for any
+  // `detectHRTCategories(text)` scans an encounter transcript for any
   // DOMAIN_KEYWORDS category and returns the matched category names. This
   // is the client-side mirror of server/agents/domain-logic-agent.js
   // `_classifyDomain()`; the two MUST return the same categories for the
@@ -3829,47 +3829,47 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     }
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories returns [] for empty / null', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    assertEqual(JSON.stringify(detectHrtCategories('')), '[]');
-    assertEqual(JSON.stringify(detectHrtCategories(null)), '[]');
-    assertEqual(JSON.stringify(detectHrtCategories(undefined)), '[]');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories returns [] for empty / null', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    assertEqual(JSON.stringify(detectHRTCategories('')), '[]');
+    assertEqual(JSON.stringify(detectHRTCategories(null)), '[]');
+    assertEqual(JSON.stringify(detectHRTCategories(undefined)), '[]');
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories matches testosterone -> hrt_male', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Start testosterone 200 mg IM every two weeks');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories matches testosterone -> hrt_male', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Start testosterone 200 mg IM every two weeks');
     assertEqual(cats.includes('hrt_male'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories matches semaglutide -> glp1', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Prescribe semaglutide 0.25 mg subcutaneously weekly');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories matches semaglutide -> glp1', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Prescribe semaglutide 0.25 mg subcutaneously weekly');
     assertEqual(cats.includes('glp1'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories matches menopause -> hrt_female', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Patient reports vasomotor symptoms and hot flashes from menopause');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories matches menopause -> hrt_female', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Patient reports vasomotor symptoms and hot flashes from menopause');
     assertEqual(cats.includes('hrt_female'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories is case-insensitive', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('MOUNJARO titration next visit');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories is case-insensitive', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('MOUNJARO titration next visit');
     assertEqual(cats.includes('glp1'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories returns multiple categories when overlapping', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Combine testosterone replacement with semaglutide for the weight goal');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories returns multiple categories when overlapping', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Combine testosterone replacement with semaglutide for the weight goal');
     assertEqual(cats.includes('hrt_male'), true);
     assertEqual(cats.includes('glp1'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories returns [] for hypertension-only transcript', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Blood pressure 160/95, start lisinopril 10 mg daily');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories returns [] for hypertension-only transcript', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Blood pressure 160/95, start lisinopril 10 mg daily');
     assertEqual(JSON.stringify(cats), '[]');
   });
 

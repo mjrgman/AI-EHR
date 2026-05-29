@@ -5,7 +5,7 @@ import { calculateU100Units } from '../../utils/peptide-math.mjs';
  * PeptideCalculator — converts a peptide dose in mg at a given concentration
  * (mg/mL) into the corresponding volume and U-100 insulin-syringe units.
  *
- * Math lives in `src/utils/peptide-math.js` (pure, unit-tested). This component
+ * Math lives in `src/utils/peptide-math.mjs` (pure, unit-tested). This component
  * is deliberately dumb: it parses the input strings, delegates to the util,
  * and renders either the result or the error. No local computation.
  *

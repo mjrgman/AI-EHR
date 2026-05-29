@@ -151,7 +151,6 @@ function generateSessionToken() {
  */
 async function createSession(userId, userRole, ipAddress, userAgent) {
   const sessionId = generateSessionToken();
-  const now = new Date().toISOString();
   
   try {
     await db.dbRun(

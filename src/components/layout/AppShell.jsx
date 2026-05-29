@@ -50,7 +50,7 @@ export default function AppShell({ children }) {
 
   const totalActive = Object.entries(queueCounts)
     .filter(([key]) => key !== 'checked-out')
-    .reduce((sum, [, value]) => sum + value, 0);
+    .reduce((sum, [, value]) => sum + (Number(value) || 0), 0);
 
   const formatTime = (date) => date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const formatDate = (date) => date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });

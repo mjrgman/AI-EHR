@@ -119,10 +119,10 @@ class BaseAgent extends EventEmitter {
   /**
    * Main execution method — override in subclasses.
    * @param {PatientContext} context - Shared patient context
-   * @param {Object} agentResults - Results from previously-run agents (keyed by agent name)
+   * @param {Object} _agentResults - Results from previously-run agents (keyed by agent name)
    * @returns {Promise<Object>} Agent-specific result object
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     throw new Error(`${this.name}: process() must be implemented by subclass`);
   }
 

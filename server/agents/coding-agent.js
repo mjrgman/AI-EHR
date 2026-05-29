@@ -186,7 +186,6 @@ class CodingAgent extends BaseAgent {
 
     // --- Element 3: Risk ---
     const urgentAlerts = (cdsResult.suggestions || []).filter(s => s.category === 'urgent').length;
-    const prescribedControlled = false; // Would need DEA schedule data
     const hasDrugInteraction = (cdsResult.suggestions || []).some(s => s.suggestion_type === 'interaction_alert');
 
     let riskLevel = 1;
@@ -358,7 +357,7 @@ class CodingAgent extends BaseAgent {
   /**
    * Check for applicable modifiers.
    */
-  _checkModifiers(context, scribeResult, cdsResult) {
+  _checkModifiers(context, _scribeResult, _cdsResult) {
     const modifiers = [];
 
     // Modifier 25: Significant, separately identifiable E&M service

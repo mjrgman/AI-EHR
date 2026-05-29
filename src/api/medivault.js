@@ -19,6 +19,32 @@
  * client-side audit — the server is authoritative.
  */
 
+// Mirrors client.js's AUTH_STORAGE_KEY. The session object stored under this
+// key is shaped `{ token, refreshToken, expiresAt }` (see setStoredAuthSession
+// in src/api/client.js). We read it directly rather than importing client.js
+// to preserve this module's intentional isolation (raw-fetch / Blob handling).
+const AUTH_STORAGE_KEY = 'ehr_auth_session_v1';
+
+/**
+ * Read the bearer token from the stored auth session, if present.
+ * Returns null when storage is unavailable, the session is absent, or the
+ * stored JSON is malformed — callers send the request without an Authorization
+ * header in that case (the server then fails closed with 401/403).
+ *
+ * @returns {string|null}
+ */
+function getAuthToken() {
+  if (typeof sessionStorage === 'undefined') return null;
+  const raw = sessionStorage.getItem(AUTH_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const session = JSON.parse(raw);
+    return (session && typeof session.token === 'string' && session.token) || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Download the patient's MediVault export as a FHIR Bundle JSON file.
  *
@@ -41,6 +67,17 @@ export async function exportPatient(patientId) {
     const sid = sessionStorage.getItem('audit_session_id');
     if (sid) headers['X-Audit-Session-Id'] = sid;
   }
+
+  // gaps-03: the export route is RBAC-gated server-side
+  // (rbac.requireRole('physician','nurse_practitioner','system') in
+  // server/routes/medivault-routes.js). This wrapper uses raw fetch instead
+  // of the shared client.js request() helper, so it must attach the Bearer
+  // token itself — otherwise the request arrives unauthenticated and the
+  // server resolves the caller as role 'guest', returning 403 (masked in dev
+  // only by ENABLE_DEV_AUTH_BYPASS). We read the same session object and
+  // storage key that client.js uses (AUTH_STORAGE_KEY = 'ehr_auth_session_v1').
+  const token = getAuthToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`/api/medivault/export/${encodeURIComponent(patientId)}`, {
     method: 'GET',
