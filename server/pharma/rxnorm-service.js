@@ -13,6 +13,7 @@
 
 const https = require('https');
 const db = require('../database');
+const curatedDdi = require('./curated-ddi');
 
 const RXNORM_BASE = 'https://rxnav.nlm.nih.gov/REST';
 const CACHE_TTL_DAYS = 30;
@@ -256,17 +257,44 @@ function isScreeningUnavailable(interactions) {
 /**
  * Check drug-drug interactions between two RxCUIs.
  *
- * FAIL-CLOSED: on any upstream error / unreachable source, returns a
- * single-element array containing the "screening unavailable" sentinel
- * (see buildUnavailableInteraction). A genuinely-empty array is returned ONLY
- * when the source responded successfully with zero interaction pairs.
+ * Order of resolution:
+ *   1. CURATED TABLE (by name) — if drug names are supplied and the pair is in
+ *      the interim curated high-severity table (server/pharma/curated-ddi.js),
+ *      return that real interaction. This is the working path now that NLM's
+ *      live /interaction API is retired.
+ *   2. Live RxNav /interaction API (by RxCUI) — retired Jan-2024, so in practice
+ *      this returns null.
+ *   3. FAIL-CLOSED sentinel — on any upstream error / unreachable source, return
+ *      a single-element array containing the "screening unavailable" sentinel
+ *      (see buildUnavailableInteraction). A genuinely-empty array is returned
+ *      ONLY when the source responded successfully with zero interaction pairs.
+ *
+ * IMPORTANT: a curated MISS does NOT mean "no interaction" — when the curated
+ * table has no entry AND the live source is unreachable, we still return the
+ * UNAVAILABLE sentinel (fail closed), never an empty/clean result.
  *
  * @param {string} rxcui1 - First drug RxCUI
  * @param {string} rxcui2 - Second drug RxCUI
+ * @param {string} [name1] - First drug name (enables curated-table lookup)
+ * @param {string} [name2] - Second drug name (enables curated-table lookup)
  * @returns {Promise<Array<{severity: string, description: string, source: string, status?: string}>>}
  */
-async function getInteractions(rxcui1, rxcui2) {
+async function getInteractions(rxcui1, rxcui2, name1, name2) {
   if (!rxcui1 || !rxcui2) return [];
+
+  // 1. Curated table (by name). A hit is a real, graded interaction.
+  if (name1 && name2) {
+    const curated = curatedDdi.lookupCuratedInteraction(name1, name2);
+    if (curated) {
+      return [{
+        severity: curated.severity,
+        description: curated.description,
+        source: curated.source,
+        curated: true
+      }];
+    }
+  }
+
   const sorted = [rxcui1, rxcui2].sort();
   const key = `interaction:${sorted[0]}:${sorted[1]}`;
 
@@ -282,6 +310,8 @@ async function getInteractions(rxcui1, rxcui2) {
   // FAIL CLOSED: a null/absent response means the upstream source was
   // unreachable or returned an error (the NLM /interaction API was retired
   // Jan-2024, so this is the live path). Surface "unavailable", never empty.
+  // (We only reach here when the curated table had no entry for this pair —
+  // a curated MISS is NOT "no interaction," so we still fail closed.)
   if (!data) {
     return [buildUnavailableInteraction('upstream source unreachable')];
   }
@@ -321,47 +351,62 @@ async function getInteractions(rxcui1, rxcui2) {
 async function checkInteractionsAgainstList(drugName, activeMeds) {
   if (!drugName || !activeMeds || activeMeds.length === 0) return [];
 
-  // Resolve the new drug. A failed resolve means we cannot screen this drug at
-  // all — FAIL CLOSED rather than returning an empty (falsely-clean) list.
+  // Resolve the new drug to an RxCUI (best-effort). Since the NLM resolution
+  // API may be unreachable, a failed resolve does NOT short-circuit the whole
+  // screen — the curated table is keyed by NAME and works without an RxCUI.
   const newDrug = await lookupByName(drugName);
-  if (!newDrug) {
-    return [{
-      drug1: drugName,
-      drug2: null,
-      ...buildUnavailableInteraction(`could not resolve "${drugName}" to a drug identifier`)
-    }];
-  }
+  const newRxcui = newDrug ? newDrug.rxcui : null;
 
   const allInteractions = [];
 
   for (const med of activeMeds) {
-    // Use stored RxCUI if available, otherwise look up
+    // CURATED TABLE FIRST (by name) — works offline and catches the textbook
+    // high-severity pairs even when RxCUI resolution / the live API is dead.
+    const curated = curatedDdi.lookupCuratedInteraction(drugName, med.medication_name);
+    if (curated) {
+      allInteractions.push({
+        drug1: drugName,
+        drug2: med.medication_name,
+        rxcui1: newRxcui,
+        rxcui2: med.rxnorm_cui || null,
+        severity: curated.severity,
+        description: curated.description,
+        source: curated.source,
+        curated: true
+      });
+      continue;
+    }
+
+    // No curated hit. Try RxCUI-based resolution + the (retired) live API.
     let medRxcui = med.rxnorm_cui;
     if (!medRxcui) {
       const lookup = await lookupByName(med.medication_name);
       if (lookup) medRxcui = lookup.rxcui;
     }
-    if (medRxcui && medRxcui === newDrug.rxcui) continue;
+    if (medRxcui && newRxcui && medRxcui === newRxcui) continue;
 
-    // Could not resolve this active med → cannot screen this pair. Emit an
-    // explicit unavailable marker instead of silently skipping it.
-    if (!medRxcui) {
+    // Could not resolve to RxCUIs and no curated entry → cannot screen this
+    // pair. FAIL CLOSED: emit an explicit "unavailable" marker (never treat the
+    // absence of a curated hit as "no interaction").
+    if (!medRxcui || !newRxcui) {
       allInteractions.push({
         drug1: drugName,
         drug2: med.medication_name,
-        rxcui1: newDrug.rxcui,
-        rxcui2: null,
-        ...buildUnavailableInteraction(`could not resolve "${med.medication_name}" to a drug identifier`)
+        rxcui1: newRxcui,
+        rxcui2: medRxcui || null,
+        ...buildUnavailableInteraction(
+          `no curated entry and could not resolve "${!newRxcui ? drugName : med.medication_name}" to a drug identifier`
+        )
       });
       continue;
     }
 
-    const interactions = await getInteractions(newDrug.rxcui, medRxcui);
+    const interactions = await getInteractions(newRxcui, medRxcui, drugName, med.medication_name);
     for (const interaction of interactions) {
       allInteractions.push({
         drug1: drugName,
         drug2: med.medication_name,
-        rxcui1: newDrug.rxcui,
+        rxcui1: newRxcui,
         rxcui2: medRxcui,
         ...interaction
       });

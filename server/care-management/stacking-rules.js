@@ -118,6 +118,100 @@ function checkConflict(proposedCpt, activeCpts = [], options = {}) {
   };
 }
 
+/**
+ * Intra-CCM mutual exclusion (CY 2025-2026).
+ *
+ * Within a single patient-calendar-month, CMS recognizes THREE mutually
+ * exclusive CCM "base paths" — you may bill exactly one base CCM code per
+ * month, never two:
+ *   1. Non-complex staff CCM      → base 99490  (+ 99439 add-ons)
+ *   2. Complex staff CCM          → base 99487  (+ 99489 add-ons)
+ *   3. Physician-personal CCM     → base 99491  (+ 99437 add-ons)
+ *
+ * 99490/99487 (staff time) and 99491 (physician time) describe the SAME
+ * care-management service performed by different personnel; billing both for
+ * the same month is duplicate-service overbilling. When more than one path's
+ * thresholds are met, select the SINGLE highest-value compliant base path.
+ *
+ * Approximate 2025 national non-facility allowed amounts (relative ordering is
+ * what matters; magnitudes are illustrative, not a fee schedule of record):
+ *   99491 (physician 30m)  ≈ $83   — highest base
+ *   99487 (complex staff)  ≈ $132* — complex base is higher than physician/non-complex
+ *   99490 (non-complex)    ≈ $62   — lowest base
+ *
+ * (* 99487 complex is the richest single base; ordering used here:
+ *    99487 > 99491 > 99490.)
+ *
+ * Reference: docs/research/PRIMARY_CARE_DEEPENING_RESEARCH_2026-05-03.md §4.8.
+ */
+const CCM_BASE_VALUE = {
+  '99487': 132, // complex staff base — highest
+  '99491': 83,  // physician-personal base
+  '99490': 62   // non-complex staff base — lowest
+};
+
+const CCM_BASE_CPTS = new Set(Object.keys(CCM_BASE_VALUE));
+
+/**
+ * Given the set of proposed CCM codes (base + add-ons) produced by the engine,
+ * collapse them to a SINGLE compliant base path. If two or more base CCM codes
+ * are present (e.g. 99490 staff AND 99491 physician), the higher-value base
+ * wins and the losing base — plus any add-on codes that hang off the losing
+ * base — are dropped.
+ *
+ * @param {object[]} proposed - [{ cpt, units, ... }, ...] CCM codes only
+ * @returns {{ selected: object[], dropped: object[], rationale: string|null }}
+ */
+function selectSingleCCMPath(proposed = []) {
+  const ccm = (proposed || []).filter(p => p && familyOf(p.cpt) === 'CCM');
+  const basesPresent = ccm.filter(p => CCM_BASE_CPTS.has(String(p.cpt)));
+
+  // Zero or one base path → nothing to collapse.
+  if (basesPresent.length <= 1) {
+    return { selected: proposed.slice(), dropped: [], rationale: null };
+  }
+
+  // Pick the highest-value base.
+  let winner = basesPresent[0];
+  for (const b of basesPresent) {
+    if (CCM_BASE_VALUE[String(b.cpt)] > CCM_BASE_VALUE[String(winner.cpt)]) {
+      winner = b;
+    }
+  }
+  const winnerCpt = String(winner.cpt);
+
+  // Map each base to the add-on CPT that legitimately hangs off it.
+  const ADDON_OF = { '99490': '99439', '99487': '99489', '99491': '99437' };
+  const winnerAddOn = ADDON_OF[winnerCpt];
+
+  const selected = [];
+  const dropped = [];
+  for (const p of proposed) {
+    const cpt = String(p.cpt);
+    if (CCM_BASE_CPTS.has(cpt)) {
+      // keep only the winning base
+      if (cpt === winnerCpt) selected.push(p);
+      else dropped.push(p);
+    } else if (familyOf(cpt) === 'CCM') {
+      // CCM add-on: keep only the add-on belonging to the winning base
+      if (cpt === winnerAddOn) selected.push(p);
+      else dropped.push(p);
+    } else {
+      // non-CCM code — untouched
+      selected.push(p);
+    }
+  }
+
+  const losers = basesPresent
+    .filter(b => String(b.cpt) !== winnerCpt)
+    .map(b => b.cpt);
+  const rationale = `Intra-CCM mutual exclusion: ${winnerCpt} and ${losers.join('/')} ` +
+    `describe the same care-management service for the patient-month and cannot both be billed. ` +
+    `Selected higher-value base ${winnerCpt}; dropped ${losers.join('/')} (and their add-ons).`;
+
+  return { selected, dropped, rationale };
+}
+
 function _conflictReason(family, activeFamily) {
   if (family === 'CCM' && activeFamily === 'TCM') return 'CCM cannot overlap a TCM service period';
   if (family === 'CCM' && activeFamily === 'PCM') return 'CCM and PCM cannot both be billed in the same calendar month';
@@ -134,6 +228,8 @@ function _conflictReason(family, activeFamily) {
 module.exports = {
   familyOf,
   checkConflict,
+  selectSingleCCMPath,
+  CCM_BASE_VALUE,
   CONFLICTS,
   FAMILY_CPT_SETS
 };

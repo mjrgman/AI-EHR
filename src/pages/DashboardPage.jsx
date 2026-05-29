@@ -10,10 +10,17 @@ import { useToast } from '../components/common/Toast';
 import QueueDashboard from '../components/workflow/QueueDashboard';
 import { useAuth } from '../context/AuthContext';
 
+// Queue summary cards. The `key` for each card MUST be a canonical workflow
+// engine state (hyphenated vocab from server/workflow-engine.js STATES, mirrored
+// by WorkflowTracker's STATE_CONFIG). The /dashboard endpoint builds
+// `queue_counts` keyed by `wf.current_state`, so any divergent key (the old
+// `waiting`/`with_provider`) silently reads 0. The unit test in
+// test/unit/dashboard-queue-config.test.js asserts every key below is a member
+// of the canonical STATE_CONFIG key set (single source of truth).
 const QUEUE_CONFIG = [
-  { key: 'waiting', label: 'Waiting', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', icon: '\u23F3' },
+  { key: 'checked-in', label: 'Waiting', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', icon: '\u23F3' },
   { key: 'roomed', label: 'Roomed', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', icon: '\uD83D\uDEAA' },
-  { key: 'with_provider', label: 'With Provider', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', icon: '\uD83D\uDC68\u200D\u2695\uFE0F' },
+  { key: 'provider-examining', label: 'With Provider', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', icon: '\uD83D\uDC68\u200D\u2695\uFE0F' },
   { key: 'signed', label: 'Signed', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', icon: '\u2705' },
 ];
 

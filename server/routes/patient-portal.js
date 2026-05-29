@@ -21,9 +21,11 @@ try {
 }
 
 const router = express.Router();
-const REQUIRE_MRN_IN_PRODUCTION =
-  process.env.PATIENT_PORTAL_REQUIRE_MRN === 'true'
-  || (process.env.NODE_ENV === 'production' && process.env.PATIENT_PORTAL_REQUIRE_MRN !== 'false');
+// P1-2 (sec-portal-weak-verify-05): MRN is a MANDATORY non-public second factor
+// in ALL environments. Name + DOB (both semi-public) can never establish a
+// session on their own. There is no longer an env flag to relax this — the
+// requirement is enforced unconditionally and a missing/wrong MRN yields the
+// same generic failure as any other verification miss (see verifyPatient).
 
 // ------------------------------------------------------------------
 // Verify rate-limiting / temporary lockout (sec-portal-weak-verify-05)
@@ -130,13 +132,18 @@ router.post('/verify', async (req, res) => {
 
     const { first_name, last_name, dob, mrn } = req.body || {};
 
-    if (!first_name || !last_name || !dob) {
-      return res.status(400).json({ error: 'first_name, last_name, and dob are required' });
-    }
-    if (REQUIRE_MRN_IN_PRODUCTION && !mrn) {
-      return res.status(400).json({ error: 'mrn is required for patient portal verification in production' });
+    // A completely malformed request (no identifying fields at all) is a 400.
+    // But once ANY identity field is supplied, we do NOT field-validate which
+    // factor is missing — a missing/blank MRN is treated exactly like a wrong
+    // MRN: a generic verification failure that counts toward lockout. This
+    // prevents an attacker from probing "is name+DOB enough?" vs "is the MRN
+    // the only thing wrong?" via differing error shapes. (sec-portal-weak-verify-05)
+    if (!first_name && !last_name && !dob && !mrn) {
+      return res.status(400).json({ error: 'Verification details are required.' });
     }
 
+    // verifyPatient enforces mandatory name + DOB + MRN and applies a constant
+    // delay on every path so timing/content never reveals which factor failed.
     const patient = await verifyPatient(first_name, last_name, dob, mrn);
     if (!patient) {
       // Record the failed attempt; lock out + 429 once the threshold is hit.

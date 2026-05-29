@@ -134,7 +134,19 @@ function computeMonthlyBillableCodes(input) {
     }
     const staffMin = sumMinutes(timeLog, 'clinical_staff');
     const docMin = sumMinutes(timeLog, 'physician_or_qhp');
-    const proposed = computeCCMCodes(staffMin, docMin, enrollment.mdm_complexity);
+    const rawProposed = computeCCMCodes(staffMin, docMin, enrollment.mdm_complexity);
+
+    // Intra-CCM mutual exclusion: 99490/99487 (staff time) and 99491 (physician
+    // time) cannot both be billed for the same patient-month. Collapse to the
+    // single highest-value compliant base path before inter-family checks.
+    const collapse = stacking.selectSingleCCMPath(rawProposed);
+    const proposed = collapse.selected;
+    if (collapse.rationale) {
+      result.rationale.push(collapse.rationale);
+      for (const d of collapse.dropped) {
+        result.suppressed.push({ ...d, reason: collapse.rationale, conflicts: [] });
+      }
+    }
 
     for (const p of proposed) {
       const conflict = stacking.checkConflict(p.cpt, activeBillingCpts, {

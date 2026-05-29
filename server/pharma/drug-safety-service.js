@@ -92,6 +92,22 @@ async function checkDrugInteractions(newDrugName, activeMeds) {
         rxcui2: i.rxcui2 || null
       };
     }
+    // Curated interactions already carry a clinical-grade severity
+    // ('critical'/'serious'/'moderate'); preserve it verbatim rather than
+    // re-running classifySeverity (which would, e.g., upgrade 'serious' to
+    // 'critical' because it matches the 'serious' keyword test).
+    if (i && i.curated) {
+      return {
+        drug1: i.drug1,
+        drug2: i.drug2,
+        severity: i.severity,
+        description: i.description,
+        source: i.source || 'Curated DDI (interim)',
+        curated: true,
+        rxcui1: i.rxcui1 || null,
+        rxcui2: i.rxcui2 || null
+      };
+    }
     return {
       drug1: i.drug1,
       drug2: i.drug2,
@@ -129,13 +145,25 @@ function isScreeningUnavailable(interactions) {
  * @returns {Promise<{boxedWarning: string|null, contraindications: string|null, adverseReactions: string|null, dosageAdmin: string|null}>}
  */
 async function getDrugLabelSafety(drugName) {
-  if (!drugName) return { boxedWarning: null, contraindications: null, adverseReactions: null, dosageAdmin: null };
+  const EMPTY = { boxedWarning: null, contraindications: null, adverseReactions: null, dosageAdmin: null };
+  if (!drugName) return EMPTY;
 
-  const query = `search=openfda.generic_name:"${encodeURIComponent(drugName)}"+openfda.brand_name:"${encodeURIComponent(drugName)}"&limit=1`;
-  const data = await fdaGet(query);
+  const encoded = encodeURIComponent(drugName);
+
+  // Query generic_name FIRST, then fall back to a SEPARATE brand_name query.
+  // (Previously the two were AND-ed in one query — `generic_name:"X" +
+  // brand_name:"X"` — which requires a single label to carry the same string as
+  // BOTH its generic and brand name, so it almost never matched and boxed
+  // warnings were silently dropped for drugs that carry one, e.g. warfarin,
+  // methotrexate. This mirrors the dosing-service generic-then-brand pattern.)
+  let data = await fdaGet(`search=openfda.generic_name:"${encoded}"&limit=1`);
 
   if (!data || !data.results || data.results.length === 0) {
-    return { boxedWarning: null, contraindications: null, adverseReactions: null, dosageAdmin: null };
+    data = await fdaGet(`search=openfda.brand_name:"${encoded}"&limit=1`);
+  }
+
+  if (!data || !data.results || data.results.length === 0) {
+    return { ...EMPTY };
   }
 
   const label = data.results[0];

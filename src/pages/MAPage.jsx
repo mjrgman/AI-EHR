@@ -279,7 +279,7 @@ export default function MAPage() {
                 <TouchButton
                   variant={speech.isListening ? 'danger' : 'primary'}
                   size="sm"
-                  icon={speech.isListening ? '&#x23F9;' : '&#x1F3A4;'}
+                  icon={speech.isListening ? '⏹' : '🎤'}
                   onClick={speech.isListening ? speech.stopListening : speech.startListening}
                 >
                   {speech.isListening ? 'Stop Listening' : 'Start Listening'}

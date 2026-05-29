@@ -328,7 +328,7 @@ export default function SchedulePage() {
         </Card>
       ) : (
         <div className="space-y-2">
-          {appointments
+          {[...appointments]
             .sort((a, b) => (a.appointment_time || '').localeCompare(b.appointment_time || ''))
             .map(appt => {
               const statusInfo = STATUS_LABELS[appt.status] || { label: appt.status, variant: 'routine' };

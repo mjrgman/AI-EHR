@@ -260,10 +260,10 @@ export default function AuditPage() {
           ...(filters.date_to ? { date_to: filters.date_to } : {}),
         }),
       ]);
-      setLogs(logsResult.logs);
-      setTotalPages(logsResult.totalPages);
-      setTotal(logsResult.total);
-      setStats(statsResult);
+      setLogs(Array.isArray(logsResult?.logs) ? logsResult.logs : []);
+      setTotalPages(Number(logsResult?.totalPages) || 1);
+      setTotal(Number(logsResult?.total) || 0);
+      setStats(statsResult || null);
     } catch (err) {
       safeLog.error('Failed to load audit data:', err);
     }
@@ -410,7 +410,7 @@ export default function AuditPage() {
 
       {/* Log table */}
       <Card>
-        <CardHeader action={<span className="text-xs text-gray-400 font-mono">{total.toLocaleString()} entries</span>}>
+        <CardHeader action={<span className="text-xs text-gray-400 font-mono">{(Number(total) || 0).toLocaleString()} entries</span>}>
           Activity Log
         </CardHeader>
 

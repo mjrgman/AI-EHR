@@ -4612,6 +4612,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     assertEqual(verify.status, 200, `expected 200 verify, got ${verify.status}`);
@@ -4630,6 +4635,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
@@ -4651,6 +4661,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
@@ -4682,6 +4697,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
@@ -4708,6 +4728,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
@@ -4728,6 +4753,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
@@ -4743,6 +4773,65 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     });
     const res = await httpRequest('/api/patient-portal/session', { token: login.body.token });
     assertEqual(res.status, 401, 'clinician bearer token must not grant portal session access');
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // P1-2 (sec-portal-weak-verify-05) — mandatory MRN second factor.
+  //
+  // Name + DOB are both semi-public; alone they must NEVER establish a
+  // portal session in ANY environment. The MRN is the mandatory non-public
+  // third factor. Failures (missing MRN, wrong MRN, no such patient) must
+  // all return the SAME generic 401 — never reveal which factor failed.
+  // ──────────────────────────────────────────────────────────────────
+
+  await test('P1-2 Portal verify: name+DOB without MRN is DENIED (no session)', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        // intentionally NO mrn
+      }
+    });
+    assertEqual(verify.status, 401, `name+DOB alone must be denied, got ${verify.status}`);
+    const cookie = extractCookie(verify);
+    assert(!cookie || !cookie.startsWith('portal_session='), 'no portal_session cookie should be issued without MRN');
+    // Generic message — must not name the missing field.
+    assert(!/mrn/i.test(verify.body.error || ''), 'error must not reveal that MRN was the missing factor');
+  });
+
+  await test('P1-2 Portal verify: correct name+DOB+MRN establishes a session', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    assertEqual(verify.status, 200, `correct three-factor verify must succeed, got ${verify.status}`);
+    const cookie = extractCookie(verify);
+    assert(cookie.startsWith('portal_session='), 'three-factor verify should return a portal_session cookie');
+    assertEqual(verify.body.patient.id, sarahId, 'session must bind to the verified patient');
+  });
+
+  await test('P1-2 Portal verify: WRONG MRN with correct name+DOB returns generic 401', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: 'WRONG-MRN-000000',
+      }
+    });
+    assertEqual(verify.status, 401, `wrong MRN must be denied, got ${verify.status}`);
+    const cookie = extractCookie(verify);
+    assert(!cookie || !cookie.startsWith('portal_session='), 'no portal_session cookie should be issued for a wrong MRN');
+    // Same generic message as a missing-MRN / no-such-patient failure.
+    assert(!/mrn/i.test(verify.body.error || ''), 'error must not reveal that the MRN was the failing factor');
   });
 
   // ==========================================

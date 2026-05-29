@@ -248,6 +248,112 @@ describe('care-mgmt: engine — CCM monthly computation', () => {
 });
 
 // ============================================================
+describe('care-mgmt: intra-CCM mutual exclusion (P1-4)', () => {
+  const goodConsent = { consent_date: recentISO(30) };
+  const twoChronic = [
+    { icd10_code: 'E11.9', status: 'active' },
+    { icd10_code: 'I50.9', status: 'active' }
+  ];
+
+  test('selectSingleCCMPath: 99490 + 99491 → keep higher-value 99491, drop 99490', () => {
+    const r = stacking.selectSingleCCMPath([
+      { cpt: '99490', units: 1 },
+      { cpt: '99491', units: 1 }
+    ]);
+    const kept = r.selected.map(c => c.cpt);
+    assert.deepEqual(kept, ['99491']);
+    assert.deepEqual(r.dropped.map(c => c.cpt), ['99490']);
+    assert.match(r.rationale, /mutual exclusion/);
+  });
+
+  test('selectSingleCCMPath: complex 99487 outranks physician 99491', () => {
+    const r = stacking.selectSingleCCMPath([
+      { cpt: '99487', units: 1 },
+      { cpt: '99491', units: 1 }
+    ]);
+    assert.deepEqual(r.selected.map(c => c.cpt), ['99487']);
+    assert.deepEqual(r.dropped.map(c => c.cpt), ['99491']);
+  });
+
+  test('selectSingleCCMPath: drops add-ons that hang off the losing base', () => {
+    // 99490 + 99439 (staff path) vs 99491 (physician path): physician wins,
+    // so 99490 AND its 99439 add-on are dropped.
+    const r = stacking.selectSingleCCMPath([
+      { cpt: '99490', units: 1 },
+      { cpt: '99439', units: 2 },
+      { cpt: '99491', units: 1 }
+    ]);
+    assert.deepEqual(r.selected.map(c => c.cpt).sort(), ['99491']);
+    assert.deepEqual(r.dropped.map(c => c.cpt).sort(), ['99439', '99490']);
+  });
+
+  test('selectSingleCCMPath: single base path passes through unchanged', () => {
+    const input = [{ cpt: '99490', units: 1 }, { cpt: '99439', units: 1 }];
+    const r = stacking.selectSingleCCMPath(input);
+    assert.deepEqual(r.selected.map(c => c.cpt), ['99490', '99439']);
+    assert.equal(r.dropped.length, 0);
+    assert.equal(r.rationale, null);
+  });
+
+  test('selectSingleCCMPath: leaves non-CCM codes untouched', () => {
+    const r = stacking.selectSingleCCMPath([
+      { cpt: '99490', units: 1 },
+      { cpt: '99491', units: 1 },
+      { cpt: '99213', units: 1 }
+    ]);
+    assert.ok(r.selected.map(c => c.cpt).includes('99213'));
+  });
+
+  test('engine: staff≥20min AND physician≥30min → exactly ONE CCM code (higher-value)', () => {
+    const r = engine.computeMonthlyBillableCodes({
+      patient: {},
+      problems: twoChronic,
+      enrollment: { program_type: 'CCM', consent: goodConsent, mdm_complexity: 'low' },
+      timeLog: [
+        { minutes: 25, staff_role: 'rn' },        // staff ≥20 → would emit 99490
+        { minutes: 35, staff_role: 'physician' }  // physician ≥30 → would emit 99491
+      ]
+    });
+    const ccmCodes = r.codes.filter(c => stacking.familyOf(c.cpt) === 'CCM');
+    assert.equal(ccmCodes.length, 1, 'exactly one CCM code emitted');
+    assert.equal(ccmCodes[0].cpt, '99491', 'higher-value physician base selected');
+    // the staff base is recorded as suppressed, not billed
+    assert.ok(r.suppressed.some(s => s.cpt === '99490'));
+  });
+
+  test('engine: complex staff (99487) + physician (99491) both meet → only 99487', () => {
+    const r = engine.computeMonthlyBillableCodes({
+      patient: {},
+      problems: twoChronic,
+      enrollment: { program_type: 'CCM', consent: goodConsent, mdm_complexity: 'high' },
+      timeLog: [
+        { minutes: 60, staff_role: 'rn' },        // complex staff → 99487
+        { minutes: 40, staff_role: 'physician' }  // physician ≥30 → 99491
+      ]
+    });
+    const ccmCodes = r.codes.filter(c => stacking.familyOf(c.cpt) === 'CCM');
+    const cpts = ccmCodes.map(c => c.cpt);
+    assert.ok(cpts.includes('99487'), 'complex base billed');
+    assert.ok(!cpts.includes('99491'), 'physician base suppressed');
+    // no staff base AND physician base co-occur
+    const baseCount = cpts.filter(c => ['99490', '99487', '99491'].includes(c)).length;
+    assert.equal(baseCount, 1, 'exactly one CCM base code');
+  });
+
+  test('engine: physician-only month still emits 99491 (no false suppression)', () => {
+    const r = engine.computeMonthlyBillableCodes({
+      patient: {},
+      problems: twoChronic,
+      enrollment: { program_type: 'CCM', consent: goodConsent },
+      timeLog: [{ minutes: 30, staff_role: 'physician' }]
+    });
+    const ccmCodes = r.codes.filter(c => stacking.familyOf(c.cpt) === 'CCM');
+    assert.deepEqual(ccmCodes.map(c => c.cpt), ['99491']);
+    assert.equal(r.suppressed.length, 0);
+  });
+});
+
+// ============================================================
 describe('care-mgmt: engine — TCM', () => {
   test('high-MDM F2F at day 5 → 99496', () => {
     const r = engine.computeMonthlyBillableCodes({
