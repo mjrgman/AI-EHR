@@ -71,7 +71,7 @@ function Stat({ label, value, color }) {
   return (
     <div className="rounded-lg border border-slate-100 bg-offWhite-100 px-2 py-1.5 text-center shadow-mc">
       <div className={`font-display text-lg font-semibold leading-none tabular-nums ${color || 'text-navy-700'}`}>{value}</div>
-      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</div>
+      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">{label}</div>
     </div>
   );
 }
@@ -99,7 +99,7 @@ function AgentCard({ name, agentResult, expanded, onToggle }) {
           </span>
           <div className="text-left">
             <div className="font-medium text-sm text-navy-700">{meta.label} Agent</div>
-            <div className="text-xs text-slate-500">{meta.description}</div>
+            <div className="text-xs text-slate-600">{meta.description}</div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -154,7 +154,7 @@ function ScribeDetails({ result }) {
           <div className={`h-2 rounded-full ${comp.percentage >= 80 ? 'bg-success-500' : comp.percentage >= 50 ? 'bg-gold-500' : 'bg-danger-500'}`}
             style={{ width: `${comp.percentage || 0}%` }} />
         </div>
-        <span className="text-xs text-slate-500">{comp.percentage || 0}% complete</span>
+        <span className="text-xs text-slate-600">{comp.percentage || 0}% complete</span>
       </div>
       {result.chiefComplaint && (
         <div className="text-xs text-slate-600"><span className="text-slate-400">CC:</span> {result.chiefComplaint}</div>
@@ -212,15 +212,15 @@ function CodingDetails({ result }) {
       <div className="grid grid-cols-3 gap-2">
         <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
           <div className="font-display text-2xl font-semibold leading-none tabular-nums text-navy-700">{result.emLevel || '—'}</div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">E&amp;M Level</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">E&amp;M Level</div>
         </div>
         <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
           <div className="font-display text-lg font-semibold leading-none tabular-nums text-navy-700">{result.cptCode || '—'}</div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">CPT Code</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">CPT Code</div>
         </div>
         <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
           <div className="font-display text-lg font-semibold leading-none tabular-nums text-navy-700">{(result.icd10Codes || []).length}</div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">ICD-10</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">ICD-10</div>
         </div>
       </div>
       {(result.hccFlags || []).length > 0 && (
@@ -240,15 +240,15 @@ function QualityDetails({ result }) {
           <div className={`font-display text-2xl font-semibold leading-none tabular-nums ${qualityScore.score >= 75 ? 'text-success-600' : qualityScore.score >= 50 ? 'text-gold-600' : 'text-danger-500'}`}>
             {qualityScore.score || 0}%
           </div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Quality Score</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">Quality Score</div>
         </div>
         <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
           <div className="font-display text-lg font-semibold leading-none tabular-nums text-danger-500">{dashboard.openCareGaps || 0}</div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Care Gaps</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">Care Gaps</div>
         </div>
         <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
           <div className="font-display text-lg font-semibold leading-none tabular-nums text-danger-500">{dashboard.measuresAtGoal || '—'}</div>
-          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Measures Met</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">Measures Met</div>
         </div>
       </div>
       {(result.gaps || []).slice(0, 4).map((g, i) => (
@@ -277,11 +277,11 @@ function TriageDetails({ result }) {
               assessment.urgency === 'urgent' ? 'text-gold-600' :
               'text-success-600'
             }`}>{(assessment.urgency || '').toUpperCase()}</div>
-            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Urgency</div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">Urgency</div>
           </div>
           <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
             <div className="font-display text-lg font-semibold leading-none text-gold-700">{assessment.disposition || assessment.routing || '—'}</div>
-            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Routing</div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-600">Routing</div>
           </div>
         </div>
       )}
@@ -347,7 +347,7 @@ function MADetails({ result }) {
           'border-l-4 border-slate-200'
         }`}>
           <div className="font-medium text-navy-700">{result.medication || result.question || 'Result'}</div>
-          <div className="text-slate-500 mt-1">{result.instructions || result.response || result.message || result.ma_assessment}</div>
+          <div className="text-slate-600 mt-1">{result.instructions || result.response || result.message || result.ma_assessment}</div>
           {result.escalation_required && (
             <div className="mt-2 flex items-center gap-1 text-gold-700">
               <AlertTriangle size={12} /> Escalation to Physician Agent
@@ -408,7 +408,7 @@ function PhysicianDetails({ result }) {
       <div className="mt-3 space-y-2 text-xs">
         <div className="bg-ivory-200/70 rounded p-3 border-l-4 border-navy-500">
           <div className="font-medium text-navy-700">Decision: {result.decision.replace(/_/g, ' ')}</div>
-          {result.instructions && <div className="text-slate-500 mt-1">{result.instructions}</div>}
+          {result.instructions && <div className="text-slate-600 mt-1">{result.instructions}</div>}
           {result.to_agent && <div className="text-navy-600 mt-1">Directive sent to: {result.to_agent}</div>}
         </div>
       </div>
@@ -575,7 +575,7 @@ export default function AgentPanel({ encounterId, patientId }) {
 
       {/* No results message */}
       {!results && !running && !error && (
-        <div className="px-4 pb-4 text-center text-slate-400 text-sm">
+        <div className="px-4 pb-4 text-center text-slate-600 text-sm">
           {activeTab === 'encounter' ? 'Click "Run Pipeline" to analyze this encounter' : 'Run pre-visit actions above'}
         </div>
       )}

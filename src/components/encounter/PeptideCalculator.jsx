@@ -31,7 +31,7 @@ export default function PeptideCalculator() {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-slate-600">
         Converts a peptide dose into volume and U-100 insulin-syringe units.
         Always double-check every compounded-peptide order against the
         manufacturer&apos;s reconstitution sheet.
@@ -75,7 +75,7 @@ export default function PeptideCalculator() {
 
       {/* Pristine (no input yet) */}
       {result === null && (
-        <div className="bg-ivory-200/70 border border-slate-200 rounded-lg p-3 text-xs text-slate-500 text-center">
+        <div className="bg-ivory-200/70 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 text-center">
           Enter dose and concentration to see volume and U-100 units.
         </div>
       )}

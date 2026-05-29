@@ -8,8 +8,8 @@ import Badge from '../common/Badge';
 export default function AllergyBadges({ allergies = [] }) {
   if (allergies.length === 0) {
     return (
-      <p className="inline-flex items-center gap-1.5 text-sm italic text-slate-400">
-        <ShieldCheck size={14} strokeWidth={2} aria-hidden="true" className="text-success-500" />
+      <p className="inline-flex items-center gap-1.5 text-sm italic text-slate-500">
+        <ShieldCheck size={14} strokeWidth={2} aria-hidden="true" className="text-success-600" />
         No known allergies
       </p>
     );

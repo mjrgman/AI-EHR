@@ -11,17 +11,17 @@ function VitalItem({ label, value, unit, alert }) {
         alert ? 'bg-danger-50 ring-1 ring-danger-200' : 'bg-ivory-200 ring-1 ring-slate-100'
       }`}
     >
-      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">{label}</div>
       <div className={`font-display text-xl font-semibold leading-tight tabular-nums ${alert ? 'text-danger-700' : 'text-navy-700'}`}>
-        {value}{alert && <span className="ml-0.5 text-sm text-danger-500">&uarr;</span>}
+        {value}{alert && <span className="ml-0.5 text-sm text-danger-600">&uarr;</span>}
       </div>
-      {unit && <div className="text-[10px] text-slate-400">{unit}</div>}
+      {unit && <div className="text-[10px] text-slate-500">{unit}</div>}
     </div>
   );
 }
 
 export default function VitalsDisplay({ vitals }) {
-  if (!vitals || Object.keys(vitals).length === 0) return <p className="text-sm text-gray-400 italic">No vitals recorded</p>;
+  if (!vitals || Object.keys(vitals).length === 0) return <p className="text-sm italic text-slate-500">No vitals recorded</p>;
   return (
     <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
       {(vitals.systolic_bp || vitals.diastolic_bp) && <VitalItem label="BP" value={`${vitals.systolic_bp || '?'}/${vitals.diastolic_bp || '?'}`} unit="mmHg" alert={vitals.systolic_bp >= 140 || vitals.diastolic_bp >= 90} />}

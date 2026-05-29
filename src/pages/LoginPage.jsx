@@ -114,7 +114,7 @@ export default function LoginPage() {
 
           <p className="mc-section-label">Clinician Access</p>
           <h2 className="mt-1 font-display text-3xl font-semibold tracking-tight text-navy-700">Sign in</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">Use your clinician credentials to enter the workflow.</p>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Use your clinician credentials to enter the workflow.</p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
             <label className="block">
@@ -159,7 +159,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-7 border-t border-slate-100 pt-5 text-sm leading-6 text-slate-500">
+          <p className="mt-7 border-t border-slate-100 pt-5 text-sm leading-6 text-slate-600">
             Patient access lives at{' '}
             <span className="font-mono text-xs font-semibold text-navy-700">/portal</span> and uses a separate session model.
           </p>

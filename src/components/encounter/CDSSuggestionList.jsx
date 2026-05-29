@@ -12,7 +12,7 @@ export default function CDSSuggestionList({ suggestions = [], onAccept, onReject
         <span className="mx-auto mb-3 grid place-items-center w-12 h-12 rounded-2xl bg-navy-50 text-navy-400 shadow-mc">
           <Sparkles size={22} />
         </span>
-        <p className="text-sm text-slate-500">No suggestions yet. Record vitals or start documentation to trigger CDS.</p>
+        <p className="text-sm text-slate-600">No suggestions yet. Record vitals or start documentation to trigger CDS.</p>
       </div>
     );
   }

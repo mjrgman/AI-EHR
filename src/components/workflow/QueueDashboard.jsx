@@ -21,7 +21,7 @@ export default function QueueDashboard() {
     try { setWorkflows(await api.getAllWorkflows()); } catch (e) { safeLog.error('Queue load failed:', e); } finally { setLoading(false); }
   }
 
-  if (loading) return <div className="animate-pulse p-4 text-slate-400">Loading queue...</div>;
+  if (loading) return <div className="animate-pulse p-4 text-slate-500">Loading queue...</div>;
   const active = workflows.filter(wf => wf.current_state !== 'checked-out');
   if (active.length === 0) return (
     <div className="flex flex-col items-center py-10 text-slate-400">

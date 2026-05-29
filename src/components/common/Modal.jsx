@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   const modalRef = useRef(null);
@@ -65,8 +66,8 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
         {title && (
           <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
             <h2 id={titleId} className="font-display text-lg font-semibold text-navy-700">{title}</h2>
-            <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-ivory-200 rounded-lg text-slate-400 hover:text-slate-600">
-              &#x2715;
+            <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-ivory-200 rounded-lg text-slate-500 hover:text-slate-700 transition-colors">
+              <X size={18} strokeWidth={2.25} aria-hidden="true" />
             </button>
           </div>
         )}

@@ -76,7 +76,7 @@
     @apply bg-offWhite-100 rounded-2xl shadow-mc-lg border border-slate-100 overflow-hidden;
   }
   .card-header {
-    @apply px-5 py-4 border-b border-slate-100 font-semibold text-xs uppercase tracking-[0.12em] text-slate-500;
+    @apply px-5 py-4 border-b border-slate-100 font-semibold text-xs uppercase tracking-[0.12em] text-slate-600;
   }
   .card-body {
     @apply p-5 text-navy-600;
@@ -100,22 +100,22 @@
     @apply badge bg-ivory-200 text-slate-600 border border-slate-100;
   }
   .input-clinical {
-    @apply w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base
+    @apply w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base
            bg-white transition-all duration-150
            focus:ring-2 focus:ring-navy-500 focus:border-navy-500
            placeholder:text-slate-400;
   }
   .textarea-clinical {
-    @apply w-full border border-gray-200 rounded-xl p-3 text-base
+    @apply w-full border border-slate-200 rounded-xl p-3 text-base
            bg-white transition-all duration-150 resize-y
            focus:ring-2 focus:ring-navy-500 focus:border-navy-500
            placeholder:text-slate-400;
   }
   .label-clinical {
-    @apply block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5;
+    @apply block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5;
   }
   .section-header {
-    @apply text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-2 px-1;
+    @apply text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 mb-2 px-1;
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -155,7 +155,7 @@
   /* .mc-section-label — slate, uppercase, tracked eyebrow above a section.
      Signature detail: a short gold leading hairline tick crowns the label. */
   .mc-section-label {
-    @apply inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2;
+    @apply inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 mb-2;
   }
   .mc-section-label::before {
     content: "";

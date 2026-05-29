@@ -55,7 +55,7 @@ function SectionTitle({ icon: Icon, children, tone = 'navy' }) {
     gold: 'bg-gold-50 text-gold-600 ring-gold-200',
   };
   return (
-    <span className="flex items-center gap-2 font-semibold text-xs uppercase tracking-[0.12em] text-slate-500">
+    <span className="flex items-center gap-2 font-semibold text-xs uppercase tracking-[0.12em] text-slate-600">
       <span className={`flex h-6 w-6 items-center justify-center rounded-lg ring-1 ${tones[tone] || tones.navy}`} aria-hidden="true">
         <Icon size={14} strokeWidth={2} />
       </span>
@@ -193,8 +193,8 @@ export default function PatientPage() {
 
   // --- Loading / Error ---
   if (loading) return <LoadingSpinner message="Loading patient..." />;
-  if (error) return <div className="p-4 text-danger-600">Error: {error}</div>;
-  if (!patient) return <div className="p-4 text-slate-500">Patient not found</div>;
+  if (error) return <div className="p-4 text-danger-700">Error: {error}</div>;
+  if (!patient) return <div className="p-4 text-slate-600">Patient not found</div>;
 
   const age = calculateAge(patient.dob);
   const latestVitals = patient.vitals && patient.vitals.length > 0 ? patient.vitals[0] : null;
@@ -308,7 +308,7 @@ export default function PatientPage() {
               {latestVitals ? (
                 <VitalsDisplay vitals={latestVitals} />
               ) : (
-                <p className="text-sm italic text-slate-400">No vitals recorded</p>
+                <p className="text-sm italic text-slate-500">No vitals recorded</p>
               )}
             </CardBody>
           </Card>
@@ -332,7 +332,7 @@ export default function PatientPage() {
                   <LoadingSpinner message="Loading encounters..." />
                 </div>
               ) : encounters.length === 0 ? (
-                <p className="p-5 text-sm italic text-slate-400">No encounters on record.</p>
+                <p className="p-5 text-sm italic text-slate-500">No encounters on record.</p>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {encounters.map((enc) => (
@@ -349,14 +349,14 @@ export default function PatientPage() {
                             {enc.encounter_type || 'Office Visit'}
                           </p>
                           {enc.chief_complaint && (
-                            <p className="max-w-xs truncate text-xs text-slate-500">
+                            <p className="max-w-xs truncate text-xs text-slate-600">
                               CC: {enc.chief_complaint}
                             </p>
                           )}
                         </div>
                       </div>
                       <div className="flex flex-shrink-0 items-center gap-3">
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs text-slate-500">
                           {formatDate(enc.created_at || enc.date)}
                         </span>
                         <Badge

@@ -80,7 +80,7 @@ export default function StatTile({ icon: Icon, label, value = 0, tone = 'navy', 
         </div>
         {Icon && (
           <span
-            className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl ring-1 ${t.chipBg} ${t.chipText} ${t.chipRing} shadow-sm transition-transform duration-200 group-hover:scale-105`}
+            className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl ring-1 ${t.chipBg} ${t.chipText} ${t.chipRing} shadow-mc transition-transform duration-200 group-hover:scale-105`}
             aria-hidden="true"
           >
             <Icon size={24} strokeWidth={2} />

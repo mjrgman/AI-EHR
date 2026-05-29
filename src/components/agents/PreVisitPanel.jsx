@@ -187,7 +187,7 @@ export default function PreVisitPanel({ patientId, encounterId }) {
           </span>
           <div>
             <h3 className="font-display text-sm font-semibold tracking-tight text-navy-700">Pre-Visit Intelligence Briefing</h3>
-            <p className="text-xs text-slate-500">Synopsis-based patient preparation</p>
+            <p className="text-xs text-slate-600">Synopsis-based patient preparation</p>
           </div>
         </div>
         <button
@@ -316,8 +316,8 @@ export default function PreVisitPanel({ patientId, encounterId }) {
       ) : !loading && (
         <div className="p-8 text-center">
           <UserCheck size={32} className="mx-auto text-slate-400 mb-3" />
-          <div className="text-slate-400 text-sm">Click &quot;Generate Briefing&quot; to prepare pre-visit intelligence</div>
-          <div className="text-slate-400 text-xs mt-1">Synopsis-style summary replaces template chart review</div>
+          <div className="text-slate-600 text-sm">Click &quot;Generate Briefing&quot; to prepare pre-visit intelligence</div>
+          <div className="text-slate-500 text-xs mt-1">Synopsis-style summary replaces template chart review</div>
         </div>
       )}
     </div>

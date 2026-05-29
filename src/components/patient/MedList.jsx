@@ -5,7 +5,7 @@ import React from 'react';
 // secondary line. Presentation only.
 export default function MedList({ medications = [], compact = false }) {
   const active = medications.filter(m => m.status === 'active');
-  if (active.length === 0) return <p className="text-sm italic text-slate-400">No active medications</p>;
+  if (active.length === 0) return <p className="text-sm italic text-slate-500">No active medications</p>;
 
   return (
     <ul className="-mx-1 space-y-0.5">
@@ -16,7 +16,7 @@ export default function MedList({ medications = [], compact = false }) {
             <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-navy-400 ring-2 ring-navy-100" aria-hidden="true" />
             <div className="min-w-0 flex-1">
               <span className="font-medium text-navy-700">{m.medication_name}</span>
-              {!compact && detail && <span className="ml-1.5 text-xs text-slate-500">{detail}</span>}
+              {!compact && detail && <span className="ml-1.5 text-xs text-slate-600">{detail}</span>}
             </div>
           </li>
         );

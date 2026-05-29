@@ -181,7 +181,7 @@ export default function AppShell({ children }) {
       <div
         role="status"
         aria-live="off"
-        className="sticky top-14 z-40 flex items-center justify-center gap-2 border-b border-gold-200 bg-gold-50 px-4 py-1.5 text-center text-xs font-semibold tracking-wide text-gold-800 shadow-sm"
+        className="sticky top-14 z-40 flex items-center justify-center gap-2 border-b border-gold-200 bg-gold-50 px-4 py-1.5 text-center text-xs font-semibold tracking-wide text-gold-800 shadow-mc"
       >
         <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold-500" aria-hidden="true" />
         Synthetic EHR Demo · No PHI · Not for clinical use

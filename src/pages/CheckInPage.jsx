@@ -141,7 +141,7 @@ export default function CheckInPage() {
   if (!encounter) {
     return (
       <div className="mc-page max-w-3xl text-center mc-reveal">
-        <p className="text-slate-500 text-lg">Encounter not found.</p>
+        <p className="text-slate-600 text-lg">Encounter not found.</p>
         <TouchButton
           variant="secondary"
           className="mt-4"

@@ -254,7 +254,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded-2xl border border-navy-100 bg-navy-50 px-4 py-2 text-sm font-semibold text-navy-700 transition hover:bg-navy-100"
+        className="rounded-2xl border border-navy-100 bg-navy-50 px-4 py-2 text-sm font-semibold text-navy-700 transition hover:bg-navy-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2"
       >
         Request a new appointment
       </button>
@@ -267,7 +267,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
         <h3 className="font-display text-lg font-semibold text-navy-700">Request a new appointment</h3>
         <button
           onClick={() => { reset(); setOpen(false); }}
-          className="text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700"
+          className="rounded-sm text-xs font-semibold uppercase tracking-wide text-slate-600 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2"
         >
           Cancel
         </button>
@@ -307,7 +307,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
 
       {slots.length > 0 ? (
         <div className="mt-4 space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
             Pick a time — your request will be sent to the front desk for confirmation
           </p>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -316,10 +316,10 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
                 key={slot.slotId}
                 onClick={() => handleBookSlot(slot)}
                 disabled={submittingSlotId !== null}
-                className="rounded-xl border border-slate-200 bg-offWhite-100 px-3 py-2 text-left text-sm font-medium text-navy-700 transition hover:border-gold-400 hover:bg-gold-50 disabled:opacity-50"
+                className="rounded-xl border border-slate-200 bg-offWhite-100 px-3 py-2 text-left text-sm font-medium text-navy-700 transition hover:border-gold-400 hover:bg-gold-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2 disabled:opacity-50"
               >
                 {submittingSlotId === slot.slotId ? 'Submitting...' : slot.dateTimeFormatted}
-                <span className="block text-xs font-normal text-slate-500">{slot.duration} min</span>
+                <span className="block text-xs font-normal text-slate-600">{slot.duration} min</span>
               </button>
             ))}
           </div>
@@ -346,7 +346,7 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
                 <div>
                   <h3 className="font-display text-xl font-semibold text-navy-700">{formatDate(appointment.appointment_date)}</h3>
                   <p className="mt-1 text-sm text-slate-600">{formatTime(appointment.appointment_time)} with {appointment.provider_name}</p>
-                  <p className="mt-2 text-sm capitalize text-slate-500">{String(appointment.appointment_type || 'visit').replace(/_/g, ' ')}</p>
+                  <p className="mt-2 text-sm capitalize text-slate-600">{String(appointment.appointment_type || 'visit').replace(/_/g, ' ')}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <StatusPill status={appointment.status} />
@@ -385,7 +385,7 @@ function MedicationsView({ medications, requestRefill, activeMedicationId }) {
               <p className="mt-1 text-sm text-slate-600">
                 {[medication.dose, medication.route, medication.frequency].filter(Boolean).join(' • ')}
               </p>
-              <p className="mt-2 text-sm text-slate-500">Prescriber: {medication.prescriber || 'Care team'}</p>
+              <p className="mt-2 text-sm text-slate-600">Prescriber: {medication.prescriber || 'Care team'}</p>
             </div>
             <div className="flex items-center gap-3">
               {medication.refill_status ? <StatusPill status={medication.refill_status} /> : null}
@@ -439,7 +439,7 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="font-display text-lg font-semibold text-navy-700">{message.subject || 'Message'}</h3>
-                <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{message.message_type || 'general'}</p>
+                <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{message.message_type || 'general'}</p>
               </div>
               <StatusPill status={message.status} />
             </div>
@@ -790,7 +790,7 @@ export default function PatientPortal() {
           </div>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-offWhite-100 px-4 py-2 text-sm font-semibold text-slate-700 shadow-mc transition hover:border-slate-300 hover:bg-ivory-200"
+            className="flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-offWhite-100 px-4 py-2 text-sm font-semibold text-slate-700 shadow-mc transition hover:border-slate-300 hover:bg-ivory-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2"
           >
             <LogOut size={15} strokeWidth={2} aria-hidden="true" />
             End portal session
@@ -804,7 +804,7 @@ export default function PatientPortal() {
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-2 ${
                 activeTab === tab.key ? 'bg-navy-600 text-white shadow-mc' : 'bg-offWhite-100 text-slate-600 hover:bg-ivory-300'
               }`}
             >

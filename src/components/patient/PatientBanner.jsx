@@ -33,9 +33,9 @@ export default function PatientBanner({ patient, compact = false }) {
           <div>
             <h2 className="font-display text-lg font-semibold leading-tight text-navy-700">
               {patient.first_name} {patient.last_name}
-              <span className="ml-2 font-body text-sm font-normal text-slate-400">{age}{patient.sex || ''} &middot; MRN: {patient.mrn}</span>
+              <span className="ml-2 font-body text-sm font-normal text-slate-500">{age}{patient.sex || ''} &middot; MRN: {patient.mrn}</span>
             </h2>
-            {!compact && <p className="text-xs text-slate-500">DOB: {patient.dob} &middot; {patient.insurance_carrier || 'No insurance'}</p>}
+            {!compact && <p className="text-xs text-slate-600">DOB: {patient.dob} &middot; {patient.insurance_carrier || 'No insurance'}</p>}
           </div>
         </div>
         {allergies.length > 0 && (

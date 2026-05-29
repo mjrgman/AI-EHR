@@ -5,7 +5,7 @@ import React from 'react';
 // active = navy), and a tracked status caption. Presentation only.
 export default function ProblemList({ problems = [], compact = false }) {
   const all = problems.filter(p => p.status === 'active' || p.status === 'chronic');
-  if (all.length === 0) return <p className="text-sm italic text-slate-400">No active problems</p>;
+  if (all.length === 0) return <p className="text-sm italic text-slate-500">No active problems</p>;
 
   return (
     <ul className="-mx-1 space-y-0.5">
@@ -17,7 +17,7 @@ export default function ProblemList({ problems = [], compact = false }) {
           />
           <div className="min-w-0 flex-1">
             <span className="font-medium text-navy-700">{p.problem_name}</span>
-            {!compact && p.icd10_code && <span className="ml-1.5 font-mono text-xs text-slate-400">({p.icd10_code})</span>}
+            {!compact && p.icd10_code && <span className="ml-1.5 font-mono text-xs text-slate-500">({p.icd10_code})</span>}
           </div>
           {!compact && p.status === 'chronic' && (
             <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-gold-600">Chronic</span>

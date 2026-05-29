@@ -44,7 +44,7 @@ export default function HRTRegimenCard({ regimen }) {
           <div className="font-semibold text-sm text-navy-700 truncate">
             {regimen.medication_name || 'Unknown medication'}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5">
+          <div className="text-xs text-slate-600 mt-0.5">
             {regimen.therapy_type && <span>{regimen.therapy_type} &middot; </span>}
             {regimen.dose || '?'} {regimen.route || ''}
             {regimen.frequency && <span> &middot; {regimen.frequency}</span>}

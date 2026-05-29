@@ -610,7 +610,7 @@ export default function EncounterPage() {
             {patient.medications.map((m, i) => (
               <div key={i} className="mc-row text-sm">
                 <div className="font-medium text-navy-700">{m.name || m.medication_name}</div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-slate-600">
                   {m.dosage}
                   {m.frequency ? ` \u2022 ${m.frequency}` : ''}
                 </div>
@@ -985,7 +985,7 @@ export default function EncounterPage() {
               <div key={d.id || i} className="mc-row">
                 <div className="font-medium text-sm text-navy-700">{d.title}</div>
                 {d.description && (
-                  <p className="text-xs text-slate-500 mt-1">{d.description}</p>
+                  <p className="text-xs text-slate-600 mt-1">{d.description}</p>
                 )}
               </div>
             ))}

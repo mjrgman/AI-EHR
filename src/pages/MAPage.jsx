@@ -256,7 +256,7 @@ export default function MAPage() {
             </span>
             Medical Assistant
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Vitals, medication reconciliation &amp; allergy review</p>
+          <p className="mt-1 text-sm text-slate-600">Vitals, medication reconciliation &amp; allergy review</p>
         </div>
 
         {/* Chief Complaint */}
@@ -288,7 +288,7 @@ export default function MAPage() {
               </div>
             </CardHeader>
             <CardBody className="space-y-3">
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-600">
                 Say: &quot;Blood pressure 142 over 88, heart rate 76, temperature 98.6, weight 187, height 68 inches&quot;
               </p>
               <div className="flex gap-2 flex-wrap">
@@ -350,7 +350,7 @@ export default function MAPage() {
                 const prevText = formatPrevVital(f.key);
                 return (
                   <div key={f.key}>
-                    <label className="label-clinical block text-xs font-medium text-slate-500 mb-1">
+                    <label className="label-clinical block text-xs font-medium text-slate-600 mb-1">
                       {f.label} ({f.unit})
                     </label>
                     <input
@@ -390,7 +390,7 @@ export default function MAPage() {
                   <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                     Calculated BMI
                   </div>
-                  <div className="mt-0.5 text-xs text-slate-500">
+                  <div className="mt-0.5 text-xs text-slate-600">
                     {parseFloat(bmi) < 18.5 && 'Underweight'}
                     {parseFloat(bmi) >= 18.5 && parseFloat(bmi) < 25 && 'Normal weight'}
                     {parseFloat(bmi) >= 25 && parseFloat(bmi) < 30 && 'Overweight'}
@@ -398,7 +398,7 @@ export default function MAPage() {
                   </div>
                 </div>
                 <span
-                  className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-offWhite-100/70 ring-1 ring-slate-100 shadow-sm ${bmiColor(bmi)}`}
+                  className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-offWhite-100/70 ring-1 ring-slate-100 shadow-mc ${bmiColor(bmi)}`}
                   aria-hidden="true"
                 >
                   <Activity size={24} strokeWidth={2} />
@@ -442,7 +442,7 @@ export default function MAPage() {
                       <p className="font-medium text-navy-700 text-sm">
                         {m.name || m.medication_name}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-slate-600">
                         {m.dosage}{m.frequency ? ` - ${m.frequency}` : ''}
                         {m.route ? ` (${m.route})` : ''}
                       </p>

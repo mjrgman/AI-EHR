@@ -10,6 +10,7 @@ import { useToast } from '../components/common/Toast';
 import QueueDashboard from '../components/workflow/QueueDashboard';
 import StatTile from '../components/workflow/StatTile';
 import { useAuth } from '../context/AuthContext';
+import { avatarTone, getInitials } from '../components/common/avatarColor';
 import { Hourglass, DoorOpen, Stethoscope, CheckCircle2, Users, ClipboardList, UserPlus, Search } from 'lucide-react';
 
 // Queue summary cards. The `key` for each card MUST be a canonical workflow
@@ -56,31 +57,6 @@ function formatDate(date) {
     month: 'long',
     day: 'numeric',
   }).format(date);
-}
-
-function getInitials(first, last) {
-  return `${(first || '')[0] || ''}${(last || '')[0] || ''}`.toUpperCase();
-}
-
-// Measured Canon avatar tones — a small, brand-harmonious set so patient
-// initials cohere instead of reading as a random rainbow. Navy authority,
-// slate metadata, and deep-teal — all drawn from the portfolio palette.
-// No off-brand purple/blue/rose. Gold stays reserved as a rare accent.
-const AVATAR_COLORS = [
-  'bg-navy-600',
-  'bg-slate-500',
-  'bg-teal-700',
-  'bg-navy-700',
-  'bg-slate-600',
-  'bg-teal-800',
-];
-
-function avatarColor(name) {
-  let hash = 0;
-  for (const ch of (name || '')) {
-    hash = ch.charCodeAt(0) + ((hash << 5) - hash);
-  }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 export default function DashboardPage() {
@@ -269,17 +245,46 @@ export default function DashboardPage() {
               </CardHeader>
               <CardBody>
                 {filteredPatients.length === 0 ? (
-                  <p className="text-slate-500 text-center py-8">
-                    {searchQuery
-                      ? 'No patients match your search.'
-                      : 'No patients found.'}
-                  </p>
+                  <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-navy-50 text-navy-300 ring-1 ring-navy-100">
+                      <Users size={22} strokeWidth={2} aria-hidden="true" />
+                    </span>
+                    <p className="text-sm font-medium text-slate-600">
+                      {searchQuery
+                        ? 'No patients match your search.'
+                        : 'No patients yet.'}
+                    </p>
+                    <p className="max-w-[15rem] text-xs leading-5 text-slate-500">
+                      {searchQuery
+                        ? 'Try a different name or MRN, or clear the search.'
+                        : 'Add a patient to begin building the roster.'}
+                    </p>
+                    {searchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold text-navy-600 transition-colors hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500"
+                      >
+                        Clear search
+                      </button>
+                    ) : (
+                      <TouchButton
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<UserPlus size={15} strokeWidth={2.25} />}
+                        onClick={() => setShowNewPatient(true)}
+                      >
+                        Add New Patient
+                      </TouchButton>
+                    )}
+                  </div>
                 ) : (
                   <div className="divide-y divide-slate-100">
                     {filteredPatients.map((patient) => {
                       const fullName = `${patient.first_name} ${patient.last_name}`;
                       const initials = getInitials(patient.first_name, patient.last_name);
-                      const bgColor = avatarColor(fullName);
+                      const tone = avatarTone(fullName);
 
                       return (
                         <div
@@ -290,7 +295,7 @@ export default function DashboardPage() {
                           <button
                             type="button"
                             onClick={() => navigate(`/patient/${patient.id}`)}
-                            className={`${bgColor} w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 cursor-pointer shadow-mc ring-1 ring-white/10 hover:ring-2 hover:ring-offset-1 hover:ring-navy-400 transition-all duration-150 group-hover:scale-105 active:scale-95 border-0`}
+                            className={`${tone.bg} ${tone.text} w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm shrink-0 cursor-pointer shadow-mc ring-1 ring-white/10 hover:ring-2 hover:ring-offset-1 hover:ring-navy-400 transition-all duration-150 group-hover:scale-105 active:scale-95 border-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1`}
                             title={`View ${fullName}`}
                           >
                             {initials}
@@ -305,7 +310,7 @@ export default function DashboardPage() {
                             <div className="font-medium text-navy-700 truncate group-hover:text-navy-600 transition-colors">
                               {fullName}
                             </div>
-                            <div className="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                            <div className="text-xs text-slate-600 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                               {patient.mrn && <span>MRN: {patient.mrn}</span>}
                               {patient.dob && <span>DOB: {patient.dob}</span>}
                               {patient.sex && <span>{patient.sex}</span>}

@@ -201,7 +201,7 @@ export default function CheckOutPage() {
 
                 <h2 className="font-display text-2xl font-semibold text-navy-700 mb-1">Encounter Complete</h2>
                 <p className="text-slate-600 mb-1">{patientName} has been checked out.</p>
-                <p className="text-slate-400 text-sm mb-6">
+                <p className="text-slate-500 text-sm mb-6">
                   {orderCounts.total} order{orderCounts.total !== 1 ? 's' : ''} placed &middot; Encounter #{encounterId}
                 </p>
 
@@ -217,17 +217,17 @@ export default function CheckOutPage() {
                   {/* Print header */}
                   <div className="print-only mb-4">
                     <h1 className="text-xl font-bold">After-Visit Summary</h1>
-                    <p className="text-sm text-slate-500">{patientName} &middot; {new Date().toLocaleDateString()}</p>
+                    <p className="text-sm text-slate-600">{patientName} &middot; {new Date().toLocaleDateString()}</p>
                     <hr className="mt-2" />
                   </div>
 
-                  <h3 className="font-semibold text-slate-500 mb-3 text-xs uppercase tracking-[0.12em]">
+                  <h3 className="font-semibold text-slate-600 mb-3 text-xs uppercase tracking-[0.12em]">
                     After-Visit Summary
                   </h3>
 
                   {encounter.chief_complaint && (
                     <div className="mb-3">
-                      <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Reason for Visit</p>
+                      <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide">Reason for Visit</p>
                       <p className="text-sm text-navy-700">{encounter.chief_complaint}</p>
                     </div>
                   )}
@@ -236,7 +236,7 @@ export default function CheckOutPage() {
                     <div className="space-y-3">
                       {orders?.prescriptions?.length > 0 && (
                         <div>
-                          <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide mb-1">Pharmacy</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Pharmacy</p>
                           {instructions.filter((i) => i.type === 'pharmacy').map((inst, idx) => (
                             <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
@@ -244,7 +244,7 @@ export default function CheckOutPage() {
                       )}
                       {orders?.lab_orders?.length > 0 && (
                         <div>
-                          <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide mb-1">Lab Work</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Lab Work</p>
                           {instructions.filter((i) => i.type === 'lab').map((inst, idx) => (
                             <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
@@ -252,7 +252,7 @@ export default function CheckOutPage() {
                       )}
                       {orders?.imaging_orders?.length > 0 && (
                         <div>
-                          <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide mb-1">Imaging</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Imaging</p>
                           {instructions.filter((i) => i.type === 'imaging').map((inst, idx) => (
                             <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
@@ -260,7 +260,7 @@ export default function CheckOutPage() {
                       )}
                       {orders?.referrals?.length > 0 && (
                         <div>
-                          <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide mb-1">Referrals</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Referrals</p>
                           {instructions.filter((i) => i.type === 'referral').map((inst, idx) => (
                             <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
@@ -268,12 +268,12 @@ export default function CheckOutPage() {
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-400 italic">No orders for this visit.</p>
+                    <p className="text-sm text-slate-500 italic">No orders for this visit.</p>
                   )}
 
                   {followUpDate && (
                     <div className="mt-3 pt-3 border-t border-slate-200">
-                      <p className="text-xs text-slate-500 uppercase font-semibold tracking-wide">Follow-Up Appointment</p>
+                      <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide">Follow-Up Appointment</p>
                       <p className="text-sm text-navy-700">{formatDate(followUpDate)}</p>
                     </div>
                   )}
@@ -370,7 +370,7 @@ export default function CheckOutPage() {
             <CardBody className="space-y-3">
               {orders?.prescriptions?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Pharmacy Pickups</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Pharmacy Pickups</h4>
                   {orders.prescriptions.map((rx, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="success">Rx</Badge>
@@ -381,7 +381,7 @@ export default function CheckOutPage() {
               )}
               {orders?.lab_orders?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Lab Appointments</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Lab Appointments</h4>
                   {orders.lab_orders.map((lab, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="routine">Lab</Badge>
@@ -396,7 +396,7 @@ export default function CheckOutPage() {
               )}
               {orders?.imaging_orders?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Imaging Scheduling</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Imaging Scheduling</h4>
                   {orders.imaging_orders.map((img, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="purple">Imaging</Badge>
@@ -407,7 +407,7 @@ export default function CheckOutPage() {
               )}
               {orders?.referrals?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Referrals</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Referrals</h4>
                   {orders.referrals.map((ref, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="warning">Referral</Badge>
@@ -466,7 +466,7 @@ export default function CheckOutPage() {
           <CardHeader><span className="mc-section-label mb-0">Billing &amp; E/M Coding</span></CardHeader>
           <CardBody className="space-y-4">
             {chargeLoading ? (
-              <p className="text-sm text-slate-400 animate-pulse">Computing E/M level...</p>
+              <p className="text-sm text-slate-500 animate-pulse">Computing E/M level...</p>
             ) : charge?.em_suggestion ? (
               <>
                 {/* Suggested level badge */}
@@ -500,15 +500,15 @@ export default function CheckOutPage() {
                         el.value === 'high' ? 'text-danger-700' :
                         el.value === 'moderate' ? 'text-gold-700' : 'text-slate-600'
                       }`}>{el.value}</p>
-                      <p className="text-slate-400">{el.sub}</p>
+                      <p className="text-slate-500">{el.sub}</p>
                     </div>
                   ))}
                 </div>
 
                 {/* Provider override */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
-                    Provider Override <span className="normal-case font-normal text-slate-400">(leave blank to accept suggestion)</span>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                    Provider Override <span className="normal-case font-normal text-slate-500">(leave blank to accept suggestion)</span>
                   </label>
                   <select
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
@@ -526,12 +526,12 @@ export default function CheckOutPage() {
                 </div>
               </>
             ) : (
-              <p className="text-sm text-slate-400 italic">E/M suggestion unavailable — billing engine requires a signed encounter with clinical data.</p>
+              <p className="text-sm text-slate-500 italic">E/M suggestion unavailable — billing engine requires a signed encounter with clinical data.</p>
             )}
 
             {/* Billing notes */}
             <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Billing Notes / Copay</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Billing Notes / Copay</label>
               <input
                 type="text"
                 className="input-clinical w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"

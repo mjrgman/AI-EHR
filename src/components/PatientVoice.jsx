@@ -80,7 +80,7 @@ function VerifyForm({ onVerify, isProcessing, error, speechSupported, onVoiceVer
 
           <div>
             <label htmlFor="pv-mrn" className="mb-1 block text-lg font-medium text-slate-700">
-              MRN <span className="text-base font-normal text-slate-400">(optional)</span>
+              MRN <span className="text-base font-normal text-slate-500">(optional)</span>
             </label>
             <input
               id="pv-mrn"
@@ -202,7 +202,7 @@ function ConversationView({
         {/* Transcript display */}
         {transcript && (
           <div className="mt-6 w-full rounded-2xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
-            <p className="mb-1 text-sm font-medium uppercase tracking-wide text-slate-400">You said</p>
+            <p className="mb-1 text-sm font-medium uppercase tracking-wide text-slate-500">You said</p>
             <p className="text-xl text-navy-700">{transcript}</p>
           </div>
         )}
@@ -279,8 +279,8 @@ if (typeof document !== 'undefined' && !document.getElementById(PULSE_STYLE_ID))
   style.id = PULSE_STYLE_ID;
   style.textContent = `
     @keyframes pulse-mic {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-      50% { box-shadow: 0 0 0 16px rgba(239, 68, 68, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(161, 50, 42, 0.5); }
+      50% { box-shadow: 0 0 0 16px rgba(161, 50, 42, 0); }
     }
     .animate-pulse-mic { animation: pulse-mic 1.5s ease-in-out infinite; }
   `;

@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 const ToastContext = createContext(null);
 
+// On-brand lucide icons keyed by toast type (replaces the prior glyph chars).
 const ICONS = {
-  success: '✓',
-  error: '✕',
-  warning: '⚠',
-  info: 'ℹ',
+  success: CheckCircle2,
+  error: XCircle,
+  warning: AlertTriangle,
+  info: Info,
 };
 
 const COLORS = {
@@ -39,16 +41,20 @@ function ToastItem({ toast, onRemove }) {
       style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 12px rgba(26,58,82,0.08), 0 16px 40px rgba(26,58,82,0.16)' }}
       className={`${exiting ? 'toast-exit' : 'toast-enter'} flex items-start gap-3 px-4 py-3 rounded-xl border ${COLORS[toast.type]} max-w-sm w-full`}
     >
-      <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${ICON_COLORS[toast.type]}`}>
-        {ICONS[toast.type]}
+      <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${ICON_COLORS[toast.type]}`}>
+        {(() => {
+          const Icon = ICONS[toast.type] || Info;
+          return <Icon size={14} strokeWidth={2.5} aria-hidden="true" />;
+        })()}
       </span>
       <div className="flex-1 min-w-0">
         {toast.title && <p className="font-semibold text-sm">{toast.title}</p>}
         <p className="text-sm opacity-90">{toast.message}</p>
       </div>
       <button onClick={() => { setExiting(true); setTimeout(() => onRemove(toast.id), 300); }}
-        className="flex-shrink-0 p-1 rounded-lg hover:bg-black/5 text-current opacity-50 hover:opacity-100">
-        ✕
+        aria-label="Dismiss notification"
+        className="flex-shrink-0 p-1 rounded-lg hover:bg-black/5 text-current opacity-50 hover:opacity-100 transition-opacity">
+        <X size={14} strokeWidth={2.5} aria-hidden="true" />
       </button>
     </div>
   );

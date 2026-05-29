@@ -194,7 +194,7 @@ export default function SchedulePage() {
             <CalendarDays className="w-4 h-4 text-gold-500 flex-shrink-0" strokeWidth={2} aria-hidden="true" />
             <div className="text-center">
               <p className="font-display text-lg font-semibold text-navy-700 tracking-tight leading-tight">{formatDisplayDate(selectedDate)}</p>
-              <p className="text-xs text-slate-400 tabular-nums">{selectedDate}</p>
+              <p className="text-xs text-slate-500 tabular-nums">{selectedDate}</p>
             </div>
           </div>
           <TouchButton
@@ -250,7 +250,7 @@ export default function SchedulePage() {
                 type="button"
                 onClick={() => setShowNewForm(false)}
                 aria-label="Close new appointment form"
-                className="text-slate-400 hover:text-navy-700 text-lg leading-none"
+                className="text-slate-400 hover:text-navy-700 text-lg leading-none rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"
               >
                 &times;
               </button>
@@ -260,7 +260,7 @@ export default function SchedulePage() {
             <form onSubmit={handleNewAppointment} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Patient *</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Patient *</label>
                   <select
                     required
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
@@ -274,7 +274,7 @@ export default function SchedulePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Visit Type</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Visit Type</label>
                   <select
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.visit_type}
@@ -286,7 +286,7 @@ export default function SchedulePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Date</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Date</label>
                   <input
                     type="date"
                     required
@@ -296,7 +296,7 @@ export default function SchedulePage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Time</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Time</label>
                   <input
                     type="time"
                     required
@@ -306,7 +306,7 @@ export default function SchedulePage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Duration (min)</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Duration (min)</label>
                   <select
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.duration_minutes}
@@ -318,7 +318,7 @@ export default function SchedulePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Chief Complaint</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Chief Complaint</label>
                   <input
                     type="text"
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
@@ -351,7 +351,7 @@ export default function SchedulePage() {
               <CalendarDays className="w-8 h-8 text-slate-400" strokeWidth={1.75} aria-hidden="true" />
             </span>
             <h3 className="font-display text-lg font-semibold text-navy-700">No appointments scheduled</h3>
-            <p className="text-sm text-slate-500 mt-1">for {formatDisplayDate(selectedDate)}</p>
+            <p className="text-sm text-slate-600 mt-1">for {formatDisplayDate(selectedDate)}</p>
             <div className="mt-5">
               <TouchButton
                 type="button"
@@ -370,18 +370,18 @@ export default function SchedulePage() {
            column-header eyebrows, refined row rhythm, hover, semantic status
            dots, and a danger lead-edge on no-show / cancelled rows. */
         <Card>
-          <CardHeader action={<span className="font-mono text-xs text-slate-400">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}</span>}>
+          <CardHeader action={<span className="font-mono text-xs text-slate-500">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}</span>}>
             {formatDisplayDate(selectedDate)}
           </CardHeader>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-ivory-200/70">
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Time</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Patient</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Visit</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Patient</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Visit</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -411,7 +411,7 @@ export default function SchedulePage() {
                           isArrived ? 'before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-gold-400 before:opacity-70' : ''
                         }`}>
                           <p className="text-sm font-bold text-navy-700 tabular-nums">{formatTime(appt.appointment_time)}</p>
-                          <p className="text-xs text-slate-400">{appt.duration_minutes || 30}m</p>
+                          <p className="text-xs text-slate-500">{appt.duration_minutes || 30}m</p>
                         </td>
                         {/* Patient */}
                         <td className="px-4 py-3">
@@ -419,7 +419,7 @@ export default function SchedulePage() {
                             {appt.patient_last_name ? `${appt.patient_last_name}, ${appt.patient_first_name}` : `Patient #${appt.patient_id}`}
                           </p>
                           {appt.chief_complaint && (
-                            <p className="text-xs text-slate-500 mt-0.5 max-w-[220px] truncate">{appt.chief_complaint}</p>
+                            <p className="text-xs text-slate-600 mt-0.5 max-w-[220px] truncate">{appt.chief_complaint}</p>
                           )}
                         </td>
                         {/* Status */}
@@ -432,9 +432,9 @@ export default function SchedulePage() {
                         {/* Visit type */}
                         <td className="whitespace-nowrap px-4 py-3">
                           {appt.visit_type ? (
-                            <span className="text-xs text-slate-500 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
+                            <span className="text-xs text-slate-600 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
                           ) : (
-                            <span className="text-xs text-slate-300">-</span>
+                            <span className="text-xs text-slate-400">-</span>
                           )}
                         </td>
                         {/* Actions */}
@@ -446,7 +446,7 @@ export default function SchedulePage() {
                                   <button
                                     onClick={() => handleStatusChange(appt.id, 'confirmed')}
                                     disabled={isUpdating}
-                                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 transition-colors disabled:opacity-50 font-medium"
+                                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 active:bg-navy-100 transition-colors disabled:opacity-50 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"
                                   >
                                     <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
                                     Confirm
@@ -455,7 +455,7 @@ export default function SchedulePage() {
                                 <button
                                   onClick={() => handleCheckin(appt)}
                                   disabled={isUpdating}
-                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 transition-colors disabled:opacity-50 font-semibold"
+                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 active:bg-success-100 transition-colors disabled:opacity-50 font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-success-500 focus-visible:ring-offset-1"
                                 >
                                   <LogIn className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
                                   Check In
@@ -463,7 +463,7 @@ export default function SchedulePage() {
                                 <button
                                   onClick={() => handleStatusChange(appt.id, 'no-show')}
                                   disabled={isUpdating}
-                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus:ring-2 focus:ring-danger-500 focus:ring-offset-1"
+                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 active:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500 focus-visible:ring-offset-1"
                                 >
                                   <CalendarX className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
                                   No-Show
@@ -472,7 +472,7 @@ export default function SchedulePage() {
                             ) : appt.status === 'arrived' && appt.encounter_id ? (
                               <button
                                 onClick={() => navigate('/checkin/' + appt.encounter_id)}
-                                className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 transition-colors font-medium"
+                                className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 active:bg-ivory-200 transition-colors font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"
                               >
                                 Open Encounter
                               </button>
@@ -483,7 +483,7 @@ export default function SchedulePage() {
                                 onClick={() => handleDelete(appt.id)}
                                 disabled={isUpdating}
                                 aria-label={`Cancel appointment for ${appt.patient_last_name ? `${appt.patient_first_name} ${appt.patient_last_name}` : `patient ${appt.patient_id}`} at ${formatTime(appt.appointment_time)}`}
-                                className="text-xs px-2 py-1.5 text-slate-400 hover:text-danger-600 transition-colors disabled:opacity-50"
+                                className="text-xs px-2 py-1.5 text-slate-400 hover:text-danger-600 transition-colors disabled:opacity-50 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500 focus-visible:ring-offset-1"
                                 title="Cancel appointment"
                               >
                                 &times;

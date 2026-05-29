@@ -184,7 +184,7 @@ export default function ReviewPage() {
             </span>
             Review &amp; Sign
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Verify the note, confirm orders, attest, and sign the encounter</p>
+          <p className="mt-1 text-sm text-slate-600">Verify the note, confirm orders, attest, and sign the encounter</p>
         </div>
 
         {/* Orders at-a-glance — premium StatTiles matching the Audit stat bar.
@@ -281,7 +281,7 @@ export default function ReviewPage() {
             <CardBody className="space-y-3">
               {accepted.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Accepted ({accepted.length})</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Accepted ({accepted.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {accepted.map((s) => (
                       <Badge key={s.id} variant="success">
@@ -293,7 +293,7 @@ export default function ReviewPage() {
               )}
               {rejected.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Rejected ({rejected.length})</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Rejected ({rejected.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {rejected.map((s) => (
                       <span
@@ -329,9 +329,9 @@ export default function ReviewPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-ivory-200/70">
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Medication</th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Sig</th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Medication</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Sig</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -343,7 +343,7 @@ export default function ReviewPage() {
                               <span className="font-medium text-navy-700">{rx.medication_name}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-2.5 text-slate-500">{rx.dose} {rx.route} {rx.frequency}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{rx.dose} {rx.route} {rx.frequency}</td>
                           <td className="px-4 py-2.5 text-right font-mono text-xs text-slate-400">{rx.status}</td>
                         </tr>
                       ))}
@@ -360,9 +360,9 @@ export default function ReviewPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-ivory-200/70">
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Test</th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">CPT</th>
-                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">Priority</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Test</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">CPT</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">Priority</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -391,8 +391,8 @@ export default function ReviewPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-ivory-200/70">
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Study</th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Body Part</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Study</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Body Part</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -404,7 +404,7 @@ export default function ReviewPage() {
                               <span className="font-medium text-navy-700">{img.study_type}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-2.5 text-slate-500">{img.body_part}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{img.body_part}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -420,8 +420,8 @@ export default function ReviewPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 bg-ivory-200/70">
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Specialty</th>
-                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Reason</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Specialty</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Reason</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -433,7 +433,7 @@ export default function ReviewPage() {
                               <span className="font-medium text-navy-700">{ref.specialty}</span>
                             </div>
                           </td>
-                          <td className="px-4 py-2.5 text-slate-500">{ref.reason}</td>
+                          <td className="px-4 py-2.5 text-slate-600">{ref.reason}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -458,7 +458,7 @@ export default function ReviewPage() {
                 <p className="font-semibold text-navy-700">
                   I have reviewed and approve this documentation
                 </p>
-                <p className="text-sm text-slate-500 mt-0.5">
+                <p className="text-sm text-slate-600 mt-0.5">
                   By checking this box, I attest that the SOAP note, orders, and clinical decision support
                   actions accurately reflect the care provided during this encounter.
                 </p>
