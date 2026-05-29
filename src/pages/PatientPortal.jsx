@@ -329,9 +329,9 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
           No upcoming appointments. Use the form above to request one.
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="mc-reveal-stagger space-y-4">
           {appointments.map((appointment) => (
-            <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={appointment.id}>
+            <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-lg" key={appointment.id}>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <h3 className="font-display text-xl font-semibold text-navy-700">{formatDate(appointment.appointment_date)}</h3>
@@ -344,7 +344,7 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
                     <button
                       onClick={() => checkInAppointment(appointment.id)}
                       disabled={activeCheckInId === appointment.id}
-                      className="flex items-center gap-1.5 rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white shadow-mc transition hover:bg-navy-700 hover:shadow-mc-lg disabled:bg-slate-400"
+                      className="mc-btn-fill mc-btn-success flex items-center gap-1.5 rounded-xl bg-success-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-success-700 active:scale-95 disabled:bg-slate-400 disabled:shadow-none"
                     >
                       <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" />
                       {activeCheckInId === appointment.id ? 'Checking in...' : 'Check in'}
@@ -366,9 +366,9 @@ function MedicationsView({ medications, requestRefill, activeMedicationId }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mc-reveal-stagger space-y-4">
       {medications.map((medication) => (
-        <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={medication.id}>
+        <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-lg" key={medication.id}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h3 className="font-display text-lg font-semibold text-navy-700">{medication.medication_name}</h3>
@@ -400,9 +400,9 @@ function LabsView({ labs }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mc-reveal-stagger space-y-4">
       {labs.map((lab) => (
-        <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={lab.id}>
+        <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-lg" key={lab.id}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <h3 className="font-display text-lg font-semibold text-navy-700">{lab.plain_name || lab.test_name}</h3>
@@ -422,9 +422,9 @@ function LabsView({ labs }) {
 function MessagesView({ messages, messageForm, setMessageForm, sendMessage, sendingMessage }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
-      <div className="space-y-4">
+      <div className="mc-reveal-stagger space-y-4">
         {messages.length ? messages.map((message) => (
-          <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={message.id}>
+          <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-lg" key={message.id}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="font-display text-lg font-semibold text-navy-700">{message.subject || 'Message'}</h3>
@@ -536,14 +536,17 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
 
 function VisitPrepView({ checklist }) {
   return (
-    <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg">
+    <div className="relative overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg">
+      {/* Signature moment — gold hairline crowns the visit-prep card */}
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
+      <p className="mc-section-label">Before your visit</p>
       <h3 className="flex items-center gap-2 font-display text-2xl font-semibold text-navy-700">
         <ClipboardCheck size={22} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
         Visit checklist
       </h3>
-      <ul className="mt-5 space-y-3">
+      <ul className="mc-reveal-stagger mt-5 space-y-3">
         {checklist.map((item) => (
-          <li className="flex items-start gap-3 text-sm leading-6 text-slate-700" key={item}>
+          <li className="mc-row flex items-start gap-3 text-sm leading-6 text-slate-700" key={item}>
             <CheckCircle2 size={18} strokeWidth={2} aria-hidden="true" className="mt-0.5 flex-shrink-0 text-success-600" />
             <span>{item}</span>
           </li>
@@ -751,7 +754,9 @@ export default function PatientPortal() {
 
   return (
     <div className="min-h-screen bg-ivory-200">
-      <header className="border-b border-slate-100 bg-offWhite-100/90 backdrop-blur">
+      <header className="relative border-b border-slate-100 bg-offWhite-100/90 backdrop-blur">
+        {/* Signature moment — gold hairline crowns the portal header */}
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-gold-700">

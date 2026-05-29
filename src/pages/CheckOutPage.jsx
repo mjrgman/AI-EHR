@@ -325,8 +325,9 @@ export default function CheckOutPage() {
           <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} />
         </div>
 
-        {/* Signed confirmation banner */}
-        <div className="bg-success-50 border border-success-100 rounded-xl p-4 flex items-center gap-3 shadow-mc-lg">
+        {/* Signed confirmation banner — signature moment: gold hairline crowns the anchor */}
+        <div className="relative bg-success-50 border border-success-100 rounded-xl p-4 flex items-center gap-3 shadow-mc-lg overflow-hidden">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-4 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-gold-400/70 to-transparent" />
           <div className="flex-shrink-0 w-10 h-10 rounded-full bg-success-100 ring-2 ring-success-50 flex items-center justify-center">
             <CheckCircle2 className="w-5 h-5 text-success-600" strokeWidth={2.5} aria-hidden="true" />
           </div>
@@ -342,7 +343,7 @@ export default function CheckOutPage() {
         {/* Patient Instructions */}
         {instructions.length > 0 && (
           <Card>
-            <CardHeader>Patient Instructions</CardHeader>
+            <CardHeader><span className="mc-section-label mb-0">Patient Instructions</span></CardHeader>
             <CardBody className="space-y-3">
               {orders?.prescriptions?.length > 0 && (
                 <div>
@@ -401,7 +402,7 @@ export default function CheckOutPage() {
 
         {/* Follow-up Scheduling */}
         <Card>
-          <CardHeader>Follow-Up Scheduling</CardHeader>
+          <CardHeader><span className="mc-section-label mb-0">Follow-Up Scheduling</span></CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -439,7 +440,7 @@ export default function CheckOutPage() {
 
         {/* Billing / E&M Level */}
         <Card>
-          <CardHeader>Billing &amp; E/M Coding</CardHeader>
+          <CardHeader><span className="mc-section-label mb-0">Billing &amp; E/M Coding</span></CardHeader>
           <CardBody className="space-y-4">
             {chargeLoading ? (
               <p className="text-sm text-slate-400 animate-pulse">Computing E/M level...</p>

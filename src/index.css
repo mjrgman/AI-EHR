@@ -61,61 +61,61 @@
            focus:outline-none focus:ring-2 focus:ring-offset-2;
   }
   .touch-btn-primary {
-    @apply touch-btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+    @apply touch-btn bg-navy-600 text-white hover:bg-navy-700 focus:ring-navy-500;
   }
   .touch-btn-success {
-    @apply touch-btn bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500;
+    @apply touch-btn bg-success-600 text-white hover:bg-success-700 focus:ring-success-600;
   }
   .touch-btn-danger {
-    @apply touch-btn bg-red-100 text-red-700 hover:bg-red-200 focus:ring-red-500;
+    @apply touch-btn bg-red-50 text-danger-700 border border-danger-200 hover:bg-red-100 focus:ring-danger-500;
   }
   .touch-btn-secondary {
-    @apply touch-btn bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-400;
+    @apply touch-btn bg-offWhite-100 text-slate-700 border border-slate-300 hover:bg-ivory-200 focus:ring-slate-400;
   }
   .card {
-    @apply bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden;
+    @apply bg-offWhite-100 rounded-2xl shadow-mc-lg border border-slate-100 overflow-hidden;
   }
   .card-header {
-    @apply px-5 py-4 border-b border-gray-100 font-semibold text-sm uppercase tracking-wide text-gray-500;
+    @apply px-5 py-4 border-b border-slate-100 font-semibold text-xs uppercase tracking-[0.12em] text-slate-500;
   }
   .card-body {
-    @apply p-5;
+    @apply p-5 text-navy-600;
   }
   .badge {
     @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium;
   }
   .badge-urgent {
-    @apply badge bg-red-100 text-red-800;
+    @apply badge bg-red-100 text-red-800 border border-red-200;
   }
   .badge-routine {
-    @apply badge bg-blue-100 text-blue-800;
+    @apply badge bg-navy-50 text-navy-700 border border-navy-100;
   }
   .badge-success {
-    @apply badge bg-emerald-100 text-emerald-800;
+    @apply badge bg-success-50 text-success-700 border border-success-100;
   }
   .badge-warning {
-    @apply badge bg-amber-100 text-amber-800;
+    @apply badge bg-gold-50 text-gold-700 border border-gold-200;
   }
   .badge-info {
-    @apply badge bg-gray-100 text-gray-700;
+    @apply badge bg-ivory-200 text-slate-600 border border-slate-100;
   }
   .input-clinical {
     @apply w-full border border-gray-200 rounded-xl px-3 py-2.5 text-base
            bg-white transition-all duration-150
-           focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-           placeholder:text-gray-400;
+           focus:ring-2 focus:ring-navy-500 focus:border-navy-500
+           placeholder:text-slate-400;
   }
   .textarea-clinical {
     @apply w-full border border-gray-200 rounded-xl p-3 text-base
            bg-white transition-all duration-150 resize-y
-           focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-           placeholder:text-gray-400;
+           focus:ring-2 focus:ring-navy-500 focus:border-navy-500
+           placeholder:text-slate-400;
   }
   .label-clinical {
     @apply block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5;
   }
   .section-header {
-    @apply text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2 px-1;
+    @apply text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-2 px-1;
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -126,15 +126,23 @@
   /* .mc-card — offWhite interior surface, soft layered shadow, subtle border.
      A faint top-edge inset sheen adds crafted depth without harsh borders. */
   .mc-card {
-    @apply bg-offWhite-100 rounded-2xl shadow-mc-lg border border-slate-100 overflow-hidden transition-all duration-200;
+    @apply bg-offWhite-100 rounded-2xl border border-slate-100 overflow-hidden transition-all duration-200;
     box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.6),
-      0 2px 6px rgba(26, 58, 82, 0.05),
-      0 8px 24px rgba(26, 58, 82, 0.10);
+      inset 0 1px 0 rgba(255, 255, 255, 0.65),
+      0 1px 2px rgba(26, 58, 82, 0.04),
+      0 3px 8px rgba(26, 58, 82, 0.06),
+      0 12px 32px rgba(26, 58, 82, 0.10);
   }
-  /* .mc-card-hover — premium lift on hover for interactive cards */
+  /* .mc-card-hover — premium lift on hover for interactive cards: the card
+     rises, the shadow deepens and spreads, the border warms toward slate. */
   .mc-card-hover {
-    @apply hover:shadow-mc-xl hover:-translate-y-0.5 hover:border-slate-200;
+    @apply cursor-pointer hover:-translate-y-0.5 hover:border-slate-200;
+  }
+  .mc-card-hover:hover {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      0 4px 10px rgba(26, 58, 82, 0.08),
+      0 20px 44px rgba(26, 58, 82, 0.16);
   }
   /* .mc-page — centered reading measure with comfortable page padding */
   .mc-page {
@@ -144,10 +152,56 @@
   .mc-page-title {
     @apply font-display text-2xl sm:text-3xl font-semibold text-navy-700 tracking-tight;
   }
-  /* .mc-section-label — slate, uppercase, tracked eyebrow above a section */
+  /* .mc-section-label — slate, uppercase, tracked eyebrow above a section.
+     Signature detail: a short gold leading hairline tick crowns the label. */
   .mc-section-label {
-    @apply text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 mb-2;
+    @apply inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2;
   }
+  .mc-section-label::before {
+    content: "";
+    @apply inline-block h-px w-5 rounded-full;
+    background: linear-gradient(90deg, var(--mc-gold), rgba(184, 134, 11, 0));
+  }
+
+  /* .mc-row — refined list-row hover: subtle ivory wash, inset gold lead edge
+     on hover, smooth lift-free transition (good for dense clinical lists). */
+  .mc-row {
+    @apply relative rounded-xl px-3 py-2.5 transition-all duration-150
+           hover:bg-ivory-200/70;
+  }
+  .mc-row::before {
+    content: "";
+    @apply absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-gold-400
+           opacity-0 transition-opacity duration-150;
+  }
+  .mc-row:hover::before {
+    @apply opacity-100;
+  }
+
+  /* mc-btn-fill — depth system for FILLED buttons. Layered tinted elevation +
+     a faint top inset sheen so the color reads dimensional and confident, not
+     flat/washed. Press gives a real depth collapse. Tint set per color below. */
+  .mc-btn-fill {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      0 1px 2px rgba(26, 58, 82, 0.10),
+      0 4px 12px var(--mc-btn-glow, rgba(26, 58, 82, 0.18));
+    transition: box-shadow 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+  }
+  .mc-btn-fill:hover {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 2px 4px rgba(26, 58, 82, 0.12),
+      0 8px 22px var(--mc-btn-glow-hover, rgba(26, 58, 82, 0.26));
+  }
+  .mc-btn-fill:active {
+    box-shadow:
+      inset 0 2px 4px rgba(0, 0, 0, 0.16),
+      0 1px 2px rgba(26, 58, 82, 0.10);
+  }
+  .mc-btn-navy    { --mc-btn-glow: rgba(26, 58, 82, 0.28);  --mc-btn-glow-hover: rgba(26, 58, 82, 0.38); }
+  .mc-btn-success { --mc-btn-glow: rgba(63, 122, 82, 0.30); --mc-btn-glow-hover: rgba(42, 83, 55, 0.42); }
+  .mc-btn-gold    { --mc-btn-glow: rgba(184, 134, 11, 0.28); --mc-btn-glow-hover: rgba(156, 113, 9, 0.40); }
   /* .mc-stat-card — KPI tile: offWhite surface, layered shadow, generous
      padding. Prefer the StatTile component for the full crafted treatment. */
   .mc-stat-card {

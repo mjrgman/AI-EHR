@@ -269,9 +269,11 @@ export default function AuditPage() {
 
   return (
     <div className="mc-page mc-reveal-stagger max-w-7xl space-y-5">
-      {/* Page header */}
-      <div className="flex items-center justify-between">
+      {/* Page header — gold hairline crowns the compliance surface (signature) */}
+      <div className="relative flex items-center justify-between">
+        <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
         <div>
+          <p className="mc-section-label">Security &amp; Compliance</p>
           <h1 className="mc-page-title flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
               <ShieldCheck size={20} strokeWidth={2} aria-hidden="true" />
@@ -404,11 +406,22 @@ export default function AuditPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {logs.map(log => (
+                {logs.map(log => {
+                  const isError = Number(log.response_status) >= 400;
+                  // Security rows carry a quiet danger lead-edge: PHI access or
+                  // an error status is the audit trail's whole reason to exist.
+                  const securityRow = log.phi_accessed || isError;
+                  return (
                   <tr key={log.id}
                     onClick={() => setSelectedLog(log)}
-                    className="group cursor-pointer transition-colors hover:bg-ivory-200">
-                    <td className="whitespace-nowrap px-4 py-3">
+                    className={`group cursor-pointer transition-colors ${
+                      isError
+                        ? 'bg-danger-50/40 hover:bg-danger-50/70'
+                        : log.phi_accessed
+                        ? 'hover:bg-danger-50/40'
+                        : 'hover:bg-ivory-200'
+                    }`}>
+                    <td className={`relative whitespace-nowrap px-4 py-3 ${securityRow ? 'before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-danger-400 before:opacity-70' : ''}`}>
                       <span className="font-mono text-xs text-navy-700" title={formatFullTimestamp(log.timestamp)}>
                         {formatTimestamp(log.timestamp)}
                       </span>
@@ -460,7 +473,8 @@ export default function AuditPage() {
                       </span>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

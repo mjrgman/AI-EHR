@@ -205,7 +205,7 @@ export default function CheckInPage() {
           ) : (
             <Card>
               <CardHeader>
-                <h3 className="section-header m-0">Allergy Alerts</h3>
+                <span className="mc-section-label mb-0">Allergy Alerts</span>
               </CardHeader>
               <CardBody>
                 <p className="inline-flex items-center gap-2 text-success-700 bg-success-50 border border-success-100 rounded-lg px-3 py-2 text-sm font-medium">
@@ -221,7 +221,7 @@ export default function CheckInPage() {
         {patient && (
           <Card>
             <CardHeader>
-              <h3 className="section-header m-0">Demographics Confirmation</h3>
+              <span className="mc-section-label mb-0">Demographics Confirmation</span>
             </CardHeader>
             <CardBody>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
@@ -264,7 +264,7 @@ export default function CheckInPage() {
         {previousEncounter && (
           <Card>
             <CardHeader>
-              <h3 className="section-header m-0">Previous Visit</h3>
+              <span className="mc-section-label mb-0">Previous Visit</span>
             </CardHeader>
             <CardBody>
               <div className="bg-ivory-100 border border-slate-100 rounded-xl p-3 text-sm space-y-1">
@@ -293,11 +293,12 @@ export default function CheckInPage() {
           </Card>
         )}
 
-        {/* Check-In Form */}
+        {/* Check-In Form — signature moment: a gold hairline crowns the decisive section */}
         <div>
-          <Card>
+          <Card className="relative">
+            <span aria-hidden="true" className="pointer-events-none absolute inset-x-5 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-gold-400/70 to-transparent" />
             <CardHeader>
-              <h3 className="section-header m-0">Check-In</h3>
+              <span className="mc-section-label mb-0">Check-In</span>
             </CardHeader>
             <CardBody>
               <div className="space-y-5">

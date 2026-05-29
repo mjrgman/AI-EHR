@@ -62,15 +62,17 @@ function getInitials(first, last) {
   return `${(first || '')[0] || ''}${(last || '')[0] || ''}`.toUpperCase();
 }
 
+// Measured Canon avatar tones — a small, brand-harmonious set so patient
+// initials cohere instead of reading as a random rainbow. Navy authority,
+// slate metadata, and deep-teal — all drawn from the portfolio palette.
+// No off-brand purple/blue/rose. Gold stays reserved as a rare accent.
 const AVATAR_COLORS = [
-  'bg-blue-500',
-  'bg-emerald-500',
-  'bg-purple-500',
-  'bg-rose-500',
-  'bg-amber-500',
-  'bg-cyan-500',
-  'bg-indigo-500',
-  'bg-teal-500',
+  'bg-navy-600',
+  'bg-slate-500',
+  'bg-teal-700',
+  'bg-navy-700',
+  'bg-slate-600',
+  'bg-teal-800',
 ];
 
 function avatarColor(name) {
@@ -209,7 +211,7 @@ export default function DashboardPage() {
         {/* Queue count summary cards — redesigned KPI tiles (lucide icon in a
             tinted chip, large serif number, no arbitrary dots). Gold tone on
             "Waiting" is the dashboard's single live attention beat. */}
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="mc-reveal-stagger grid grid-cols-2 gap-4 sm:grid-cols-4">
           {QUEUE_CONFIG.map((q) => (
             <StatTile
               key={q.key}
@@ -222,13 +224,21 @@ export default function DashboardPage() {
         </div>
 
         {/* Main grid: 1 col mobile, 2 cols desktop */}
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="mc-reveal-stagger grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Left column -- Patient list */}
           <div>
-            <Card>
+            <Card className="relative">
+              {/* Signature moment: a refined gold key-line crowning the roster. */}
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2px] bg-gradient-to-r from-gold-500/0 via-gold-500/80 to-gold-500/0"
+              />
               <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Patients</h2>
+                  <div className="min-w-0">
+                    <p className="mc-section-label">Roster · {filteredPatients.length}</p>
+                    <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Patients</h2>
+                  </div>
                   <TouchButton
                     type="button"
                     variant="primary"
@@ -272,13 +282,13 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={patient.id}
-                          className="flex items-center gap-3 rounded-xl px-2 py-3 transition-all duration-150 hover:bg-ivory-200 hover:shadow-mc group"
+                          className="mc-row group flex items-center gap-3 py-3 hover:shadow-mc"
                         >
                           {/* Avatar */}
                           <button
                             type="button"
                             onClick={() => navigate(`/patient/${patient.id}`)}
-                            className={`${bgColor} w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-navy-400 transition-shadow border-0`}
+                            className={`${bgColor} w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 cursor-pointer shadow-mc ring-1 ring-white/10 hover:ring-2 hover:ring-offset-1 hover:ring-navy-400 transition-all duration-150 group-hover:scale-105 active:scale-95 border-0`}
                             title={`View ${fullName}`}
                           >
                             {initials}
@@ -327,7 +337,10 @@ export default function DashboardPage() {
           <div>
             <Card>
               <CardHeader>
-                <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Active Encounters</h2>
+                <div className="min-w-0">
+                  <p className="mc-section-label">In Flight · {dashboard?.active_encounters ?? 0}</p>
+                  <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Active Encounters</h2>
+                </div>
               </CardHeader>
               <CardBody>
                 <QueueDashboard />

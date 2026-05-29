@@ -103,6 +103,7 @@ export default function LoginPage() {
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-gold-500/0 via-gold-500 to-gold-500/0"
           />
+          <div className="mc-reveal-stagger">
           {/* Compact brand mark — visible on small screens where the panel is hidden */}
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
             <span className="flex h-8 w-8 items-center justify-center rounded-full border border-gold-400/60 bg-gold-500/10 text-[11px] font-bold tracking-[0.12em] text-gold-600">
@@ -150,7 +151,7 @@ export default function LoginPage() {
             ) : null}
 
             <button
-              className="touch-btn w-full bg-navy-600 text-white shadow-mc transition-all duration-150 hover:bg-navy-700 focus:ring-navy-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+              className="touch-btn mc-btn-fill mc-btn-navy w-full bg-navy-600 text-white hover:bg-navy-700 active:bg-navy-800 focus:ring-navy-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
               type="submit"
               disabled={submitting}
             >
@@ -162,6 +163,7 @@ export default function LoginPage() {
             Patient access lives at{' '}
             <span className="font-mono text-xs font-semibold text-navy-700">/portal</span> and uses a separate session model.
           </p>
+          </div>
         </div>
       </section>
     </div>

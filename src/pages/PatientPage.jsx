@@ -197,7 +197,7 @@ export default function PatientPage() {
         </div>
 
         {/* Demographics Card */}
-        <Card>
+        <Card className="hover:-translate-y-0.5 transition-all duration-200">
           <CardHeader>Demographics</CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
@@ -228,6 +228,9 @@ export default function PatientPage() {
             </div>
           </CardBody>
         </Card>
+
+        {/* Clinical summary — refined eyebrow crowns the chart grid */}
+        <div className="mc-section-label">Clinical Chart</div>
 
         {/* 6-Card Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -317,9 +320,11 @@ export default function PatientPage() {
                   {encounters.map((enc) => (
                     <div
                       key={enc.id}
-                      className="group flex cursor-pointer items-center justify-between px-5 py-3 transition-colors hover:bg-ivory-200"
+                      className="group relative flex cursor-pointer items-center justify-between px-5 py-3 transition-all duration-150 hover:bg-ivory-200/70"
                       onClick={() => goToEncounter(enc)}
                     >
+                      {/* gold lead edge on hover — quiet signature on each row */}
+                      <span className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-gold-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100" aria-hidden="true" />
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="text-sm">
                           <p className="font-medium text-navy-700">

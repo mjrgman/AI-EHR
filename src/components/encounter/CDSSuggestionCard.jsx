@@ -43,7 +43,7 @@ export default function CDSSuggestionCard({ suggestion, onAccept, onReject }) {
   if (suggestion.status === 'rejected') return null;
 
   return (
-    <div className={`border-l-4 rounded-r-xl p-3 transition-all ${isUrgent ? 'border-l-danger-500 bg-danger-50/60' : 'border-l-navy-500 bg-offWhite-100'} shadow-mc hover:shadow-mc-lg`}>
+    <div className={`border-l-4 rounded-r-xl p-3 transition-all duration-200 hover:-translate-y-px ${isUrgent ? 'border-l-danger-500 bg-danger-50/60' : 'border-l-navy-500 bg-offWhite-100'} shadow-mc hover:shadow-mc-lg`}>
       <div className="flex items-start gap-2.5">
         <span className={`mt-0.5 flex-shrink-0 grid place-items-center w-7 h-7 rounded-lg ${isUrgent ? 'bg-danger-100 text-danger-600' : 'bg-navy-50 text-navy-600'}`}>
           <Icon size={16} />
@@ -52,7 +52,7 @@ export default function CDSSuggestionCard({ suggestion, onAccept, onReject }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h4 className="font-semibold text-sm text-navy-700">{suggestion.title}</h4>
             {isUrgent && <Badge variant="urgent">Urgent</Badge>}
-            {suggestion.source === 'provider_learning' && <Badge variant="purple">Your Pattern</Badge>}
+            {suggestion.source === 'provider_learning' && <Badge variant="primary">Your Pattern</Badge>}
           </div>
           <p className="text-xs text-slate-600 mt-1">{suggestion.description}</p>
           {suggestion.rationale && <p className="text-xs text-slate-400 mt-0.5 italic">{suggestion.rationale}</p>}

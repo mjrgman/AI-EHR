@@ -230,6 +230,8 @@ export default function MAPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-ivory-200">
+      {/* Signature moment: slim gold hairline crowning the patient banner. */}
+      <div className="h-0.5 bg-gradient-to-r from-gold-500/0 via-gold-500/70 to-gold-500/0" aria-hidden="true" />
       {/* Patient Banner */}
       {patient && <PatientBanner patient={patient} />}
 
@@ -399,10 +401,10 @@ export default function MAPage() {
                 {medications.map((m, i) => (
                   <label
                     key={i}
-                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all duration-150 ${
                       medConfirmed[i]
-                        ? 'bg-success-50 border-success-200'
-                        : 'bg-offWhite-100 border-slate-200 hover:bg-ivory-200'
+                        ? 'bg-success-50 border-success-200 shadow-mc'
+                        : 'bg-offWhite-100 border-slate-200 hover:bg-ivory-200 hover:border-slate-300 hover:shadow-mc'
                     }`}
                   >
                     <input

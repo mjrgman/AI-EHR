@@ -35,7 +35,9 @@ function VerifyForm({ onVerify, isProcessing, error, speechSupported, onVoiceVer
           <p className="text-xl text-slate-600">Please verify your identity to continue</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-slate-100 bg-offWhite-100 p-8 shadow-mc-lg">
+        <form onSubmit={handleSubmit} className="relative space-y-5 overflow-hidden rounded-2xl border border-slate-100 bg-offWhite-100 p-8 shadow-mc-lg">
+          {/* Signature moment — gold hairline crowns the welcome card */}
+          <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
           <div>
             <label htmlFor="pv-first" className="mb-1 block text-lg font-medium text-slate-700">First Name</label>
             <input
@@ -141,7 +143,9 @@ function ConversationView({
   return (
     <div className="flex min-h-screen flex-col bg-ivory-200">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-slate-100 bg-offWhite-100/80 px-6 py-4 backdrop-blur">
+      <header className="relative flex items-center justify-between border-b border-slate-100 bg-offWhite-100/80 px-6 py-4 backdrop-blur">
+        {/* Signature moment — gold hairline crowns the conversation header */}
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
         <div>
           <p className="text-lg text-slate-500">Hello,</p>
           <p className="font-display text-2xl font-semibold text-navy-700">{patientName}</p>
@@ -240,7 +244,7 @@ function ConversationView({
       {/* Quick actions */}
       <div className="mx-auto w-full max-w-2xl px-6 pb-8">
         <p className="mb-3 text-center text-lg font-medium text-slate-500">Quick Actions</p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="mc-reveal-stagger grid grid-cols-2 gap-3">
           {QUICK_ACTIONS.map(action => (
             <button
               key={action.label}

@@ -25,7 +25,7 @@ import api from '../../api/client';
 function BriefingSection({ title, icon: Icon, iconColor, children, defaultOpen = true }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border border-slate-100 rounded-lg overflow-hidden">
+    <div className="border border-slate-100 rounded-lg overflow-hidden shadow-mc transition-shadow duration-200 hover:shadow-mc-lg">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 px-4 py-2.5 bg-offWhite-100 hover:bg-ivory-200/70 transition-colors"
@@ -177,6 +177,8 @@ export default function PreVisitPanel({ patientId, encounterId }) {
 
   return (
     <div className="bg-offWhite-100 rounded-xl border border-slate-100 shadow-mc overflow-hidden">
+      {/* Signature moment: a slim gold hairline crowning the briefing panel. */}
+      <div className="h-0.5 bg-gradient-to-r from-gold-500/0 via-gold-500/70 to-gold-500/0" aria-hidden="true" />
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-offWhite-100 to-navy-50">
         <div className="flex items-center gap-2.5">

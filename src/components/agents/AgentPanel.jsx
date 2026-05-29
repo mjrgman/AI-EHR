@@ -88,7 +88,7 @@ function AgentCard({ name, agentResult, expanded, onToggle }) {
   const timeMs = agentResult?.executionTimeMs;
 
   return (
-    <div className={`rounded-xl border border-slate-100 shadow-mc hover:shadow-mc-lg transition-all duration-200 ${meta.bg} overflow-hidden`}>
+    <div className={`rounded-xl border border-slate-100 shadow-mc hover:shadow-mc-lg hover:-translate-y-px transition-all duration-200 ${meta.bg} overflow-hidden`}>
       <button
         onClick={onToggle}
         className="w-full flex items-center justify-between px-4 py-3 hover:bg-navy-50/40 transition-colors"
@@ -566,8 +566,8 @@ export default function AgentPanel({ encounterId, patientId }) {
         </div>
       )}
 
-      {/* Agent Cards */}
-      <div className="p-4 space-y-2">
+      {/* Agent Cards — orchestrated staggered reveal as the pipeline tab mounts */}
+      <div className="p-4 space-y-2 mc-reveal-stagger">
         {agents.map(name => (
           <AgentCard key={name} name={name} agentResult={results?.[name]} expanded={expandedAgents.has(name)} onToggle={() => toggleAgent(name)} />
         ))}

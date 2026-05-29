@@ -170,8 +170,9 @@ export default function SchedulePage() {
         <h1 className="mc-page-title">Schedule</h1>
       </div>
 
-      {/* Date navigation */}
-      <div className="flex items-center justify-between gap-3 flex-wrap rounded-2xl border border-slate-100 bg-offWhite-100 px-4 py-3 shadow-mc-lg">
+      {/* Date navigation — signature moment: a gold hairline crowns the control bar */}
+      <div className="relative mc-card rounded-2xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-5 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-gold-400/70 to-transparent" />
         <div className="flex items-center gap-2">
           <TouchButton
             type="button"
@@ -222,7 +223,7 @@ export default function SchedulePage() {
       {/* Summary badges */}
       {appointments.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm text-slate-500">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}:</span>
+          <span className="mc-section-label mb-0">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}</span>
           {Object.entries(totalByStatus).map(([status, count]) => (
             <Badge key={status} variant={STATUS_LABELS[status]?.variant || 'routine'}>
               {count} {STATUS_LABELS[status]?.label || status}
@@ -364,7 +365,7 @@ export default function SchedulePage() {
               const statusInfo = STATUS_LABELS[appt.status] || { label: appt.status, variant: 'routine' };
               const isUpdating = updatingId === appt.id;
               return (
-                <Card key={appt.id}>
+                <Card key={appt.id} className="mc-card-hover cursor-default hover:border-slate-200">
                   <CardBody className="py-3">
                     <div className="flex items-start gap-3">
                       {/* Time column */}

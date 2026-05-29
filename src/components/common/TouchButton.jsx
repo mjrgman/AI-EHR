@@ -10,15 +10,19 @@ import React from 'react';
 //  ghost      transparent TERTIARY — low-emphasis (Cancel, dismiss).
 //  hero       GOLD — the single reserved accent. At most one per view.
 //  warning    gold-tinted soft — advisory, non-destructive caution.
+// Filled variants carry a tinted depth shadow (mc-btn-* in index.css) so the
+// color reads confident and dimensional, never washed. The success variant in
+// particular is a SOLID #3f7a52-family green (success-600 base / 700 hover)
+// with a colored elevation — it must read as the decisive action it is.
 const VARIANTS = {
-  primary: 'bg-navy-600 text-white shadow-mc hover:bg-navy-700 hover:shadow-mc-lg active:bg-navy-800 focus:ring-navy-500',
-  success: 'bg-success-500 text-white shadow-mc hover:bg-success-600 hover:shadow-mc-lg active:bg-success-700 focus:ring-success-500',
+  primary: 'mc-btn-fill mc-btn-navy bg-navy-600 text-white hover:bg-navy-700 active:bg-navy-800 focus:ring-navy-500',
+  success: 'mc-btn-fill mc-btn-success bg-success-600 text-white hover:bg-success-700 active:bg-success-800 focus:ring-success-600',
   danger: 'bg-red-50 text-danger-700 border border-danger-200 hover:bg-red-100 active:bg-red-200 focus:ring-danger-500',
   warning: 'bg-gold-50 text-gold-700 border border-gold-200 hover:bg-gold-100 active:bg-gold-200 focus:ring-gold-500',
-  secondary: 'bg-offWhite-100 text-slate-700 border border-slate-300 shadow-mc hover:bg-ivory-200 hover:border-slate-400 active:bg-ivory-300 focus:ring-slate-400',
+  secondary: 'bg-offWhite-100 text-slate-700 border border-slate-300 shadow-mc hover:bg-ivory-200 hover:border-slate-400 hover:shadow-mc-lg active:bg-ivory-300 active:shadow-mc focus:ring-slate-400',
   ghost: 'bg-transparent text-slate-600 hover:bg-ivory-200 active:bg-ivory-300 focus:ring-slate-400',
   // hero — the single gold call-to-action. Use sparingly (one per view).
-  hero: 'bg-gold-500 text-white shadow-mc hover:bg-gold-600 hover:shadow-mc-lg active:bg-gold-700 focus:ring-gold-500',
+  hero: 'mc-btn-fill mc-btn-gold bg-gold-500 text-white hover:bg-gold-600 active:bg-gold-700 focus:ring-gold-500',
 };
 
 const SIZES = {

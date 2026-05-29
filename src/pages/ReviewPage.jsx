@@ -160,6 +160,8 @@ export default function ReviewPage() {
 
   return (
     <div>
+      {/* Signature moment: slim gold hairline crowning the patient banner. */}
+      <div className="h-0.5 bg-gradient-to-r from-gold-500/0 via-gold-500/70 to-gold-500/0" aria-hidden="true" />
       {patient && <PatientBanner patient={patient} />}
 
       <div className="max-w-4xl mx-auto p-4 space-y-4 mc-reveal-stagger">
@@ -299,7 +301,7 @@ export default function ReviewPage() {
                 </h4>
                 <div className="space-y-1">
                   {orders.prescriptions.map((rx, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
                       <Badge variant="success">Rx</Badge>
                       <span className="font-medium text-navy-700">{rx.medication_name}</span>
                       <span className="text-slate-500">{rx.dose} {rx.route} {rx.frequency}</span>
@@ -317,7 +319,7 @@ export default function ReviewPage() {
                 </h4>
                 <div className="space-y-1">
                   {orders.lab_orders.map((lab, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
                       <Badge variant="routine">Lab</Badge>
                       <span className="font-medium text-navy-700">{lab.test_name}</span>
                       {lab.cpt_code && <span className="text-slate-400 text-xs">CPT: {lab.cpt_code}</span>}
@@ -335,8 +337,8 @@ export default function ReviewPage() {
                 </h4>
                 <div className="space-y-1">
                   {orders.imaging_orders.map((img, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
-                      <Badge variant="purple">Imaging</Badge>
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
+                      <Badge variant="info">Imaging</Badge>
                       <span className="font-medium text-navy-700">{img.study_type}</span>
                       <span className="text-slate-500">{img.body_part}</span>
                     </div>
@@ -352,7 +354,7 @@ export default function ReviewPage() {
                 </h4>
                 <div className="space-y-1">
                   {orders.referrals.map((ref, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
                       <Badge variant="warning">Referral</Badge>
                       <span className="font-medium text-navy-700">{ref.specialty}</span>
                       <span className="text-slate-500">{ref.reason}</span>

@@ -585,9 +585,9 @@ export default function EncounterPage() {
           Problems
         </h3>
         {patient?.problems && patient.problems.length > 0 ? (
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {patient.problems.map((p, i) => (
-              <div key={i} className="bg-offWhite-100 rounded-lg p-2.5 text-sm border border-slate-100 shadow-mc">
+              <div key={i} className="mc-row text-sm">
                 <div className="font-medium text-navy-700">{p.name || p.problem_name}</div>
                 {p.icd10_code && (
                   <div className="text-xs text-slate-500 font-mono">{p.icd10_code}</div>
@@ -606,9 +606,9 @@ export default function EncounterPage() {
           Medications
         </h3>
         {patient?.medications && patient.medications.length > 0 ? (
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {patient.medications.map((m, i) => (
-              <div key={i} className="bg-offWhite-100 rounded-lg p-2.5 text-sm border border-slate-100 shadow-mc">
+              <div key={i} className="mc-row text-sm">
                 <div className="font-medium text-navy-700">{m.name || m.medication_name}</div>
                 <div className="text-xs text-slate-500">
                   {m.dosage}
@@ -861,7 +861,7 @@ export default function EncounterPage() {
           {totalOrders > 0 && (
             <div className="space-y-2 pt-2 border-t border-slate-100">
               {prescriptions.map((rx, i) => (
-                <div key={'rx' + i} className="flex items-center gap-2 bg-success-50 rounded-lg p-2 text-sm border border-success-100">
+                <div key={'rx' + i} className="flex items-center gap-2 bg-success-50 rounded-lg p-2 text-sm border border-success-100 transition-all duration-150 hover:shadow-mc hover:border-success-200">
                   <span className="text-success-700 font-bold text-xs">Rx</span>
                   <span className="font-medium text-navy-700">{rx.medication_name}</span>
                   <span className="text-slate-500">{rx.dosage || rx.dose} {rx.frequency}</span>
@@ -870,7 +870,7 @@ export default function EncounterPage() {
                 </div>
               ))}
               {labOrders.map((lab, i) => (
-                <div key={'lab' + i} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2 text-sm border border-slate-100">
+                <div key={'lab' + i} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2 text-sm border border-slate-100 transition-all duration-150 hover:shadow-mc hover:border-slate-200">
                   <span className="text-slate-600 font-bold text-xs">LAB</span>
                   <span className="font-medium text-navy-700">{lab.test_name}</span>
                   {lab.cpt_code && <span className="text-slate-500">({lab.cpt_code})</span>}
@@ -879,11 +879,11 @@ export default function EncounterPage() {
                       {lab.priority}
                     </Badge>
                   )}
-                  <Badge variant="purple">Lab</Badge>
+                  <Badge variant="routine">Lab</Badge>
                 </div>
               ))}
               {imagingOrders.map((img, i) => (
-                <div key={'img' + i} className="flex items-center gap-2 bg-navy-50 rounded-lg p-2 text-sm border border-navy-100">
+                <div key={'img' + i} className="flex items-center gap-2 bg-navy-50 rounded-lg p-2 text-sm border border-navy-100 transition-all duration-150 hover:shadow-mc hover:border-navy-200">
                   <span className="text-navy-600 font-bold text-xs">IMG</span>
                   <span className="font-medium text-navy-700">
                     {img.study_type || img.modality} - {img.body_part}
@@ -897,7 +897,7 @@ export default function EncounterPage() {
                 </div>
               ))}
               {referrals.map((ref, i) => (
-                <div key={'ref' + i} className="flex items-center gap-2 bg-gold-50 rounded-lg p-2 text-sm border border-gold-200">
+                <div key={'ref' + i} className="flex items-center gap-2 bg-gold-50 rounded-lg p-2 text-sm border border-gold-200 transition-all duration-150 hover:shadow-mc hover:border-gold-300">
                   <span className="text-gold-700 font-bold text-xs">REF</span>
                   <span className="font-medium text-navy-700">{ref.specialty}</span>
                   <span className="text-slate-500">{ref.reason}</span>
@@ -970,9 +970,9 @@ export default function EncounterPage() {
           <h3 className="mc-section-label px-1">
             Differential Diagnoses
           </h3>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {differentials.map((d, i) => (
-              <div key={d.id || i} className="bg-offWhite-100 rounded-lg p-2.5 border border-slate-100 shadow-mc">
+              <div key={d.id || i} className="mc-row">
                 <div className="font-medium text-sm text-navy-700">{d.title}</div>
                 {d.description && (
                   <p className="text-xs text-slate-500 mt-1">{d.description}</p>
@@ -997,6 +997,9 @@ export default function EncounterPage() {
   // ============================================================
   return (
     <div className="flex flex-col h-screen">
+      {/* Signature moment: a slim gold hairline crowns the patient banner —
+          a single restrained brand accent at the top edge of every encounter. */}
+      <div className="h-0.5 bg-gradient-to-r from-gold-500/0 via-gold-500/70 to-gold-500/0" aria-hidden="true" />
       {/* Patient Banner */}
       {patient && <PatientBanner patient={patient} />}
 
