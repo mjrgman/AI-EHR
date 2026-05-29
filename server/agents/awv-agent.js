@@ -20,6 +20,7 @@
  */
 
 const { BaseAgent } = require('./base-agent');
+const { ageAsOf } = require('../utils/date-helpers');
 
 // Allow whitespace, underscore, or hyphen as separator (e.g. "annual_wellness_visit",
 // "Annual Wellness Visit", "annual-wellness-visit" all match).
@@ -89,10 +90,10 @@ function isAwvEncounter(encounterType) {
 }
 
 function ageInYears(dob) {
-  if (!dob) return null;
-  const birth = new Date(dob);
-  if (isNaN(birth.getTime())) return null;
-  return Math.floor((Date.now() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+  // Calendar-based completed-years age (year diff adjusted by month/day) via the
+  // shared helper, so leap-year boundaries don't off-by-one. Was previously
+  // ms/365.25 (age-calc-leap-11 — this awv-agent copy was missed in the first pass).
+  return ageAsOf(dob, new Date());
 }
 
 /**
