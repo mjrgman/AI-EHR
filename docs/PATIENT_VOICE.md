@@ -29,9 +29,9 @@ There are **two distinct voice subsystems** in this repo. Both use Web Speech AP
 
 ### Companion: HRT keyword detector
 
-`src/hooks/useHRTKeywords.js` is a **stateless** `useMemo` wrapper around `detectHrtCategories()` from `src/utils/hrt-keywords.mjs`. EncounterPage feeds it the accumulated transcript from `useSpeechRecognition` and uses the result to auto-focus the HRT/Peptide tab when hormone or peptide terms are heard (testosterone, estradiol, progesterone, semaglutide, tirzepatide, sermorelin, BPC-157, etc.).
+`src/hooks/useHRTKeywords.js` is a **stateless** `useMemo` wrapper around `detectHRTCategories()` from `src/utils/hrt-keywords.mjs`. EncounterPage feeds it the accumulated transcript from `useSpeechRecognition` and uses the result to auto-focus the HRT/Peptide tab when hormone or peptide terms are heard (testosterone, estradiol, progesterone, semaglutide, tirzepatide, sermorelin, BPC-157, etc.).
 
-The deliberate design choice (per the hook's own header comment): keep it stateless. The consumer owns "fire only once per encounter" UI policy. Resetting the transcript naturally resets the matched categories. The unit tests for `detectHrtCategories` cover the hook's only logic.
+The deliberate design choice (per the hook's own header comment): keep it stateless. The consumer owns "fire only once per encounter" UI policy. Resetting the transcript naturally resets the matched categories. The unit tests for `detectHRTCategories` cover the hook's only logic.
 
 The same keyword list is mirrored server-side in `server/agents/domain-logic-agent.js` `DOMAIN_KEYWORDS` — the test suite enforces parity. The browser-side detection is for instant UI feedback only; the `DomainLogicAgent` is the authoritative classifier.
 
