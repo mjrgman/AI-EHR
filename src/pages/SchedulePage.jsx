@@ -15,6 +15,7 @@ import {
   CalendarX,
   LogIn,
   CheckCircle2,
+  CalendarRange,
 } from 'lucide-react';
 
 const STATUS_LABELS = {
@@ -164,10 +165,17 @@ export default function SchedulePage() {
 
   return (
     <div className="mc-page max-w-4xl mc-reveal-stagger space-y-5">
-      {/* Page title */}
-      <div className="flex flex-col gap-1">
+      {/* Page header — gold hairline crowns the surface + a navy icon chip in the
+          title, matching the AuditPage reference bar (signature). */}
+      <div className="relative">
+        <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
         <p className="mc-section-label">Reception</p>
-        <h1 className="mc-page-title">Schedule</h1>
+        <h1 className="mc-page-title flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+            <CalendarRange size={20} strokeWidth={2} aria-hidden="true" />
+          </span>
+          Schedule
+        </h1>
       </div>
 
       {/* Date navigation — signature moment: a gold hairline crowns the control bar */}
@@ -358,96 +366,138 @@ export default function SchedulePage() {
           </CardBody>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {[...appointments]
-            .sort((a, b) => (a.appointment_time || '').localeCompare(b.appointment_time || ''))
-            .map(appt => {
-              const statusInfo = STATUS_LABELS[appt.status] || { label: appt.status, variant: 'routine' };
-              const isUpdating = updatingId === appt.id;
-              return (
-                <Card key={appt.id} className="mc-card-hover cursor-default hover:border-slate-200">
-                  <CardBody className="py-3">
-                    <div className="flex items-start gap-3">
-                      {/* Time column */}
-                      <div className="flex-shrink-0 w-16 text-center">
-                        <p className="text-sm font-bold text-navy-700 tabular-nums">{formatTime(appt.appointment_time)}</p>
-                        <p className="text-xs text-slate-400">{appt.duration_minutes || 30}m</p>
-                      </div>
-
-                      {/* Info column */}
-                      <div className="flex-1 min-w-0 border-l border-slate-100 pl-3">
-                        <div className="flex items-center gap-2 flex-wrap">
+        /* Appointment list — audit-grade refined table treatment: slate
+           column-header eyebrows, refined row rhythm, hover, semantic status
+           dots, and a danger lead-edge on no-show / cancelled rows. */
+        <Card>
+          <CardHeader action={<span className="font-mono text-xs text-slate-400">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}</span>}>
+            {formatDisplayDate(selectedDate)}
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-ivory-200/70">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Patient</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Visit</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {[...appointments]
+                  .sort((a, b) => (a.appointment_time || '').localeCompare(b.appointment_time || ''))
+                  .map(appt => {
+                    const statusInfo = STATUS_LABELS[appt.status] || { label: appt.status, variant: 'routine' };
+                    const isUpdating = updatingId === appt.id;
+                    // A flagged row (no-show / cancelled) carries a quiet danger
+                    // lead-edge; an active arrival carries a gold attention edge.
+                    const isFlagged = appt.status === 'no-show' || appt.status === 'cancelled';
+                    const isArrived = appt.status === 'arrived';
+                    const dotColor = appt.status === 'completed' || appt.status === 'confirmed'
+                      ? 'bg-success-500'
+                      : isFlagged
+                      ? 'bg-danger-500'
+                      : isArrived
+                      ? 'bg-gold-500'
+                      : 'bg-navy-400';
+                    return (
+                      <tr key={appt.id} className={`group transition-colors ${
+                        isFlagged ? 'bg-danger-50/40 hover:bg-danger-50/70' : 'hover:bg-ivory-200'
+                      }`}>
+                        {/* Time */}
+                        <td className={`relative whitespace-nowrap px-4 py-3 ${
+                          isFlagged ? 'before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-danger-400 before:opacity-70' :
+                          isArrived ? 'before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-gold-400 before:opacity-70' : ''
+                        }`}>
+                          <p className="text-sm font-bold text-navy-700 tabular-nums">{formatTime(appt.appointment_time)}</p>
+                          <p className="text-xs text-slate-400">{appt.duration_minutes || 30}m</p>
+                        </td>
+                        {/* Patient */}
+                        <td className="px-4 py-3">
                           <p className="font-semibold text-navy-700 text-sm">
                             {appt.patient_last_name ? `${appt.patient_last_name}, ${appt.patient_first_name}` : `Patient #${appt.patient_id}`}
                           </p>
-                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                          {appt.visit_type && (
-                            <span className="text-xs text-slate-400 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
+                          {appt.chief_complaint && (
+                            <p className="text-xs text-slate-500 mt-0.5 max-w-[220px] truncate">{appt.chief_complaint}</p>
                           )}
-                        </div>
-                        {appt.chief_complaint && (
-                          <p className="text-xs text-slate-500 mt-0.5 truncate">{appt.chief_complaint}</p>
-                        )}
-                      </div>
-
-                      {/* Actions column */}
-                      <div className="flex-shrink-0 flex items-center gap-1.5 flex-wrap justify-end">
-                        {appt.status === 'scheduled' || appt.status === 'confirmed' ? (
-                          <>
-                            {appt.status === 'scheduled' && (
+                        </td>
+                        {/* Status */}
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`inline-block w-2 h-2 rounded-full ${dotColor}`} aria-hidden="true" />
+                            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                          </span>
+                        </td>
+                        {/* Visit type */}
+                        <td className="whitespace-nowrap px-4 py-3">
+                          {appt.visit_type ? (
+                            <span className="text-xs text-slate-500 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
+                          ) : (
+                            <span className="text-xs text-slate-300">-</span>
+                          )}
+                        </td>
+                        {/* Actions */}
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                            {appt.status === 'scheduled' || appt.status === 'confirmed' ? (
+                              <>
+                                {appt.status === 'scheduled' && (
+                                  <button
+                                    onClick={() => handleStatusChange(appt.id, 'confirmed')}
+                                    disabled={isUpdating}
+                                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 transition-colors disabled:opacity-50 font-medium"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
+                                    Confirm
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleCheckin(appt)}
+                                  disabled={isUpdating}
+                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 transition-colors disabled:opacity-50 font-semibold"
+                                >
+                                  <LogIn className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
+                                  Check In
+                                </button>
+                                <button
+                                  onClick={() => handleStatusChange(appt.id, 'no-show')}
+                                  disabled={isUpdating}
+                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus:ring-2 focus:ring-danger-500 focus:ring-offset-1"
+                                >
+                                  <CalendarX className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
+                                  No-Show
+                                </button>
+                              </>
+                            ) : appt.status === 'arrived' && appt.encounter_id ? (
                               <button
-                                onClick={() => handleStatusChange(appt.id, 'confirmed')}
-                                disabled={isUpdating}
-                                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 transition-colors disabled:opacity-50 font-medium"
+                                onClick={() => navigate('/checkin/' + appt.encounter_id)}
+                                className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 transition-colors font-medium"
                               >
-                                <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
-                                Confirm
+                                Open Encounter
+                              </button>
+                            ) : null}
+                            {appt.status !== 'completed' && appt.status !== 'no-show' && appt.status !== 'cancelled' && (
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(appt.id)}
+                                disabled={isUpdating}
+                                aria-label={`Cancel appointment for ${appt.patient_last_name ? `${appt.patient_first_name} ${appt.patient_last_name}` : `patient ${appt.patient_id}`} at ${formatTime(appt.appointment_time)}`}
+                                className="text-xs px-2 py-1.5 text-slate-400 hover:text-danger-600 transition-colors disabled:opacity-50"
+                                title="Cancel appointment"
+                              >
+                                &times;
                               </button>
                             )}
-                            <button
-                              onClick={() => handleCheckin(appt)}
-                              disabled={isUpdating}
-                              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 transition-colors disabled:opacity-50 font-semibold"
-                            >
-                              <LogIn className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
-                              Check In
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(appt.id, 'no-show')}
-                              disabled={isUpdating}
-                              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus:ring-2 focus:ring-danger-500 focus:ring-offset-1"
-                            >
-                              <CalendarX className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
-                              No-Show
-                            </button>
-                          </>
-                        ) : appt.status === 'arrived' && appt.encounter_id ? (
-                          <button
-                            onClick={() => navigate('/checkin/' + appt.encounter_id)}
-                            className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 transition-colors font-medium"
-                          >
-                            Open Encounter
-                          </button>
-                        ) : null}
-                        {appt.status !== 'completed' && appt.status !== 'no-show' && appt.status !== 'cancelled' && (
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(appt.id)}
-                            disabled={isUpdating}
-                            aria-label={`Cancel appointment for ${appt.patient_last_name ? `${appt.patient_first_name} ${appt.patient_last_name}` : `patient ${appt.patient_id}`} at ${formatTime(appt.appointment_time)}`}
-                            className="text-xs px-2 py-1.5 text-slate-400 hover:text-danger-600 transition-colors disabled:opacity-50"
-                            title="Cancel appointment"
-                          >
-                            &times;
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </CardBody>
-                </Card>
-              );
-            })}
-        </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );

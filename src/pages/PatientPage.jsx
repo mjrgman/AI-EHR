@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, ChevronRight, CalendarPlus } from 'lucide-react';
+import { ArrowLeft, Plus, ChevronRight, CalendarPlus, Stethoscope, Pill, AlertTriangle, Activity, FlaskConical, ClipboardList } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useToast } from '../components/common/Toast';
@@ -44,6 +44,24 @@ function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
   });
+}
+
+// Iconned section title — mirrors the AuditPage header chip so every chart card
+// reads as a deliberate, crafted surface rather than a bare label.
+function SectionTitle({ icon: Icon, children, tone = 'navy' }) {
+  const tones = {
+    navy: 'bg-navy-50 text-navy-600 ring-navy-100',
+    danger: 'bg-danger-50 text-danger-600 ring-danger-100',
+    gold: 'bg-gold-50 text-gold-600 ring-gold-200',
+  };
+  return (
+    <span className="flex items-center gap-2 font-semibold text-xs uppercase tracking-[0.12em] text-slate-500">
+      <span className={`flex h-6 w-6 items-center justify-center rounded-lg ring-1 ${tones[tone] || tones.navy}`} aria-hidden="true">
+        <Icon size={14} strokeWidth={2} />
+      </span>
+      {children}
+    </span>
+  );
 }
 
 export default function PatientPage() {
@@ -197,8 +215,8 @@ export default function PatientPage() {
         </div>
 
         {/* Demographics Card */}
-        <Card className="hover:-translate-y-0.5 transition-all duration-200">
-          <CardHeader>Demographics</CardHeader>
+        <Card className="mc-card-hover">
+          <CardHeader><SectionTitle icon={ClipboardList}>Demographics</SectionTitle></CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
               <div>
@@ -244,7 +262,7 @@ export default function PatientPage() {
                 </TouchButton>
               }
             >
-              Problems
+              <SectionTitle icon={ClipboardList}>Problems</SectionTitle>
             </CardHeader>
             <CardBody>
               <ProblemList problems={patient.problems} />
@@ -260,7 +278,7 @@ export default function PatientPage() {
                 </TouchButton>
               }
             >
-              Medications
+              <SectionTitle icon={Pill}>Medications</SectionTitle>
             </CardHeader>
             <CardBody>
               <MedList medications={patient.medications} />
@@ -276,7 +294,7 @@ export default function PatientPage() {
                 </TouchButton>
               }
             >
-              Allergies
+              <SectionTitle icon={AlertTriangle} tone="danger">Allergies</SectionTitle>
             </CardHeader>
             <CardBody>
               <AllergyBadges allergies={patient.allergies} />
@@ -285,7 +303,7 @@ export default function PatientPage() {
 
           {/* 4. Latest Vitals */}
           <Card>
-            <CardHeader>Latest Vitals</CardHeader>
+            <CardHeader><SectionTitle icon={Activity}>Latest Vitals</SectionTitle></CardHeader>
             <CardBody>
               {latestVitals ? (
                 <VitalsDisplay vitals={latestVitals} />
@@ -297,7 +315,7 @@ export default function PatientPage() {
 
           {/* 5. Recent Labs (col-span-2 on md+) */}
           <Card className="md:col-span-2">
-            <CardHeader>Recent Lab Results</CardHeader>
+            <CardHeader><SectionTitle icon={FlaskConical}>Recent Lab Results</SectionTitle></CardHeader>
             <CardBody>
               <LabResults labs={patient.labs} />
             </CardBody>
@@ -306,7 +324,7 @@ export default function PatientPage() {
           {/* 6. Encounter History (full width on lg) */}
           <Card className="lg:col-span-3 md:col-span-2">
             <CardHeader>
-              Encounter History
+              <SectionTitle icon={Stethoscope}>Encounter History</SectionTitle>
             </CardHeader>
             <CardBody className="p-0">
               {encountersLoading ? (

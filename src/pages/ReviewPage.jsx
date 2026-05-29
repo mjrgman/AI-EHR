@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, PenLine } from 'lucide-react';
+import { ArrowLeft, Save, PenLine, ClipboardCheck, Pill, FlaskConical, Camera, Send } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -13,6 +13,7 @@ import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
 import PatientBanner from '../components/patient/PatientBanner';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
+import StatTile from '../components/workflow/StatTile';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
 export default function ReviewPage() {
@@ -173,6 +174,29 @@ export default function ReviewPage() {
           <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} />
         </div>
 
+        {/* Page header — gold eyebrow + icon chip (Audit/Dashboard bar) */}
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+          <p className="mc-section-label">Documentation &amp; Sign-off</p>
+          <h1 className="mc-page-title flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <ClipboardCheck size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            Review &amp; Sign
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">Verify the note, confirm orders, attest, and sign the encounter</p>
+        </div>
+
+        {/* Orders at-a-glance — premium StatTiles matching the Audit stat bar.
+            Prescriptions carry the single gold attention beat (the most
+            controlled order class); the rest sit on navy/slate authority. */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile icon={Pill} label="Prescriptions" value={orderCounts.prescriptions} tone="gold" />
+          <StatTile icon={FlaskConical} label="Lab Orders" value={orderCounts.labs} tone="navy" />
+          <StatTile icon={Camera} label="Imaging" value={orderCounts.imaging} tone="slate" />
+          <StatTile icon={Send} label="Referrals" value={orderCounts.referrals} tone="slate" />
+        </div>
+
         {/* Encounter Timestamps */}
         <Card>
           <CardHeader>Encounter Timeline</CardHeader>
@@ -286,80 +310,134 @@ export default function ReviewPage() {
           </Card>
         )}
 
-        {/* Orders Summary */}
+        {/* Orders Summary — AuditPage-grade tabular treatment: each order class
+            is a refined table with slate eyebrow column headers, a steady row
+            rhythm, and a hover wash. One disciplined surface, no rainbow. */}
         <Card>
-          <CardHeader>Orders Summary ({orderCounts.total} total)</CardHeader>
-          <CardBody className="space-y-4">
+          <CardHeader action={<span className="font-mono text-xs text-slate-400">{orderCounts.total} total</span>}>
+            Orders Summary
+          </CardHeader>
+          <CardBody className="space-y-5">
             {orderCounts.total === 0 && (
               <p className="text-sm text-slate-400 italic">No orders created for this encounter.</p>
             )}
 
             {orders?.prescriptions?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  Prescriptions ({orders.prescriptions.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.prescriptions.map((rx, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
-                      <Badge variant="success">Rx</Badge>
-                      <span className="font-medium text-navy-700">{rx.medication_name}</span>
-                      <span className="text-slate-500">{rx.dose} {rx.route} {rx.frequency}</span>
-                      <span className="text-slate-400 text-xs ml-auto">{rx.status}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Prescriptions ({orders.prescriptions.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Medication</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Sig</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.prescriptions.map((rx, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="success">Rx</Badge>
+                              <span className="font-medium text-navy-700">{rx.medication_name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-500">{rx.dose} {rx.route} {rx.frequency}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-xs text-slate-400">{rx.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
             {orders?.lab_orders?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  Lab Orders ({orders.lab_orders.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.lab_orders.map((lab, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
-                      <Badge variant="routine">Lab</Badge>
-                      <span className="font-medium text-navy-700">{lab.test_name}</span>
-                      {lab.cpt_code && <span className="text-slate-400 text-xs">CPT: {lab.cpt_code}</span>}
-                      <span className="text-slate-400 text-xs ml-auto">{lab.priority}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Lab Orders ({orders.lab_orders.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Test</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">CPT</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500">Priority</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.lab_orders.map((lab, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="routine">Lab</Badge>
+                              <span className="font-medium text-navy-700">{lab.test_name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{lab.cpt_code || '—'}</td>
+                          <td className="px-4 py-2.5 text-right text-xs text-slate-400">{lab.priority}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
             {orders?.imaging_orders?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  Imaging ({orders.imaging_orders.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.imaging_orders.map((img, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
-                      <Badge variant="info">Imaging</Badge>
-                      <span className="font-medium text-navy-700">{img.study_type}</span>
-                      <span className="text-slate-500">{img.body_part}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Imaging ({orders.imaging_orders.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Study</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Body Part</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.imaging_orders.map((img, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="info">Imaging</Badge>
+                              <span className="font-medium text-navy-700">{img.study_type}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-500">{img.body_part}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
             {orders?.referrals?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                  Referrals ({orders.referrals.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.referrals.map((ref, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 px-2 -mx-2 rounded-lg border-b border-slate-100 last:border-0 transition-colors hover:bg-ivory-200/60">
-                      <Badge variant="warning">Referral</Badge>
-                      <span className="font-medium text-navy-700">{ref.specialty}</span>
-                      <span className="text-slate-500">{ref.reason}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Referrals ({orders.referrals.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Specialty</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.referrals.map((ref, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="warning">Referral</Badge>
+                              <span className="font-medium text-navy-700">{ref.specialty}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-500">{ref.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -391,6 +469,20 @@ export default function ReviewPage() {
             </label>
           </CardBody>
         </Card>
+
+        {/* Readiness hint — surfaces exactly why Sign is inert, so the disabled
+            state reads as a clear gate, not a washed-out button. Presentation
+            only; mirrors the existing canSign predicate. */}
+        {!canSign && (
+          <div className="flex items-start gap-2 rounded-xl border border-gold-200 bg-gold-50/70 px-4 py-3 text-sm text-gold-800">
+            <PenLine size={16} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-gold-600" aria-hidden="true" />
+            <span>
+              {!soapNote.trim()
+                ? 'A SOAP note is required before this encounter can be signed.'
+                : 'Check the attestation box above to enable signing.'}
+            </span>
+          </div>
+        )}
 
         {/* Action Buttons. Sign Encounter is the terminal positive/complete
             action — confident brand success green with a signing icon. Continue

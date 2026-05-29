@@ -14,6 +14,11 @@ import React from 'react';
 // color reads confident and dimensional, never washed. The success variant in
 // particular is a SOLID #3f7a52-family green (success-600 base / 700 hover)
 // with a colored elevation — it must read as the decisive action it is.
+//
+// DISABLED is unmistakably inert: opacity-45 + saturate-50, the colored
+// elevation/sheen stripped (shadow-none + `.mc-btn-fill:disabled` in index.css),
+// no hover/press motion, cursor-not-allowed. A disabled Review & Sign button can
+// never be mistaken for a washed-but-active one.
 const VARIANTS = {
   primary: 'mc-btn-fill mc-btn-navy bg-navy-600 text-white hover:bg-navy-700 active:bg-navy-800 focus:ring-navy-500',
   success: 'mc-btn-fill mc-btn-success bg-success-600 text-white hover:bg-success-700 active:bg-success-800 focus:ring-success-600',
@@ -42,7 +47,9 @@ export default function TouchButton({
         inline-flex items-center justify-center gap-2 font-semibold
         transition-all duration-150 active:scale-95 select-none
         focus:outline-none focus:ring-2 focus:ring-offset-2
-        disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100
+        disabled:opacity-45 disabled:cursor-not-allowed disabled:shadow-none
+        disabled:saturate-50 disabled:hover:scale-100 disabled:active:scale-100
+        disabled:hover:shadow-none disabled:pointer-events-none
         ${VARIANTS[variant]} ${SIZES[size]} ${className}
       `}
       {...props}

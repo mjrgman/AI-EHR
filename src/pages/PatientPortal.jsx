@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays, Pill, FlaskConical, MessageSquare, Stethoscope,
-  ClipboardCheck, CheckCircle2, LogOut, ShieldCheck,
+  ClipboardCheck, CheckCircle2, LogOut, ShieldCheck, Send, RefreshCw, Search,
 } from 'lucide-react';
 import { portalApi } from '../api/client';
+import StatTile from '../components/workflow/StatTile';
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -128,8 +129,9 @@ function VerifyIdentity({ loading, error, onVerify }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-2xl bg-navy-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
+              className="mc-btn-fill mc-btn-navy flex w-full items-center justify-center gap-2 rounded-2xl bg-navy-600 px-4 py-3 text-base font-semibold text-white transition-all hover:bg-navy-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
             >
+              <ShieldCheck size={16} strokeWidth={2} aria-hidden="true" />
               {loading ? 'Verifying...' : 'Continue to Portal'}
             </button>
           </form>
@@ -145,40 +147,47 @@ function DashboardView({ appointments, medications, labs, patientName }) {
   const refillPending = medications.filter((medication) => medication.refill_status === 'physician_review');
 
   return (
-    <div className="mc-reveal-stagger grid gap-4 lg:grid-cols-3">
-      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-xl">
-        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <CalendarDays size={16} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
-          Welcome
-        </p>
-        <h3 className="mt-2 font-display text-2xl font-semibold text-navy-700">{patientName}</h3>
+    <div className="space-y-4">
+      {/* Warm welcome card — gold eyebrow + a generous next-appointment beat */}
+      <div className="mc-reveal relative overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg sm:p-8">
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
+        <span className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br from-gold-100/50 to-transparent opacity-70 blur-2xl" aria-hidden="true" />
+        <p className="mc-section-label">Your health, in one place</p>
+        <h3 className="font-display text-2xl font-semibold text-navy-700 sm:text-3xl">Welcome back, {patientName}</h3>
         {upcoming ? (
-          <div className="mt-5 rounded-2xl border border-navy-100 bg-navy-50 p-4">
-            <p className="text-sm font-semibold text-navy-700">Next appointment</p>
-            <p className="mt-2 text-lg font-semibold text-navy-700">{formatDate(upcoming.appointment_date)}</p>
-            <p className="text-sm text-slate-600">{formatTime(upcoming.appointment_time)} with {upcoming.provider_name}</p>
+          <div className="mt-5 inline-flex max-w-full flex-wrap items-center gap-3 rounded-2xl border border-navy-100 bg-navy-50 px-4 py-3">
+            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-navy-100 text-navy-700 ring-1 ring-navy-200" aria-hidden="true">
+              <CalendarDays size={18} strokeWidth={2} />
+            </span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-navy-600">Next appointment</p>
+              <p className="font-display text-lg font-semibold text-navy-700">{formatDate(upcoming.appointment_date)}</p>
+              <p className="text-sm text-slate-600">{formatTime(upcoming.appointment_time)} with {upcoming.provider_name}</p>
+            </div>
           </div>
         ) : (
           <p className="mt-5 text-sm text-slate-600">No upcoming appointments are scheduled.</p>
         )}
       </div>
-      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-xl">
-        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <Pill size={16} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
-          Medications
-        </p>
-        <p className="mt-3 font-display text-4xl font-semibold text-navy-700">{medications.length}</p>
-        <p className="mt-1 text-sm text-slate-600">Active medications on file</p>
-        <p className="mt-5 text-sm text-slate-600">{refillPending.length} refill requests currently under review.</p>
-      </div>
-      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-mc-xl">
-        <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-          <FlaskConical size={16} strokeWidth={2} aria-hidden="true" className={abnormalLabs.length > 0 ? 'text-gold-600' : 'text-navy-600'} />
-          Lab results
-        </p>
-        <p className="mt-3 font-display text-4xl font-semibold text-navy-700">{labs.length}</p>
-        <p className="mt-1 text-sm text-slate-600">Recent results available</p>
-        <p className={`mt-5 text-sm font-medium ${abnormalLabs.length > 0 ? 'text-gold-700' : 'text-slate-600'}`}>{abnormalLabs.length} flagged results need clinician review.</p>
+
+      {/* KPI tiles — same premium primitive as the clinician surfaces. A flagged
+          lab is the single gold attention beat; the count carries danger. */}
+      <div className="mc-reveal-stagger grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <StatTile icon={CalendarDays} label="Appointments" value={appointments.length} tone="navy" sublabel="Upcoming on file" />
+        <StatTile
+          icon={Pill}
+          label="Medications"
+          value={medications.length}
+          tone="navy"
+          sublabel={`${refillPending.length} refill${refillPending.length === 1 ? '' : 's'} under review`}
+        />
+        <StatTile
+          icon={FlaskConical}
+          label="Lab Results"
+          value={labs.length}
+          tone={abnormalLabs.length > 0 ? 'gold' : 'navy'}
+          sublabel={abnormalLabs.length > 0 ? `${abnormalLabs.length} flagged for clinician review` : 'All within range'}
+        />
       </div>
     </div>
   );
@@ -289,8 +298,9 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
         <button
           onClick={handleFindSlots}
           disabled={findingSlots}
-          className="rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
+          className="mc-btn-fill mc-btn-navy flex items-center gap-1.5 rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-navy-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
         >
+          <Search size={15} strokeWidth={2} aria-hidden="true" />
           {findingSlots ? 'Finding slots...' : 'Find available slots'}
         </button>
       </div>
@@ -344,7 +354,7 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
                     <button
                       onClick={() => checkInAppointment(appointment.id)}
                       disabled={activeCheckInId === appointment.id}
-                      className="mc-btn-fill mc-btn-success flex items-center gap-1.5 rounded-xl bg-success-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-success-700 active:scale-95 disabled:bg-slate-400 disabled:shadow-none"
+                      className="mc-btn-fill mc-btn-success flex items-center gap-1.5 rounded-xl bg-success-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-success-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-success-600 disabled:active:scale-100"
                     >
                       <CheckCircle2 size={16} strokeWidth={2} aria-hidden="true" />
                       {activeCheckInId === appointment.id ? 'Checking in...' : 'Check in'}
@@ -382,8 +392,9 @@ function MedicationsView({ medications, requestRefill, activeMedicationId }) {
               <button
                 onClick={() => requestRefill(medication)}
                 disabled={activeMedicationId === medication.id}
-                className="rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
+                className="mc-btn-fill mc-btn-navy flex items-center gap-1.5 rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-navy-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
               >
+                <RefreshCw size={15} strokeWidth={2} aria-hidden="true" className={activeMedicationId === medication.id ? 'animate-spin' : ''} />
                 {activeMedicationId === medication.id ? 'Submitting...' : 'Request refill'}
               </button>
             </div>
@@ -439,8 +450,13 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
         )}
       </div>
 
-      <form className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc" onSubmit={sendMessage}>
-        <h3 className="font-display text-xl font-semibold text-navy-700">Send a secure message</h3>
+      <form className="relative overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg" onSubmit={sendMessage}>
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+        <p className="mc-section-label">Care team</p>
+        <h3 className="flex items-center gap-2 font-display text-xl font-semibold text-navy-700">
+          <MessageSquare size={20} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
+          Send a secure message
+        </h3>
         <div className="mt-4 space-y-4">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-700">Subject</span>
@@ -463,8 +479,9 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
           <button
             type="submit"
             disabled={sendingMessage}
-            className="w-full rounded-2xl bg-navy-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
+            className="mc-btn-fill mc-btn-navy flex w-full items-center justify-center gap-2 rounded-2xl bg-navy-600 px-4 py-3 text-base font-semibold text-white transition-all hover:bg-navy-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
           >
+            <Send size={16} strokeWidth={2} aria-hidden="true" />
             {sendingMessage ? 'Sending...' : 'Send message'}
           </button>
         </div>
@@ -475,8 +492,13 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
 
 function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
   return (
-    <form className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc" onSubmit={onSubmit}>
-      <h3 className="font-display text-2xl font-semibold text-navy-700">Report symptoms</h3>
+    <form className="relative overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg" onSubmit={onSubmit}>
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+      <p className="mc-section-label">Symptom triage</p>
+      <h3 className="flex items-center gap-2 font-display text-2xl font-semibold text-navy-700">
+        <Stethoscope size={22} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
+        Report symptoms
+      </h3>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
         Symptom reports persist into the care-team workflow and are routed based on severity.
       </p>
@@ -525,7 +547,7 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
       <button
         type="submit"
         disabled={submitting}
-        className="mt-6 flex items-center gap-1.5 rounded-2xl bg-navy-600 px-5 py-3 text-base font-semibold text-white shadow-mc transition hover:bg-navy-700 hover:shadow-mc-lg disabled:bg-slate-400"
+        className="mc-btn-fill mc-btn-navy mt-6 flex items-center gap-1.5 rounded-2xl bg-navy-600 px-5 py-3 text-base font-semibold text-white transition-all hover:bg-navy-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
       >
         <Stethoscope size={18} strokeWidth={2} aria-hidden="true" />
         {submitting ? 'Submitting...' : 'Send symptom report'}

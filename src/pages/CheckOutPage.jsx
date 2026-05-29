@@ -18,7 +18,13 @@ import {
   Printer,
   Sparkles,
   CalendarClock,
+  ClipboardCheck,
+  Pill,
+  FlaskConical,
+  Scan,
+  Send,
 } from 'lucide-react';
+import StatTile from '../components/workflow/StatTile';
 
 const FOLLOW_UP_INTERVALS = [
   { label: '1 week', days: 7 },
@@ -306,10 +312,16 @@ export default function CheckOutPage() {
       {patient && <PatientBanner patient={patient} />}
 
       <div className="mc-page max-w-3xl mc-reveal-stagger space-y-4">
-        {/* Page title */}
-        <div className="flex flex-col gap-1">
+        {/* Page header — gold hairline + navy icon chip, matching the bar */}
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
           <p className="mc-section-label">Provider</p>
-          <h1 className="mc-page-title">Check-Out</h1>
+          <h1 className="mc-page-title flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <ClipboardCheck size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            Check-Out
+          </h1>
         </div>
 
         {/* Top bar */}
@@ -339,6 +351,17 @@ export default function CheckOutPage() {
             </p>
           </div>
         </div>
+
+        {/* Order summary — premium KPI tiles (AuditPage bar): Rx is the single
+            gold attention beat, labs/imaging/referrals stay navy/slate. */}
+        {orderCounts.total > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatTile icon={Pill} label="Prescriptions" value={orderCounts.prescriptions} tone={orderCounts.prescriptions > 0 ? 'gold' : 'slate'} />
+            <StatTile icon={FlaskConical} label="Lab Orders" value={orderCounts.labs} tone={orderCounts.labs > 0 ? 'navy' : 'slate'} />
+            <StatTile icon={Scan} label="Imaging" value={orderCounts.imaging} tone={orderCounts.imaging > 0 ? 'navy' : 'slate'} />
+            <StatTile icon={Send} label="Referrals" value={orderCounts.referrals} tone={orderCounts.referrals > 0 ? 'navy' : 'slate'} />
+          </div>
+        )}
 
         {/* Patient Instructions */}
         {instructions.length > 0 && (

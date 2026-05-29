@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles, X, Send } from 'lucide-react';
+import { ArrowLeft, Sparkles, X, Send, Activity, Stethoscope } from 'lucide-react';
 import api, { safeLog } from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -246,6 +246,19 @@ export default function MAPage() {
       {/* Main Content */}
       <div className="max-w-3xl mx-auto w-full p-4 space-y-4 flex-1 mc-reveal-stagger">
 
+        {/* Page header — gold eyebrow + icon chip, matching the Audit/Dashboard bar */}
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+          <p className="mc-section-label">Rooming &amp; Intake</p>
+          <h1 className="mc-page-title flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <Stethoscope size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            Medical Assistant
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">Vitals, medication reconciliation &amp; allergy review</p>
+        </div>
+
         {/* Chief Complaint */}
         <Card>
           <CardHeader>Chief Complaint</CardHeader>
@@ -365,19 +378,31 @@ export default function MAPage() {
               })}
             </div>
 
-            {/* BMI display row below vitals when both weight and height entered */}
+            {/* BMI summary — premium stat-card treatment: large Source-Serif
+                number, semantic tint, an icon chip, and the layered .mc-stat-card
+                depth so it reads at the Audit/Dashboard bar. */}
             {bmi && (
-              <div className={`mt-4 p-3 rounded-lg border flex items-center justify-between ${bmiBg(bmi)}`}>
-                <div>
-                  <span className="text-sm font-medium text-slate-700">Calculated BMI</span>
-                  <p className={`text-2xl font-bold ${bmiColor(bmi)}`}>{bmi}</p>
+              <div className={`mc-stat-card relative mt-4 overflow-hidden !flex-row items-center justify-between !p-5 border ${bmiBg(bmi)}`}>
+                <div className="min-w-0">
+                  <div className={`font-display text-4xl font-semibold leading-none tabular-nums sm:text-5xl ${bmiColor(bmi)}`}>
+                    {bmi}
+                  </div>
+                  <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Calculated BMI
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate-500">
+                    {parseFloat(bmi) < 18.5 && 'Underweight'}
+                    {parseFloat(bmi) >= 18.5 && parseFloat(bmi) < 25 && 'Normal weight'}
+                    {parseFloat(bmi) >= 25 && parseFloat(bmi) < 30 && 'Overweight'}
+                    {parseFloat(bmi) >= 30 && 'Obese'}
+                  </div>
                 </div>
-                <div className="text-sm text-slate-600">
-                  {parseFloat(bmi) < 18.5 && 'Underweight'}
-                  {parseFloat(bmi) >= 18.5 && parseFloat(bmi) < 25 && 'Normal weight'}
-                  {parseFloat(bmi) >= 25 && parseFloat(bmi) < 30 && 'Overweight'}
-                  {parseFloat(bmi) >= 30 && 'Obese'}
-                </div>
+                <span
+                  className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-offWhite-100/70 ring-1 ring-slate-100 shadow-sm ${bmiColor(bmi)}`}
+                  aria-hidden="true"
+                >
+                  <Activity size={24} strokeWidth={2} />
+                </span>
               </div>
             )}
           </CardBody>

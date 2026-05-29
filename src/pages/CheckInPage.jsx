@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Clock,
   Send,
+  LogIn,
 } from 'lucide-react';
 
 const APPOINTMENT_TYPES = [
@@ -161,6 +162,18 @@ export default function CheckInPage() {
       {patient && <PatientBanner patient={patient} />}
 
       <div className="mc-page max-w-3xl mc-reveal-stagger space-y-5">
+        {/* Page header — gold hairline + navy icon chip, matching the bar */}
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+          <p className="mc-section-label">Reception</p>
+          <h1 className="mc-page-title flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <LogIn size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            Patient Check-In
+          </h1>
+        </div>
+
         {/* Navigation + Workflow */}
         <div className="flex items-center justify-between">
           <TouchButton

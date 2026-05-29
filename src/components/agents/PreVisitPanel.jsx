@@ -224,8 +224,8 @@ export default function PreVisitPanel({ patientId, encounterId }) {
         <div className="p-4 space-y-3 mc-reveal-stagger">
           {/* Visit Reason */}
           {visitReason && (
-            <div className="bg-navy-50 border border-navy-100 rounded-lg px-4 py-3">
-              <div className="text-xs text-slate-600 font-semibold tracking-wide mb-1">REASON FOR VISIT</div>
+            <div className="bg-navy-50 border border-navy-100 rounded-xl px-4 py-3">
+              <p className="mc-section-label">Reason for Visit</p>
               <div className="text-sm text-navy-700">{visitReason}</div>
             </div>
           )}

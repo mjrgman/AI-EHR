@@ -188,8 +188,10 @@ export default function DashboardPage() {
   return (
     <div className="pb-24">
       <div className="mc-page mc-reveal-stagger space-y-6">
-        {/* Branded greeting header */}
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        {/* Branded greeting header — a gold hairline crowns the surface, matching
+            the AuditPage reference treatment (signature, presentation-only). */}
+        <header className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
           <div>
             <p className="mc-section-label">{formatDate(today)}</p>
             <h1 className="mc-page-title">

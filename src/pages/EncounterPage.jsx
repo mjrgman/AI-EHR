@@ -914,6 +914,16 @@ export default function EncounterPage() {
         </CardBody>
       </Card>
 
+      {/* Readiness hint — when Review & Sign is gated, name the gate so the
+          disabled button reads as an intentional lock, not a washed-out CTA.
+          Presentation only; mirrors the existing canReviewSign predicate. */}
+      {!canReviewSign && (
+        <div className="flex items-start gap-2 rounded-xl border border-gold-200 bg-gold-50/70 px-4 py-3 text-sm text-gold-800">
+          <ClipboardCheck size={16} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-gold-600" aria-hidden="true" />
+          <span>Generate a SOAP note or add at least one order to enable Review &amp; Sign.</span>
+        </div>
+      )}
+
       {/* Review & Sign + MediVault Export Buttons.
           Review & Sign is the encounter's positive/complete moment — confident
           brand success green, with an icon to reinforce it. Export is a quiet

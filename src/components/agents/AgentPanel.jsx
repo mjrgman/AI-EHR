@@ -69,9 +69,9 @@ function StatusBadge({ status }) {
 
 function Stat({ label, value, color }) {
   return (
-    <div className="bg-ivory-200/70 border border-slate-100 rounded px-2 py-1 text-center">
-      <div className={`font-bold ${color || 'text-navy-700'}`}>{value}</div>
-      <div className="text-slate-500 text-[10px]">{label}</div>
+    <div className="rounded-lg border border-slate-100 bg-offWhite-100 px-2 py-1.5 text-center shadow-mc">
+      <div className={`font-display text-lg font-semibold leading-none tabular-nums ${color || 'text-navy-700'}`}>{value}</div>
+      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</div>
     </div>
   );
 }
@@ -210,17 +210,17 @@ function CodingDetails({ result }) {
   return (
     <div className="mt-3 space-y-2 text-xs">
       <div className="grid grid-cols-3 gap-2">
-        <div className="bg-ivory-200/70 rounded p-2 text-center">
-          <div className="text-2xl font-bold text-slate-700">{result.emLevel || '—'}</div>
-          <div className="text-slate-500">E&M Level</div>
+        <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+          <div className="font-display text-2xl font-semibold leading-none tabular-nums text-navy-700">{result.emLevel || '—'}</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">E&amp;M Level</div>
         </div>
-        <div className="bg-ivory-200/70 rounded p-2 text-center">
-          <div className="text-lg font-bold text-slate-700">{result.cptCode || '—'}</div>
-          <div className="text-slate-500">CPT Code</div>
+        <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+          <div className="font-display text-lg font-semibold leading-none tabular-nums text-navy-700">{result.cptCode || '—'}</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">CPT Code</div>
         </div>
-        <div className="bg-ivory-200/70 rounded p-2 text-center">
-          <div className="text-lg font-bold text-slate-700">{(result.icd10Codes || []).length}</div>
-          <div className="text-slate-500">ICD-10</div>
+        <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+          <div className="font-display text-lg font-semibold leading-none tabular-nums text-navy-700">{(result.icd10Codes || []).length}</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">ICD-10</div>
         </div>
       </div>
       {(result.hccFlags || []).length > 0 && (
@@ -236,19 +236,19 @@ function QualityDetails({ result }) {
   return (
     <div className="mt-3 space-y-2 text-xs">
       <div className="grid grid-cols-3 gap-2">
-        <div className="bg-ivory-200/70 rounded p-2 text-center">
-          <div className={`text-2xl font-bold ${qualityScore.score >= 75 ? 'text-success-600' : qualityScore.score >= 50 ? 'text-gold-600' : 'text-danger-500'}`}>
+        <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+          <div className={`font-display text-2xl font-semibold leading-none tabular-nums ${qualityScore.score >= 75 ? 'text-success-600' : qualityScore.score >= 50 ? 'text-gold-600' : 'text-danger-500'}`}>
             {qualityScore.score || 0}%
           </div>
-          <div className="text-slate-500">Quality Score</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Quality Score</div>
         </div>
-        <div className="bg-ivory-200/70 rounded p-2 text-center">
-          <div className="text-lg font-bold text-danger-500">{dashboard.openCareGaps || 0}</div>
-          <div className="text-slate-500">Care Gaps</div>
+        <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+          <div className="font-display text-lg font-semibold leading-none tabular-nums text-danger-500">{dashboard.openCareGaps || 0}</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Care Gaps</div>
         </div>
-        <div className="bg-ivory-200/70 rounded p-2 text-center">
-          <div className="text-lg font-bold text-danger-500">{dashboard.measuresAtGoal || '—'}</div>
-          <div className="text-slate-500">Measures Met</div>
+        <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+          <div className="font-display text-lg font-semibold leading-none tabular-nums text-danger-500">{dashboard.measuresAtGoal || '—'}</div>
+          <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Measures Met</div>
         </div>
       </div>
       {(result.gaps || []).slice(0, 4).map((g, i) => (
@@ -271,17 +271,17 @@ function TriageDetails({ result }) {
     <div className="mt-3 space-y-2 text-xs">
       {assessment.urgency && (
         <div className="grid grid-cols-2 gap-2">
-          <div className={`bg-ivory-200/70 rounded p-2 text-center`}>
-            <div className={`text-lg font-bold ${
+          <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+            <div className={`font-display text-lg font-semibold leading-none ${
               assessment.urgency === 'emergency' ? 'text-danger-500' :
               assessment.urgency === 'urgent' ? 'text-gold-600' :
               'text-success-600'
             }`}>{(assessment.urgency || '').toUpperCase()}</div>
-            <div className="text-slate-500">Urgency</div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Urgency</div>
           </div>
-          <div className="bg-ivory-200/70 rounded p-2 text-center">
-            <div className="text-lg font-bold text-gold-700">{assessment.disposition || assessment.routing || '—'}</div>
-            <div className="text-slate-500">Routing</div>
+          <div className="rounded-lg border border-slate-100 bg-offWhite-100 p-2.5 text-center shadow-mc">
+            <div className="font-display text-lg font-semibold leading-none text-gold-700">{assessment.disposition || assessment.routing || '—'}</div>
+            <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">Routing</div>
           </div>
         </div>
       )}

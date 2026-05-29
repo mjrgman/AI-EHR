@@ -38,9 +38,17 @@ export default function HRTPanel({
 
   return (
     <div className="p-4 space-y-4 mc-reveal-stagger">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-semibold tracking-tight text-navy-700">HRT / Peptide</h2>
+      {/* Header — gold eyebrow + icon chip, matching the app-wide section bar */}
+      <div className="relative flex items-end justify-between">
+        <div>
+          <p className="mc-section-label">Functional Medicine</p>
+          <h2 className="font-display text-lg font-semibold tracking-tight text-navy-700 flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <Syringe size={16} strokeWidth={2} aria-hidden="true" />
+            </span>
+            HRT / Peptide
+          </h2>
+        </div>
         {pendingSuggestions.length > 0 && (
           <Badge variant="urgent">{pendingSuggestions.length} pending</Badge>
         )}
@@ -87,7 +95,7 @@ export default function HRTPanel({
               {pendingSuggestions.map((s) => (
                 <div
                   key={s.id}
-                  className="border-l-4 border-l-navy-500 bg-navy-50/50 rounded-r-lg p-3"
+                  className="border-l-4 border-l-navy-500 bg-navy-50/50 rounded-r-xl p-3 shadow-mc transition-all duration-200 hover:-translate-y-px hover:shadow-mc-lg"
                 >
                   <div className="font-semibold text-sm text-navy-700">{s.title}</div>
                   {s.description && (

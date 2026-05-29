@@ -151,7 +151,7 @@ export default function LoginPage() {
             ) : null}
 
             <button
-              className="touch-btn mc-btn-fill mc-btn-navy w-full bg-navy-600 text-white hover:bg-navy-700 active:bg-navy-800 focus:ring-navy-500 disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100"
+              className="touch-btn mc-btn-fill mc-btn-navy w-full bg-navy-600 text-white hover:bg-navy-700 active:bg-navy-800 focus:ring-navy-500 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:active:scale-100"
               type="submit"
               disabled={submitting}
             >

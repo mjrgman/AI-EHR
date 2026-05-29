@@ -102,7 +102,7 @@ function VerifyForm({ onVerify, isProcessing, error, speechSupported, onVoiceVer
           <button
             type="submit"
             disabled={isProcessing || !firstName.trim() || !lastName.trim() || !dob}
-            className="min-h-[56px] w-full rounded-xl bg-navy-600 text-xl font-semibold text-white transition-colors duration-150 hover:bg-navy-700 disabled:bg-slate-400"
+            className="mc-btn-fill mc-btn-navy min-h-[56px] w-full rounded-xl bg-navy-600 text-xl font-semibold text-white transition-all duration-150 hover:bg-navy-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
           >
             {isProcessing ? 'Verifying...' : 'Verify Identity'}
           </button>
@@ -234,7 +234,7 @@ function ConversationView({
           <button
             type="submit"
             disabled={!typedText.trim() || isProcessing}
-            className="min-h-[48px] rounded-xl bg-navy-600 px-6 py-3 text-xl font-semibold text-white transition-colors hover:bg-navy-700 disabled:bg-slate-400"
+            className="mc-btn-fill mc-btn-navy min-h-[48px] rounded-xl bg-navy-600 px-6 py-3 text-xl font-semibold text-white transition-all hover:bg-navy-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
           >
             Send
           </button>

@@ -199,6 +199,16 @@
       inset 0 2px 4px rgba(0, 0, 0, 0.16),
       0 1px 2px rgba(26, 58, 82, 0.10);
   }
+  /* Disabled FILLED buttons must read as unmistakably inert: the confident
+     colored elevation/sheen is stripped entirely and the fill is desaturated,
+     so a disabled success/sign button never reads as a washed-but-active one.
+     (Pairs with the Tailwind disabled: utilities on TouchButton.) */
+  .mc-btn-fill:disabled,
+  .mc-btn-fill[disabled] {
+    box-shadow: none;
+    filter: saturate(0.45);
+    transform: none;
+  }
   .mc-btn-navy    { --mc-btn-glow: rgba(26, 58, 82, 0.28);  --mc-btn-glow-hover: rgba(26, 58, 82, 0.38); }
   .mc-btn-success { --mc-btn-glow: rgba(63, 122, 82, 0.30); --mc-btn-glow-hover: rgba(42, 83, 55, 0.42); }
   .mc-btn-gold    { --mc-btn-glow: rgba(184, 134, 11, 0.28); --mc-btn-glow-hover: rgba(156, 113, 9, 0.40); }
