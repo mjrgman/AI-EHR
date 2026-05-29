@@ -1,21 +1,52 @@
 'use strict';
 
 /**
- * SMART Scope Enforcement Middleware
+ * SMART Scope Enforcement Middleware  (FAIL-CLOSED)
  *
- * Inspects the authenticated user's token for SMART scope claims.
- * If the token carries a `scope` claim, enforces it against the
- * required scope for the requested FHIR resource.
+ * Enforces the required SMART scope for every authenticated FHIR request.
  *
- * Backward compatibility:
- *   - Tokens without a `scope` claim pass through (pre-SMART clients).
- *   - Dev mode fallback users (no JWT) pass through.
+ * Effective-scope derivation (sec-smart-scope-noop-02):
+ *   - SMART tokens carry an explicit `scope` claim → use it verbatim.
+ *   - App login tokens carry NO `scope` claim → derive effective scopes from
+ *     the authenticated `role` via ROLE_SCOPES. This is the primary auth path
+ *     and previously self-disabled (the middleware returned next() on absent
+ *     scope, silently granting full access). It now fails closed.
+ *
+ * Fail-closed guarantees:
+ *   - A request with no resolvable identity (no user / no role / no scope) is
+ *     DENIED, never passed through.
+ *   - A write method (POST/PUT/PATCH/DELETE) with no explicit scope mapping is
+ *     DENIED — writes never fall back to a read scope.
+ *   - Only an explicitly null-mapped endpoint (e.g. metadata) is public.
  *
  * Denied requests are logged to audit_log with action 'smart_scope_denied'.
  */
 
 const db = require('../../database');
-const { RESOURCE_SCOPE_MAP, scopeSatisfies } = require('./smart-config');
+const { RESOURCE_SCOPE_MAP, scopeSatisfies, ROLE_SCOPES } = require('./smart-config');
+
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * Resolve the effective granted scopes for a request.
+ *   1. Explicit token `scope` claim (SMART clients) wins.
+ *   2. Otherwise derive from the authenticated role (app login tokens).
+ *   3. No identity / unknown role → empty set (fail closed downstream).
+ *
+ * @returns {string[]} granted scopes (possibly empty)
+ */
+function effectiveScopes(user) {
+  if (!user) return [];
+  if (user.scope) {
+    return typeof user.scope === 'string'
+      ? user.scope.split(' ').filter(Boolean)
+      : (Array.isArray(user.scope) ? user.scope : []);
+  }
+  if (user.role && Array.isArray(ROLE_SCOPES[user.role])) {
+    return ROLE_SCOPES[user.role];
+  }
+  return [];
+}
 
 /**
  * Extract the FHIR resource type from a FHIR router path.
@@ -65,32 +96,53 @@ async function logScopeDenial(req, resourceType, requiredScope, grantedScopes) {
  */
 function smartScopeCheck(req, res, next) {
   const user = req.user;
-
-  // No user or no scope claim → backward-compat passthrough
-  if (!user || !user.scope) return next();
-
-  const grantedScopes = typeof user.scope === 'string'
-    ? user.scope.split(' ').filter(Boolean)
-    : (Array.isArray(user.scope) ? user.scope : []);
-
   const resourceType = extractResourceType(req.path);
   const key = scopeKey(resourceType, req.method);
-  const requiredScope = RESOURCE_SCOPE_MAP[key] ?? RESOURCE_SCOPE_MAP[`${resourceType}.GET`] ?? null;
+  const isWrite = WRITE_METHODS.has(req.method.toUpperCase());
 
-  if (requiredScope === null) return next(); // public or unmapped endpoint
+  // Effective scopes: explicit token scope claim OR role-derived (login tokens).
+  const grantedScopes = effectiveScopes(user);
 
-  if (scopeSatisfies(grantedScopes, requiredScope)) return next();
+  // Determine the required scope for this resource + method.
+  // FAIL-CLOSED for writes: a write method with no explicit mapping is denied;
+  // writes NEVER fall back to the resource's read scope (sec-fhir-write-unscoped-03).
+  let requiredScope;
+  if (Object.prototype.hasOwnProperty.call(RESOURCE_SCOPE_MAP, key)) {
+    requiredScope = RESOURCE_SCOPE_MAP[key];
+  } else if (isWrite) {
+    // Unmapped WRITE → no scope can satisfy → deny (a write could reach a
+    // handler; never let an unmapped write fall back to a read scope).
+    requiredScope = '__deny__';
+  } else {
+    // Reads fall back to the resource's read scope when it exists. A read
+    // resource type with NO mapping has no handler on this router (every PHI
+    // read resource IS mapped), so let it fall through to the router's
+    // catch-all 404 — there is no data path to expose. The RBAC guard remains
+    // the explicit second gate for every known PHI resource.
+    requiredScope = RESOURCE_SCOPE_MAP[`${resourceType}.GET`];
+    if (requiredScope === undefined) return next();
+  }
 
-  // Scope denied
-  logScopeDenial(req, resourceType, requiredScope, grantedScopes);
+  // Only an explicit null mapping is public (e.g. metadata).
+  if (requiredScope === null) return next();
+
+  if (requiredScope !== '__deny__' && scopeSatisfies(grantedScopes, requiredScope)) {
+    return next();
+  }
+
+  // Denied — fail closed.
+  const reqLabel = requiredScope === '__deny__'
+    ? `write to ${resourceType} (no role/scope grants this)`
+    : requiredScope;
+  logScopeDenial(req, resourceType, reqLabel, grantedScopes);
   return res.status(403).json({
     resourceType: 'OperationOutcome',
     issue: [{
       severity: 'error',
       code: 'forbidden',
-      diagnostics: `Insufficient scope. Required: ${requiredScope}`,
+      diagnostics: `Insufficient scope. Required: ${reqLabel}`,
     }],
   });
 }
 
-module.exports = { smartScopeCheck, extractResourceType, scopeKey };
+module.exports = { smartScopeCheck, extractResourceType, scopeKey, effectiveScopes };

@@ -200,11 +200,70 @@ async function getBrandGenericMapping(rxcui) {
 }
 
 /**
+ * Sentinel describing the state of an interaction screening attempt.
+ *
+ * IMPORTANT (fail-closed contract): drug-drug interaction screening MUST
+ * distinguish three states, never collapsing them:
+ *   - SCREENED_CLEAN  : the source was reachable and returned zero interactions.
+ *   - INTERACTIONS     : the source returned one or more interaction pairs.
+ *   - UNAVAILABLE      : the source was unreachable / errored. This is NOT
+ *                        "no interactions" — callers must surface it as a
+ *                        WARNING ("interaction check unavailable — verify
+ *                        manually"), never as a clean result.
+ *
+ * The NLM RxNav `/interaction` endpoints were RETIRED in January 2024, so in
+ * the current build screening is effectively always UNAVAILABLE. Replacing the
+ * data source (curated table or licensed DB) is a deferred decision pending
+ * Michael — see ULTRAPLAN P0-4. Until then we fail CLOSED.
+ */
+const SCREENING_UNAVAILABLE = 'unavailable';
+
+/**
+ * Build the explicit "screening unavailable" sentinel interaction.
+ * Returned (as a single-element array) whenever the upstream source cannot be
+ * reached, so a downstream `for..of` consumer surfaces a warning rather than
+ * silently treating an empty list as "safe / no interactions."
+ *
+ * @param {string} [reason] - Human-readable reason for unavailability.
+ * @returns {{status: string, severity: string, description: string, source: string, unavailable: true}}
+ */
+function buildUnavailableInteraction(reason) {
+  return {
+    status: SCREENING_UNAVAILABLE,
+    unavailable: true,
+    severity: 'unknown',
+    description:
+      'Drug interaction check unavailable — automated screening source could not be reached. '
+      + 'Verify interactions manually.'
+      + (reason ? ` (${reason})` : ''),
+    source: 'screening-unavailable'
+  };
+}
+
+/**
+ * True if an interactions array represents an unavailable-screening result
+ * rather than a completed screen. Use this to decide whether an empty list
+ * may be trusted as "no interactions."
+ *
+ * @param {Array} interactions
+ * @returns {boolean}
+ */
+function isScreeningUnavailable(interactions) {
+  return Array.isArray(interactions)
+    && interactions.some(i => i && i.status === SCREENING_UNAVAILABLE);
+}
+
+/**
  * Check drug-drug interactions between two RxCUIs.
+ *
+ * FAIL-CLOSED: on any upstream error / unreachable source, returns a
+ * single-element array containing the "screening unavailable" sentinel
+ * (see buildUnavailableInteraction). A genuinely-empty array is returned ONLY
+ * when the source responded successfully with zero interaction pairs.
  *
  * @param {string} rxcui1 - First drug RxCUI
  * @param {string} rxcui2 - Second drug RxCUI
- * @returns {Promise<Array<{severity: string, description: string, source: string}>>}
+ * @returns {Promise<Array<{severity: string, description: string, source: string, status?: string}>>}
  */
 async function getInteractions(rxcui1, rxcui2) {
   if (!rxcui1 || !rxcui2) return [];
@@ -212,13 +271,27 @@ async function getInteractions(rxcui1, rxcui2) {
   const key = `interaction:${sorted[0]}:${sorted[1]}`;
 
   const cached = await getCached(key);
-  if (cached) return cached;
+  // Never serve an "unavailable" sentinel from cache — re-attempt each time so
+  // a restored source recovers immediately. Only cache genuine results.
+  if (cached && !isScreeningUnavailable(cached)) return cached;
 
   const data = await rxnormGet(
     `/interaction/list.json?rxcuis=${sorted[0]}+${sorted[1]}`
   );
 
-  if (!data || !data.fullInteractionTypeGroup) return [];
+  // FAIL CLOSED: a null/absent response means the upstream source was
+  // unreachable or returned an error (the NLM /interaction API was retired
+  // Jan-2024, so this is the live path). Surface "unavailable", never empty.
+  if (!data) {
+    return [buildUnavailableInteraction('upstream source unreachable')];
+  }
+
+  // A well-formed response with no interaction group = source reachable,
+  // genuinely zero interactions. Safe to return empty (and cache it).
+  if (!data.fullInteractionTypeGroup) {
+    await setCache(key, []);
+    return [];
+  }
 
   const interactions = [];
   for (const group of data.fullInteractionTypeGroup) {
@@ -248,9 +321,16 @@ async function getInteractions(rxcui1, rxcui2) {
 async function checkInteractionsAgainstList(drugName, activeMeds) {
   if (!drugName || !activeMeds || activeMeds.length === 0) return [];
 
-  // Resolve the new drug
+  // Resolve the new drug. A failed resolve means we cannot screen this drug at
+  // all — FAIL CLOSED rather than returning an empty (falsely-clean) list.
   const newDrug = await lookupByName(drugName);
-  if (!newDrug) return [];
+  if (!newDrug) {
+    return [{
+      drug1: drugName,
+      drug2: null,
+      ...buildUnavailableInteraction(`could not resolve "${drugName}" to a drug identifier`)
+    }];
+  }
 
   const allInteractions = [];
 
@@ -261,7 +341,20 @@ async function checkInteractionsAgainstList(drugName, activeMeds) {
       const lookup = await lookupByName(med.medication_name);
       if (lookup) medRxcui = lookup.rxcui;
     }
-    if (!medRxcui || medRxcui === newDrug.rxcui) continue;
+    if (medRxcui && medRxcui === newDrug.rxcui) continue;
+
+    // Could not resolve this active med → cannot screen this pair. Emit an
+    // explicit unavailable marker instead of silently skipping it.
+    if (!medRxcui) {
+      allInteractions.push({
+        drug1: drugName,
+        drug2: med.medication_name,
+        rxcui1: newDrug.rxcui,
+        rxcui2: null,
+        ...buildUnavailableInteraction(`could not resolve "${med.medication_name}" to a drug identifier`)
+      });
+      continue;
+    }
 
     const interactions = await getInteractions(newDrug.rxcui, medRxcui);
     for (const interaction of interactions) {
@@ -305,5 +398,8 @@ module.exports = {
   getBrandGenericMapping,
   getInteractions,
   checkInteractionsAgainstList,
-  resolveAndEnrich
+  resolveAndEnrich,
+  isScreeningUnavailable,
+  buildUnavailableInteraction,
+  SCREENING_UNAVAILABLE
 };

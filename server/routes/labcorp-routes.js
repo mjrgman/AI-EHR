@@ -35,6 +35,7 @@
 const express = require('express');
 const oauth = require('../integrations/labcorp/oauth');
 const { LabCorpClient } = require('../integrations/labcorp/client');
+const rbac = require('../security/rbac');
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — OAuth flows complete in seconds
 
@@ -207,6 +208,27 @@ function mountLabCorpRoutes(app, { db } = {}) {
     const userId = req.user && req.user.sub;
     if (!userId) {
       return res.status(401).json({ error: 'authentication_required' });
+    }
+
+    // RBAC (sec-labcorp-order-ownership-08): submitting a lab order to an
+    // external lab is a write against lab_orders. Gate it to roles that hold
+    // lab_orders write authority (physician / nurse_practitioner / system).
+    // Fail closed — any role lacking that authority (front_desk, billing, ma,
+    // an unknown/absent role) is denied 403 BEFORE the order is loaded or
+    // transmitted, preventing ID-enumeration transmission of any patient's
+    // order to LabCorp.
+    const role = req.user && req.user.role;
+    if (!rbac.canWrite(role, 'lab_orders')) {
+      console.warn(
+        `[RBAC] LabCorp submit denied: user ${userId} (role: ${role || 'none'}) ` +
+        `attempted submit-to-labcorp on order ${req.params.id}`
+      );
+      return res.status(403).json({
+        error: 'Permission denied: cannot submit lab orders to LabCorp',
+        userRole: role || null,
+        requiredAction: 'write',
+        requiredResource: 'lab_orders',
+      });
     }
 
     const orderId = parseInt(req.params.id, 10);

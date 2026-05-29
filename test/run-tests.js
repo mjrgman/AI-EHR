@@ -1339,6 +1339,17 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     fhirRouter = require('../server/fhir/router');
     fhirTestApp = expressHttp();
     fhirTestApp.use(expressHttp.json());
+    // SECURE-BEHAVIOR UPDATE (Wave 1 authz): the FHIR router now FAILS CLOSED on
+    // scope-check + RBAC (sec-fhir-rbac-idor-01 / sec-smart-scope-noop-02). These
+    // contract tests previously relied on the old INSECURE passthrough (no req.user
+    // → next()). They are contract tests, not authz tests, so we inject an
+    // authenticated physician (phiScope ['all'], all read scopes via ROLE_SCOPES)
+    // exactly as auth.requireAuth would in production. Authz denial is covered by
+    // test/unit/authz-boundary.test.js.
+    fhirTestApp.use((req, _res, next) => {
+      req.user = { sub: 1, username: 'dr.test', role: 'physician', fullName: 'Dr Test' };
+      next();
+    });
     fhirTestApp.use('/fhir/R4', fhirRouter);
     fhirTestServer = await new Promise((resolve) => {
       const srv = fhirTestApp.listen(0, '127.0.0.1', () => resolve(srv));
@@ -2007,6 +2018,13 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   const fhirRouterP17 = require('../server/fhir/router');
   const p17App = expressP17();
   p17App.use(expressP17.json());
+  // SECURE-BEHAVIOR UPDATE (Wave 1 authz): inject an authenticated physician so
+  // the fail-closed FHIR router serves these paging/_include contract tests
+  // (see Phase 14 note). Authz denial coverage lives in authz-boundary.test.js.
+  p17App.use((req, _res, next) => {
+    req.user = { sub: 1, username: 'dr.test', role: 'physician', fullName: 'Dr Test' };
+    next();
+  });
   p17App.use('/fhir/R4', fhirRouterP17);
 
   const p17Server = await new Promise((resolve) => {

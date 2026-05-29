@@ -45,11 +45,104 @@ const { ingestBundle } = require('./inbound/bundle-ingest');
 // SMART scope enforcement
 const { smartScopeCheck } = require('./smart/scope-check');
 
+// RBAC — role-based resource access + PHI filtering (sec-fhir-rbac-idor-01)
+const rbac = require('../security/rbac');
+
 // FHIR metrics
 const { fhirMetricsMiddleware, statsHandler } = require('./utils/fhir-metrics');
 
 // ──────────────────────────────────────────
-// MIDDLEWARE: FHIR response headers + metrics + SMART scope enforcement
+// RBAC: FHIR resource type → internal RBAC resource name.
+// This is the second authorization layer on the FHIR surface (defense in depth
+// alongside SMART scope-check). Maps each FHIR resourceType + request context to
+// the rbac.ROLES canAccess/canWrite matrix and enforces it FAIL-CLOSED.
+// ──────────────────────────────────────────
+const FHIR_TO_RBAC_RESOURCE = {
+  Patient: 'patients',
+  Encounter: 'encounters',
+  Condition: 'problems',
+  AllergyIntolerance: 'allergies',
+  MedicationRequest: 'medications',
+  Appointment: 'encounters',
+  // Observation is category-dependent (laboratory vs vital-signs) — resolved below.
+  // Practitioner exposes no patient PHI (provider directory) — any authenticated
+  // user may read it; not in this map (skipped by the guard).
+  // Bundle writes are scope-gated (system/Bundle.write) by smartScopeCheck.
+};
+
+/** Resolve the RBAC resource name for a FHIR request, honoring Observation category. */
+function rbacResourceFor(resourceType, req) {
+  if (resourceType === 'Observation') {
+    const category = req.query && req.query.category;
+    if (category === 'laboratory') return 'labs';
+    if (category === 'vital-signs') return 'vitals';
+    // No/other category → the response can contain BOTH labs and vitals.
+    // Fail closed: require access to the more-restricted of the two. We return
+    // a synthetic marker that the guard expands into an "all-of" check.
+    return ['labs', 'vitals'];
+  }
+  return FHIR_TO_RBAC_RESOURCE[resourceType] || null;
+}
+
+/**
+ * FHIR RBAC guard — runs AFTER smartScopeCheck. Enforces the role's
+ * canAccess (reads) / canWrite (writes) for the targeted resource. Deny-by-default:
+ * an unknown role or a role lacking the permission gets 403.
+ */
+function fhirRbacGuard(req, res, next) {
+  const role = req.user && req.user.role;
+  const resourceType = req.path.replace(/^\//, '').split('/')[0];
+
+  // Public / non-PHI endpoints: metadata, $stats, Practitioner directory, Bundle
+  // (Bundle is scope-gated). These carry no patient PHI to filter.
+  if (!resourceType || resourceType === 'metadata' || resourceType === '$stats'
+      || resourceType === 'Practitioner' || resourceType === 'Bundle') {
+    return next();
+  }
+
+  const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+  const required = rbacResourceFor(resourceType, req);
+
+  // Resource type this router does not serve (e.g. DiagnosticReport) — no PHI
+  // data path exists. Let it fall through to the router's catch-all 404
+  // (FHIR-correct "not supported"); there is nothing to expose, so this is not
+  // a fail-open. Every resource type that DOES carry PHI is in the map above
+  // and is enforced below.
+  if (!required) {
+    return next();
+  }
+
+  const resources = Array.isArray(required) ? required : [required];
+  const permitted = resources.every(r => isWrite ? rbac.canWrite(role, r) : rbac.canAccess(role, r));
+
+  if (!permitted) {
+    return res.status(403).json({
+      resourceType: 'OperationOutcome',
+      issue: [{
+        severity: 'error',
+        code: 'forbidden',
+        diagnostics: `Role '${role || 'unknown'}' cannot ${isWrite ? 'write' : 'read'} ${resourceType}.`,
+      }],
+    });
+  }
+
+  // PHI minimization on reads: wrap res.json to strip fields outside the role's
+  // phiScope (no-op for roles with phiScope ['all'] such as physician/NP/system).
+  if (!isWrite) {
+    const originalJson = res.json.bind(res);
+    res.json = function (data) {
+      try {
+        return originalJson(rbac.filterPHI(role, data));
+      } catch (_) {
+        return originalJson(data);
+      }
+    };
+  }
+  next();
+}
+
+// ──────────────────────────────────────────
+// MIDDLEWARE: FHIR response headers + metrics + SMART scope enforcement + RBAC
 // ──────────────────────────────────────────
 router.use((req, res, next) => {
   res.set('X-FHIR-Version', '4.0.1');
@@ -58,6 +151,7 @@ router.use((req, res, next) => {
 
 router.use(fhirMetricsMiddleware);
 router.use(smartScopeCheck);
+router.use(fhirRbacGuard);
 
 // ──────────────────────────────────────────
 // METADATA (CapabilityStatement)

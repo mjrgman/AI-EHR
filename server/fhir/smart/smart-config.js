@@ -95,9 +95,23 @@ const RESOURCE_SCOPE_MAP = {
   'MedicationRequest.GET':    'patient/MedicationRequest.read',
   'Appointment.GET':          'patient/Appointment.read',
   'Practitioner.GET':         'user/Practitioner.read',
+  // ── WRITE scopes (sec-fhir-write-unscoped-03) ──
+  // Each write method requires an EXPLICIT write scope. Writes must NEVER fall
+  // back to the resource's read scope (the prior vulnerability). No internal
+  // role is granted these write scopes in ROLE_SCOPES, so all FHIR writes
+  // fail closed for app-login tokens — FHIR ingestion is system-to-system only.
+  'Patient.POST':             'system/Patient.write',
+  'Patient.PUT':              'system/Patient.write',
+  'Observation.POST':         'system/Observation.write',
+  'Observation.PUT':          'system/Observation.write',
+  'Condition.POST':           'system/Condition.write',
+  'Condition.PUT':            'system/Condition.write',
+  'AllergyIntolerance.POST':  'system/AllergyIntolerance.write',
+  'AllergyIntolerance.PUT':   'system/AllergyIntolerance.write',
   'Bundle.POST':              'system/Bundle.write',
-  // metadata is public — no scope required
+  // Public / non-PHI endpoints — no scope required.
   'metadata.GET':             null,
+  '$stats.GET':               null,
 };
 
 // ──────────────────────────────────────────

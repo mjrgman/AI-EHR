@@ -386,31 +386,89 @@ class RedFlagAgent extends BaseAgent {
 
     if (medications.length < 2) return alerts;
 
-    // Use drug safety service if available
+    // Use drug safety service if available.
+    //
+    // checkDrugInteractions(newDrugName, activeMeds) screens ONE drug against a
+    // list of active meds — it is NOT a whole-list screener. Passing the array
+    // as the first arg (the previous bug) left activeMeds undefined, so the
+    // service's guard returned [] every time and vault interaction screening
+    // never actually ran. Screen each med pairwise against the rest instead.
     if (drugSafetyService && typeof drugSafetyService.checkDrugInteractions === 'function') {
       try {
-        const interactions = await drugSafetyService.checkDrugInteractions(medications);
-        for (const interaction of (interactions || [])) {
-          const severity = interaction.severity === 'high' ? 'critical'
-            : interaction.severity === 'medium' ? 'serious'
-            : 'moderate';
+        const seenPairs = new Set();
+        let screeningUnavailable = false;
 
+        for (let i = 0; i < medications.length; i++) {
+          const subject = medications[i];
+          const others = medications
+            .filter((_, idx) => idx !== i)
+            .map(name => ({ medication_name: name }));
+          if (others.length === 0) continue;
+
+          const interactions = await drugSafetyService.checkDrugInteractions(subject, others);
+
+          for (const interaction of (interactions || [])) {
+            // Fail-closed: the source could not complete screening. Record once
+            // and surface as a WARNING — never treat as "no interactions."
+            if (interaction.unavailable) {
+              screeningUnavailable = true;
+              continue;
+            }
+
+            // Deduplicate the symmetric pair (A↔B == B↔A).
+            const pairKey = [interaction.drug1, interaction.drug2]
+              .map(d => (d || '').toLowerCase()).sort().join('|');
+            if (seenPairs.has(pairKey)) continue;
+            seenPairs.add(pairKey);
+
+            const severity = interaction.severity === 'critical' || interaction.severity === 'high' ? 'critical'
+              : interaction.severity === 'serious' || interaction.severity === 'medium' ? 'serious'
+              : 'moderate';
+
+            alerts.push({
+              severity,
+              type: 'medication_interaction',
+              description: `Drug interaction: ${interaction.drug1} + ${interaction.drug2} — ${interaction.description || 'potential interaction detected'}`,
+              details: {
+                drug1: interaction.drug1,
+                drug2: interaction.drug2,
+                interactionSeverity: interaction.severity,
+                description: interaction.description,
+                documentId: medDocs[0].id
+              }
+            });
+          }
+        }
+
+        // Emit a single visible warning if automated screening could not run,
+        // so the physician knows interactions were NOT cleared.
+        if (screeningUnavailable) {
           alerts.push({
-            severity,
-            type: 'medication_interaction',
-            description: `Drug interaction: ${interaction.drug1} + ${interaction.drug2} — ${interaction.description || 'potential interaction detected'}`,
+            severity: 'serious',
+            type: 'medication_interaction_unavailable',
+            description: 'Automated drug-interaction screening unavailable — verify medication interactions manually.',
             details: {
-              drug1: interaction.drug1,
-              drug2: interaction.drug2,
-              interactionSeverity: interaction.severity,
-              description: interaction.description,
-              documentId: medDocs[0].id
+              medications: [...medications],
+              documentId: medDocs[0].id,
+              unavailable: true
             }
           });
         }
       } catch (err) {
-        // Drug safety service error — log but don't fail
+        // Drug safety service error — fail closed: log AND surface a warning so
+        // the absence of interaction alerts is never read as "screened clean."
         console.warn('[RedFlag] Drug safety service error:', err.message);
+        alerts.push({
+          severity: 'serious',
+          type: 'medication_interaction_unavailable',
+          description: 'Automated drug-interaction screening failed — verify medication interactions manually.',
+          details: {
+            medications: [...medications],
+            documentId: medDocs[0].id,
+            unavailable: true,
+            error: err.message
+          }
+        });
       }
     }
 
