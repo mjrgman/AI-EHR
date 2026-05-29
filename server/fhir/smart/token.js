@@ -83,11 +83,23 @@ async function initSmartTables() {
         redirect_uri  TEXT NOT NULL,
         launch_context TEXT NOT NULL DEFAULT '{}',
         expires_at    DATETIME NOT NULL,
-        used          BOOLEAN NOT NULL DEFAULT 0
+        used          BOOLEAN NOT NULL DEFAULT 0,
+        code_challenge        TEXT,
+        code_challenge_method TEXT
       )
     `);
   } catch (err) {
     console.error('[SMART] Failed to create smart_auth_codes table:', err.message);
+  }
+
+  // Backward-compat: add PKCE columns to pre-existing smart_auth_codes tables
+  // (sec-smart-authorize-auto-approve-11). ALTER fails harmlessly if the column
+  // already exists — swallow the "duplicate column" error so existing DBs
+  // (data/mjr-ehr.db) upgrade in place without losing rows.
+  for (const col of ['code_challenge TEXT', 'code_challenge_method TEXT']) {
+    try {
+      await db.dbRun(`ALTER TABLE smart_auth_codes ADD COLUMN ${col}`);
+    } catch (_) { /* column already present — expected on upgrade */ }
   }
 
   try {
@@ -193,6 +205,37 @@ async function authenticateClient(clientId, clientSecret) {
  */
 function generateRandomHex(bytes) {
   return crypto.randomBytes(bytes).toString('hex');
+}
+
+/**
+ * Base64url-encode a Buffer (RFC 7636 / RFC 4648 §5 — no padding, URL-safe).
+ */
+function base64url(buf) {
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Verify a PKCE code_verifier against a stored code_challenge (sec-smart-
+ * authorize-auto-approve-11). Only the S256 method is supported (the only
+ * method this server advertises in code_challenge_methods_supported).
+ *
+ * @param {string} verifier  the client's code_verifier
+ * @param {string} challenge the code_challenge stored at /authorize time
+ * @param {string} method    'S256' (anything else is rejected)
+ * @returns {boolean} true only when the verifier validly proves the challenge
+ */
+function verifyPkce(verifier, challenge, method) {
+  if (!verifier || !challenge) return false;
+  // RFC 7636 §4.1: verifier is 43–128 chars of the unreserved set.
+  if (verifier.length < 43 || verifier.length > 128) return false;
+  if (!/^[A-Za-z0-9\-._~]+$/.test(verifier)) return false;
+  if (method !== 'S256') return false; // 'plain' is not accepted; fail closed.
+  const computed = base64url(crypto.createHash('sha256').update(verifier).digest());
+  // Constant-time compare on equal-length buffers.
+  const a = Buffer.from(computed);
+  const b = Buffer.from(challenge);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 /**
@@ -412,6 +455,20 @@ async function handleAuthorizationCodeGrant(req, res, body, ip) {
     });
   }
 
+  // ── PKCE verification (sec-smart-authorize-auto-approve-11) ─────────────
+  // Every code minted by /smart/authorize is bound to a code_challenge. The
+  // token exchange MUST present a matching code_verifier. Fail closed: a code
+  // with a stored challenge but no/invalid verifier is rejected. (Codes with no
+  // stored challenge cannot occur post-fix; if a legacy/null-challenge code is
+  // somehow presented, it is also rejected — PKCE is mandatory.)
+  if (!verifyPkce(body.code_verifier, authCode.code_challenge, authCode.code_challenge_method || 'S256')) {
+    await logTokenDenied(client_id, 'PKCE verification failed', ip);
+    return res.status(400).json({
+      error: 'invalid_grant',
+      error_description: 'PKCE verification failed (missing or invalid code_verifier)',
+    });
+  }
+
   // Mark code as used (one-time use)
   await db.dbRun('UPDATE smart_auth_codes SET used = 1 WHERE code = ?', [code]);
 
@@ -582,15 +639,25 @@ async function introspectHandler(req, res) {
  *   scope          space-separated SMART scopes
  *   state          opaque state value (returned to client)
  *
+ * Required (PKCE — sec-smart-authorize-auto-approve-11):
+ *   code_challenge          PKCE challenge (base64url SHA-256 of the verifier)
+ *   code_challenge_method   must be 'S256' (the only method advertised)
+ *
  * Optional:
  *   launch         EHR launch context token
+ *   patient        launch patient id (validated to exist; mismatch denied)
+ *   encounter      launch encounter id
  *   aud            FHIR server base URL
+ *   consent        must equal 'true' to approve; absent → consent required
  *
- * Auto-approves (no consent screen) since this is a proving ground.
- * Generates an authorization code and redirects to redirect_uri with code + state.
- *
- * IMPORTANT: In production, the user must be authenticated before reaching this
- * endpoint. For now, req.user must be set by upstream auth middleware.
+ * DENY BY DEFAULT. This endpoint no longer auto-approves. An authorization
+ * code is issued ONLY when ALL of the following hold:
+ *   1. the user is authenticated (req.user set by upstream middleware),
+ *   2. the client + redirect_uri are registered,
+ *   3. a valid S256 PKCE code_challenge is present,
+ *   4. any supplied launch patient context resolves to a real patient,
+ *   5. the user has explicitly granted consent (consent=true).
+ * Any failure returns an error / consent-required response — never a code.
  */
 async function authorizeHandler(req, res) {
   const {
@@ -600,6 +667,11 @@ async function authorizeHandler(req, res) {
     scope,
     state,
     launch,
+    patient,
+    encounter,
+    code_challenge,
+    code_challenge_method,
+    consent,
   } = req.query;
 
   // Validate response_type
@@ -635,6 +707,30 @@ async function authorizeHandler(req, res) {
     });
   }
 
+  // ── PKCE is mandatory (deny by default) ────────────────────────────────
+  // We advertise S256 and accept nothing else. A request with no challenge,
+  // or a non-S256 method, is rejected here — before any code is minted.
+  if (!code_challenge) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'code_challenge is required (PKCE, S256)',
+    });
+  }
+  // RFC 7636 §4.2: S256 challenge is 43 base64url chars.
+  if (!/^[A-Za-z0-9\-._~]{43,128}$/.test(code_challenge)) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'Malformed code_challenge',
+    });
+  }
+  const challengeMethod = code_challenge_method || 'S256';
+  if (challengeMethod !== 'S256') {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'Only code_challenge_method=S256 is supported',
+    });
+  }
+
   // User must be authenticated (set by upstream middleware)
   if (!req.user || !req.user.sub) {
     // Redirect to login with SMART params preserved so user can authenticate first
@@ -652,24 +748,75 @@ async function authorizeHandler(req, res) {
     });
   }
 
+  // ── Validate launch patient context (sec-smart-authorize-auto-approve-11) ──
+  // Previously the launch `patient` was trusted verbatim and written into the
+  // auth code / audit. Validate it resolves to a real patient before binding it
+  // to the authorization. An unresolvable launch patient denies the request
+  // rather than minting a code with a forged/garbage patient context.
+  const launchContext = {};
+  if (launch) launchContext.launch = launch;
+  if (encounter) launchContext.encounter = String(encounter);
+  if (patient !== undefined && patient !== null && patient !== '') {
+    const patientId = parseInt(patient, 10);
+    if (!Number.isInteger(patientId) || patientId <= 0) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Invalid launch patient context',
+      });
+    }
+    const patientRow = await db.dbGet('SELECT id FROM patients WHERE id = ?', [patientId]);
+    if (!patientRow) {
+      try {
+        await db.dbRun(`
+          INSERT INTO audit_log (
+            user_identity, user_role, action, resource_type,
+            description, request_method, request_path, response_status, phi_accessed
+          ) VALUES (?, ?, 'smart_authorize_denied', 'AuthCode', ?, 'GET', '/smart/authorize', 403, 0)
+        `, [user.username, user.role, `unresolved launch patient=${patient}`]);
+      } catch (_) {}
+      return res.status(403).json({
+        error: 'access_denied',
+        error_description: 'Launch patient context does not resolve to a known patient',
+      });
+    }
+    launchContext.patient = patientId;
+  }
+
   const grantedScopes = resolveScopes(scope, user.role);
   const scopeString = grantedScopes.join(' ');
 
-  // Build launch context from query params or stored launch data
-  const launchContext = {};
-  if (launch) {
-    // Launch context may have been stored by launchHandler
-    launchContext.launch = launch;
+  // ── Consent is mandatory (deny by default) ─────────────────────────────
+  // No auto-approval. Until the user explicitly grants consent (consent=true),
+  // return a consent-required response describing what would be authorized.
+  // A real consent UI re-invokes this endpoint with consent=true after the
+  // authenticated user approves. We never mint a code without it.
+  if (consent !== 'true') {
+    try {
+      await db.dbRun(`
+        INSERT INTO audit_log (
+          user_identity, user_role, action, resource_type,
+          description, request_method, request_path, response_status, phi_accessed
+        ) VALUES (?, ?, 'smart_authorize_consent_required', 'AuthCode', ?, 'GET', '/smart/authorize', 200, 0)
+      `, [user.username, user.role, `client_id=${client_id} scopes=[${scopeString}]`]);
+    } catch (_) {}
+    return res.status(200).json({
+      consent_required: true,
+      client_id,
+      client_name: client.client_name,
+      scopes: grantedScopes,
+      patient: launchContext.patient || null,
+      message: 'User consent is required to authorize this application. Re-submit with consent=true to approve.',
+    });
   }
 
-  // Generate authorization code
+  // Generate authorization code (consent granted + PKCE bound)
   const code = generateRandomHex(AUTH_CODE_BYTES);
   const expiresAt = new Date(Date.now() + AUTH_CODE_TTL_SEC * 1000).toISOString();
 
   await db.dbRun(`
-    INSERT INTO smart_auth_codes (code, client_id, user_id, scopes, redirect_uri, launch_context, expires_at, used)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-  `, [code, client_id, userId, scopeString, redirect_uri, JSON.stringify(launchContext), expiresAt]);
+    INSERT INTO smart_auth_codes (code, client_id, user_id, scopes, redirect_uri, launch_context, expires_at, used, code_challenge, code_challenge_method)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+  `, [code, client_id, userId, scopeString, redirect_uri, JSON.stringify(launchContext), expiresAt, code_challenge, challengeMethod]);
 
   // Audit log
   try {
@@ -678,7 +825,7 @@ async function authorizeHandler(req, res) {
         user_identity, user_role, action, resource_type,
         description, request_method, request_path, response_status, phi_accessed
       ) VALUES (?, ?, 'smart_authorize', 'AuthCode', ?, 'GET', '/smart/authorize', 302, 0)
-    `, [user.username, user.role, `client_id=${client_id} scopes=[${scopeString}]`]);
+    `, [user.username, user.role, `client_id=${client_id} scopes=[${scopeString}] patient=${launchContext.patient || 'none'}`]);
   } catch (_) {}
 
   // Redirect to client with code and state
@@ -787,14 +934,49 @@ async function revokeHandler(req, res) {
  *   client_name    required  human-readable client name
  *   redirect_uris  required  array of allowed redirect URIs
  *   grant_types    optional  array of grant types (default: ['authorization_code'])
- *   scopes         optional  array of requested scopes (default: all)
+ *   scopes         optional  array of requested scopes (default: NONE — fail closed)
  *
  * Response:
  *   { client_id, client_secret, client_name, redirect_uris, grant_types, scopes }
  *
  * The client_secret is returned in plaintext ONCE. It is stored as a bcrypt hash.
+ *
+ * SECURITY (sec-smart-register-public-04):
+ *   - Dynamic client registration is an ADMIN-ONLY operation. It MUST NOT be
+ *     reachable by an unauthenticated caller. We enforce admin authorization
+ *     in-handler (fail closed) so the protection holds regardless of how the
+ *     route is mounted: an absent/insufficient identity is DENIED here, not
+ *     passed through.
+ *   - There is NO all-scopes default. A registration that omits `scopes` (or
+ *     supplies none that survive the ALL_SCOPES allow-list filter) is created
+ *     with an EMPTY scope set — the least privilege. Previously this defaulted
+ *     to the entire ALL_SCOPES set, granting a freshly registered public client
+ *     every scope the server knows about.
  */
 async function registerClientHandler(req, res) {
+  // ── Admin authorization (fail closed) ──────────────────────────────────
+  // req.user is populated by auth.requireAuth upstream. If it is absent (the
+  // endpoint was reached without authentication) or the role is not 'admin',
+  // deny. Registration of an OAuth client is a privileged administrative act.
+  if (!req.user || req.user.role !== 'admin') {
+    try {
+      await db.dbRun(`
+        INSERT INTO audit_log (
+          user_identity, user_role, action, resource_type,
+          description, request_method, request_path, response_status, phi_accessed
+        ) VALUES (?, ?, 'smart_register_denied', 'Client', ?, 'POST', '/smart/register', 403, 0)
+      `, [
+        req.user?.username || 'anonymous',
+        req.user?.role || 'unknown',
+        'Dynamic client registration requires an authenticated admin',
+      ]);
+    } catch (_) { /* audit failure must not block the response */ }
+    return res.status(403).json({
+      error: 'access_denied',
+      error_description: 'Dynamic client registration requires an authenticated admin.',
+    });
+  }
+
   const body = req.body || {};
   const { client_name, redirect_uris, grant_types, scopes } = body;
 
@@ -830,10 +1012,13 @@ async function registerClientHandler(req, res) {
     ? grant_types.filter(g => SUPPORTED_GRANT_TYPES.includes(g))
     : ['authorization_code'];
 
-  // Default scopes — allow all if not specified
-  const clientScopes = Array.isArray(scopes) && scopes.length > 0
+  // Scopes — fail closed to NONE if not specified (sec-smart-register-public-04).
+  // Only scopes on the ALL_SCOPES allow-list survive; anything else is dropped.
+  // A registration with no valid scopes yields an empty grant (least privilege),
+  // NOT the full ALL_SCOPES set.
+  const clientScopes = Array.isArray(scopes)
     ? scopes.filter(s => ALL_SCOPES.includes(s))
-    : [...ALL_SCOPES];
+    : [];
 
   // Generate client credentials
   const clientId = generateRandomHex(CLIENT_ID_BYTES);

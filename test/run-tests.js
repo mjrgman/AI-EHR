@@ -4669,11 +4669,15 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       }
     });
     const cookie = extractCookie(verify);
+    // sec-portal-csrf-07: state-changing portal POSTs must carry the per-session
+    // CSRF token returned by /verify, echoed in the x-portal-csrf header.
+    const csrfToken = verify.body.csrfToken;
     const before = await db.dbGet('SELECT COUNT(*) AS count FROM patient_messages WHERE patient_id = ?', [sarahId]);
 
     const res = await httpRequest('/api/patient-portal/message', {
       method: 'POST',
       cookie,
+      headers: { 'x-portal-csrf': csrfToken },
       body: {
         subject: 'Portal test message',
         message: 'Checking secure message persistence from the regression suite.',
@@ -4705,10 +4709,13 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       }
     });
     const cookie = extractCookie(verify);
+    // sec-portal-csrf-07: state-changing POST requires the per-session CSRF token.
+    const csrfToken = verify.body.csrfToken;
 
     const res = await httpRequest('/api/patient-portal/symptom-triage', {
       method: 'POST',
       cookie,
+      headers: { 'x-portal-csrf': csrfToken },
       body: {
         symptoms: 'Chest tightness with dizziness',
         severity: 8,
@@ -4736,10 +4743,13 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       }
     });
     const cookie = extractCookie(verify);
+    // sec-portal-csrf-07: state-changing POST requires the per-session CSRF token.
+    const csrfToken = verify.body.csrfToken;
 
     const res = await httpRequest('/api/patient-portal/voice-intent', {
       method: 'POST',
       cookie,
+      headers: { 'x-portal-csrf': csrfToken },
       body: { transcript: 'What are my upcoming appointments?' }
     });
     assertEqual(res.status, 200, `expected 200 voice intent, got ${res.status}`);
@@ -4832,6 +4842,98 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assert(!cookie || !cookie.startsWith('portal_session='), 'no portal_session cookie should be issued for a wrong MRN');
     // Same generic message as a missing-MRN / no-such-patient failure.
     assert(!/mrn/i.test(verify.body.error || ''), 'error must not reveal that the MRN was the failing factor');
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // sec-portal-csrf-07 — CSRF protection on the cookie-backed portal session.
+  //
+  // A valid session cookie alone is NOT sufficient to authorize a
+  // state-changing request. Each state-changing POST must echo the per-session
+  // CSRF token (returned by /verify in the body) via the x-portal-csrf header.
+  // Fail closed: a state-changing POST that presents the valid session cookie
+  // but no CSRF token must be rejected with 403 (defeats cross-site forgery
+  // that rides the ambient cookie but cannot read the token).
+  // ──────────────────────────────────────────────────────────────────
+
+  await test('sec-portal-csrf-07: /verify returns a per-session CSRF token', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    assertEqual(verify.status, 200, `expected 200 verify, got ${verify.status}`);
+    assert(typeof verify.body.csrfToken === 'string' && verify.body.csrfToken.length >= 32,
+      '/verify must return a non-trivial csrfToken bound to the session');
+  });
+
+  await test('sec-portal-csrf-07: state-changing POST WITHOUT CSRF token is rejected 403', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    const cookie = extractCookie(verify);
+    assert(cookie.startsWith('portal_session='), 'precondition: a valid session cookie was issued');
+
+    // Valid session cookie, but NO x-portal-csrf header — must fail closed.
+    const res = await httpRequest('/api/patient-portal/message', {
+      method: 'POST',
+      cookie,
+      body: {
+        subject: 'CSRF probe',
+        message: 'This write should be blocked without a CSRF token.',
+      }
+    });
+    assertEqual(res.status, 403, `state-changing POST without CSRF token must be 403, got ${res.status}`);
+  });
+
+  await test('sec-portal-csrf-07: WRONG CSRF token is rejected 403', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    const cookie = extractCookie(verify);
+
+    const res = await httpRequest('/api/patient-portal/message', {
+      method: 'POST',
+      cookie,
+      headers: { 'x-portal-csrf': 'not-the-real-token-0000000000000000' },
+      body: {
+        subject: 'CSRF probe',
+        message: 'This write should be blocked with a wrong CSRF token.',
+      }
+    });
+    assertEqual(res.status, 403, `state-changing POST with wrong CSRF token must be 403, got ${res.status}`);
+  });
+
+  await test('sec-portal-csrf-07: GET endpoints remain accessible without a CSRF token', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    const cookie = extractCookie(verify);
+
+    // Safe method — CSRF guard must pass it through with no token.
+    const res = await httpRequest('/api/patient-portal/medications', { cookie });
+    assertEqual(res.status, 200, `safe GET must not require a CSRF token, got ${res.status}`);
   });
 
   // ==========================================

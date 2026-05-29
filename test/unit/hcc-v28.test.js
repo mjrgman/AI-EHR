@@ -85,6 +85,26 @@ describe('hcc-v28: lookupHCC — prefix fallback', () => {
     assert.equal(result.prefix_matched, 'E11');
   });
 
+  // hcc-prefix-overmap-08: a prefix-only match must NOT be payment-eligible.
+  // The old code copied is_payment_hcc from whichever seed row registered the
+  // prefix first (non-deterministic insert order). Prefix matches are now
+  // tentative with is_payment_hcc:null — only exact/validated maps are payment.
+  test('prefix-only match is TENTATIVE and not payment-eligible (is_payment_hcc null)', () => {
+    const result = hcc.lookupHCC('E11.999'); // no exact seed row; falls to E11 prefix
+    assert.equal(result.match_type, 'prefix');
+    assert.equal(result.is_payment_hcc, null, 'prefix-only must not inherit a payment flag');
+    assert.equal(result.tentative, true, 'prefix-only match is flagged tentative');
+    // The HCC number/label are still surfaced as a clinical hint.
+    assert.notEqual(result.hcc_v28_number, undefined);
+  });
+
+  test('prefix-only match is excluded from payment HCC report (coding-agent gate)', () => {
+    // buildHCCReport gates payment_hccs on truthy is_payment_hcc; null → not payment.
+    const report = hcc.buildHCCReport(['E11.999'], 'Diabetes monitored, A1c improving.');
+    assert.equal(report.payment_hccs.length, 0, 'prefix-only code must not be a payment HCC');
+    assert.equal(report.non_payment_hccs.length, 1, 'it is still surfaced as non-payment/tentative');
+  });
+
   test('completely unknown code returns null', () => {
     const result = hcc.lookupHCC('Z99.999');
     assert.equal(result, null);
@@ -143,6 +163,40 @@ describe('hcc-v28: checkMEAT', () => {
     const result = hcc.checkMEAT('I10', note);
     assert.ok(result.evidence.Monitored, 'should capture monitoring evidence');
     assert.ok(result.evidence.Treated, 'should capture treatment evidence');
+  });
+
+  // meat-keyword-overcapture-09: a MEAT keyword far from any mention of the
+  // coded diagnosis must NOT satisfy MEAT for that diagnosis. Here the only
+  // MEAT-flavored words ("stable", "monitoring") describe the patient's MOOD,
+  // far from the single diabetes mention which has no MEAT verb near it.
+  test('MEAT keyword far from the diagnosis is NOT captured (diagnosis-proximate scoping)', () => {
+    // MEAT-flavored words ("stable", "controlled", "monitoring") all describe the
+    // patient's MOOD at the TOP of the note. The only diabetes mention is at the
+    // very BOTTOM, separated by far more than the proximity window — no MEAT verb
+    // sits anywhere near the coded diagnosis.
+    const moodBlock =
+      'Behavioral note: overall the patient appears stable and in good spirits; ' +
+      'mood is well controlled and we are monitoring his adjustment to life stressors. ' +
+      'Continue current coping strategies and counseling referral as discussed.';
+    const filler =
+      'Ankle exam: mild swelling, tender over the lateral malleolus, full weight-bearing. ' +
+      'RICE counseling given. Crutches provided. Home safety reviewed. Work note discussed. ' +
+      'Social history reviewed at length. No acute distress. Vitals within normal limits. ' +
+      'Immunizations up to date. No new allergies reported. '.repeat(2);
+    const dxMention = 'Past medical history additionally lists type 2 diabetes.';
+    const note = `${moodBlock} ${filler} ${dxMention}`;
+    const result = hcc.checkMEAT('E11.9', note);
+    assert.equal(result.scope, 'diagnosis-proximate', 'should scope to the diabetes mention');
+    assert.equal(result.satisfied, false,
+      'mood-related stable/controlled/monitoring far from the dx must not satisfy MEAT for diabetes');
+    assert.equal(result.satisfiedCount, 0);
+  });
+
+  test('MEAT keyword adjacent to the diagnosis IS captured', () => {
+    const note = 'Type 2 diabetes (E11.9): assessed as stable, continue metformin. Ankle sprain unrelated.';
+    const result = hcc.checkMEAT('E11.9', note);
+    assert.equal(result.scope, 'diagnosis-proximate');
+    assert.equal(result.satisfied, true, 'MEAT proximate to the dx still satisfies');
   });
 });
 

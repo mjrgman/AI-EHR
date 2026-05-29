@@ -162,6 +162,111 @@ describe('phi-encryption: hashPHI', () => {
   });
 });
 
+describe('phi-encryption: GCM IV length (sec-gcm-iv-length-09)', () => {
+  test('new ciphertext uses a 12-byte IV', () => {
+    const phi = require('../../server/security/phi-encryption');
+    const obj = JSON.parse(phi.encrypt('Test Patient One'));
+    // IV is hex-encoded: 12 bytes => 24 hex chars.
+    assert.equal(obj.iv.length, 24, 'IV must be 12 bytes (24 hex chars) per NIST SP 800-38D');
+    assert.equal(Buffer.from(obj.iv, 'hex').length, 12);
+  });
+
+  test('BACKWARD-COMPAT: legacy 16-byte-IV records still decrypt', () => {
+    const phi = require('../../server/security/phi-encryption');
+    const crypto = require('crypto');
+    // Reconstruct a legacy-format record exactly as the old encrypt() produced:
+    // random 16-byte salt, random 16-byte IV, aes-256-gcm. deriveKey is exported
+    // so we derive the same key the legacy path would have.
+    const plaintext = 'Legacy Patient — DOB 1980-02-29';
+    const salt = crypto.randomBytes(16);
+    const key = phi.deriveKey(null, salt);
+    const iv = crypto.randomBytes(16); // legacy 128-bit IV
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    let ct = cipher.update(plaintext, 'utf8', 'hex');
+    ct += cipher.final('hex');
+    const legacyRecord = JSON.stringify({
+      salt: salt.toString('hex'),
+      iv: iv.toString('hex'),
+      ciphertext: ct,
+      authTag: cipher.getAuthTag().toString('hex'),
+      algorithm: 'aes-256-gcm',
+    });
+    // The current decrypt() must read the 16-byte IV from the record and succeed.
+    assert.equal(phi.decrypt(legacyRecord), plaintext);
+  });
+
+  test('BACKWARD-COMPAT: legacy deterministic-salt (no salt field) records still decrypt', () => {
+    const phi = require('../../server/security/phi-encryption');
+    const crypto = require('crypto');
+    // Oldest format: no salt field => deterministic-salt derivation, 16-byte IV.
+    const plaintext = 'Oldest Format Patient';
+    const key = phi.deriveKey(); // deterministic-salt key path
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    let ct = cipher.update(plaintext, 'utf8', 'hex');
+    ct += cipher.final('hex');
+    const oldestRecord = JSON.stringify({
+      iv: iv.toString('hex'),
+      ciphertext: ct,
+      authTag: cipher.getAuthTag().toString('hex'),
+      algorithm: 'aes-256-gcm',
+    });
+    assert.equal(phi.decrypt(oldestRecord), plaintext);
+  });
+});
+
+describe('phi-encryption: independent pepper (sec-gcm-iv-length-09)', () => {
+  test('uses PHI_PEPPER when set, independent of the encryption key', () => {
+    const phi = require('../../server/security/phi-encryption');
+    const prevPepper = process.env.PHI_PEPPER;
+    try {
+      process.env.PHI_PEPPER = 'independent-test-pepper-not-derived-from-key';
+      const withPepper = phi.hashPHI('TEST-MRN-1');
+      delete process.env.PHI_PEPPER;
+      const withFallback = phi.hashPHI('TEST-MRN-1');
+      assert.notEqual(withPepper, withFallback,
+        'an explicit independent pepper must change the hash vs the key-derived fallback');
+    } finally {
+      if (prevPepper === undefined) delete process.env.PHI_PEPPER;
+      else process.env.PHI_PEPPER = prevPepper;
+    }
+  });
+
+  test('BACKWARD-COMPAT: non-production fallback pepper derivation is unchanged', () => {
+    const phi = require('../../server/security/phi-encryption');
+    const crypto = require('crypto');
+    const prevPepper = process.env.PHI_PEPPER;
+    try {
+      delete process.env.PHI_PEPPER; // force fallback (NODE_ENV is not production in tests)
+      const expectedPepper = crypto.createHash('sha256')
+        .update(process.env.PHI_ENCRYPTION_KEY + 'pepper')
+        .digest();
+      const expected = crypto.createHmac('sha256', expectedPepper).update('TEST-MRN-1').digest('hex');
+      assert.equal(phi.hashPHI('TEST-MRN-1'), expected,
+        'fallback hash must match the original derivation so existing hash_* lookups keep working');
+    } finally {
+      if (prevPepper === undefined) delete process.env.PHI_PEPPER;
+      else process.env.PHI_PEPPER = prevPepper;
+    }
+  });
+
+  test('getPepper fails closed in production when PHI_PEPPER is unset', () => {
+    const phi = require('../../server/security/phi-encryption');
+    const prevPepper = process.env.PHI_PEPPER;
+    const prevEnv = process.env.NODE_ENV;
+    try {
+      delete process.env.PHI_PEPPER;
+      process.env.NODE_ENV = 'production';
+      assert.throws(() => phi.hashPHI('TEST-MRN-1'), /PHI_PEPPER environment variable is required in production/);
+    } finally {
+      if (prevPepper === undefined) delete process.env.PHI_PEPPER;
+      else process.env.PHI_PEPPER = prevPepper;
+      if (prevEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prevEnv;
+    }
+  });
+});
+
 describe('phi-encryption: field-level helpers', () => {
   test('encryptFields then decryptFields round-trips a patient record (synthetic)', () => {
     const phi = require('../../server/security/phi-encryption');

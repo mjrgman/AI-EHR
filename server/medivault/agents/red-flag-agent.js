@@ -98,7 +98,8 @@ const CRITICAL_LAB_THRESHOLDS = [
     criticalLow: null,
     seriousHigh: 4.0,
     seriousLow: null,
-    unit: '',
+    unit: '',          // INR is a dimensionless ratio
+    unitless: true,    // a reported unit on an "INR" value means we mis-grabbed; skip
     label: 'INR'
   },
   {
@@ -107,7 +108,19 @@ const CRITICAL_LAB_THRESHOLDS = [
     criticalLow: null,
     seriousHigh: 0.04,
     seriousLow: null,
+    // Canonical comparison unit. Conventional troponin assays report ng/mL
+    // (a.k.a. µg/L); high-sensitivity assays report ng/L. 1 ng/mL = 1000 ng/L.
+    // Reported values are converted to ng/mL before threshold comparison so a
+    // hs-troponin of "50 ng/L" (= 0.05 ng/mL) does NOT false-fire as critical.
     unit: 'ng/mL',
+    unitAware: true,
+    unitConversions: {
+      'ng/ml': 1,
+      'ug/l': 1,
+      'µg/l': 1,
+      'ng/l': 0.001,
+      'pg/ml': 0.001     // 1 pg/mL = 1 ng/L = 0.001 ng/mL
+    },
     label: 'Troponin'
   },
   {
@@ -267,18 +280,79 @@ class RedFlagAgent extends BaseAgent {
         const testMentioned = threshold.testPatterns.some(p => p.test(text));
         if (!testMentioned) continue;
 
-        // Try to extract a numeric value near the test name
+        // Try to extract a numeric value (and its reported unit, if any) near
+        // the test name. We also capture a structured abnormal/critical flag so
+        // a lab's own verdict can be preferred over a raw numeric comparison.
         for (const pattern of threshold.testPatterns) {
           const valueRegex = new RegExp(
-            pattern.source + '\\s*[:=]?\\s*([<>]?\\s*\\d+\\.?\\d*)',
+            pattern.source +
+              // value
+              '\\s*[:=]?\\s*([<>]?\\s*\\d+\\.?\\d*)' +
+              // optional unit token — a clinical unit SHAPE: "<word>/<word>"
+              // (ng/mL, ng/L, mEq/L, mg/dL, K/uL, g/dL, banana/L) or a bare "%".
+              // A unit of the wrong shape for a unit-aware analyte is treated as
+              // unrecognized and fails closed below. This will NOT match a plain
+              // trailing word like "critical" (no slash, no %).
+              '\\s*([a-zµ][a-zµ0-9]*\\/[a-zµ0-9]+|%)?' +
+              // optional structured abnormal flag, e.g. "(H)", "(HH)", "(critical)", "(CC)"
+              '\\s*(?:\\(\\s*(H{1,2}|L{1,2}|C{1,2}|crit(?:ical)?|abn(?:ormal)?|panic)\\s*\\))?',
             pattern.flags
           );
           const match = valueRegex.exec(text);
           if (!match) continue;
 
           const valueStr = match[1].replace(/[<>\s]/g, '');
-          const value = parseFloat(valueStr);
+          let value = parseFloat(valueStr);
           if (isNaN(value)) continue;
+
+          const reportedUnit = (match[2] || '').toLowerCase().replace(/\s+/g, '');
+          const structuredFlag = (match[3] || '').toLowerCase();
+
+          // ── Unit handling ──────────────────────────────────────────────
+          // INR is a dimensionless ratio: if a unit token was captured, we most
+          // likely grabbed a different analyte's value. Skip to avoid a false fire.
+          if (threshold.unitless && reportedUnit) continue;
+
+          // Unit-aware analytes (troponin) convert the reported value into the
+          // threshold's canonical unit. Unknown/mismatched units are NOT compared
+          // (fail closed: no false-critical and no silently-missed-critical).
+          if (threshold.unitAware && threshold.unitConversions) {
+            if (reportedUnit) {
+              const factor = threshold.unitConversions[reportedUnit];
+              if (factor === undefined) {
+                // Reported in a unit we don't recognize for this assay — do not
+                // compare a possibly-mismatched number against a fixed threshold.
+                break;
+              }
+              value = value * factor;
+            }
+            // If no unit was reported, fall through using the value as-is in the
+            // canonical unit (best-effort), but a structured critical flag below
+            // can still escalate regardless.
+          }
+
+          // ── Structured-flag preference ─────────────────────────────────
+          // If the lab marked this result critical/panic, trust that over the
+          // numeric comparison (the lab knows its own assay + reference range).
+          const flagSaysCritical = /^(hh|ll|cc|crit|critical|panic)$/.test(structuredFlag);
+          if (flagSaysCritical) {
+            alerts.push({
+              severity: 'critical',
+              type: value >= (threshold.criticalHigh ?? Infinity) ? 'lab_critical_high' : 'lab_critical_flagged',
+              description: `${threshold.label} flagged critical by lab: ${match[1].trim()}${reportedUnit ? ' ' + reportedUnit : ''} (structured flag: ${structuredFlag.toUpperCase()})`,
+              details: {
+                test: threshold.label,
+                value,
+                reportedUnit: reportedUnit || null,
+                canonicalUnit: threshold.unit,
+                structuredFlag: structuredFlag.toUpperCase(),
+                source: 'structured_flag',
+                documentId: doc.id,
+                documentDate: doc.created_at
+              }
+            });
+            break;
+          }
 
           // Check critical thresholds
           if (threshold.criticalHigh !== null && value >= threshold.criticalHigh) {

@@ -504,9 +504,23 @@ function evaluateHeartScoreProtocol(context) {
 // ==========================================
 
 /**
- * Check drug interactions using NLM RxNorm API data.
- * Supplements local rule-based checking with real pharmacological data.
- * Returns CDS suggestions for any interactions found.
+ * Check drug interactions using the drug-safety service (curated table + the
+ * now-retired NLM RxNav /interaction API). Supplements local rule-based
+ * checking with real pharmacological data.
+ *
+ * FAIL-CLOSED at the CDS boundary: the NLM /interaction endpoints were retired
+ * Jan-2024, so live screening is effectively always UNAVAILABLE. The
+ * drug-safety service distinguishes three states (curated/real interaction,
+ * source-reachable-zero-interactions, and UNAVAILABLE-sentinel). We:
+ *   - emit a CDS suggestion ONLY for a real, graded interaction (curated/live),
+ *   - SKIP the UNAVAILABLE sentinel entirely (it is NOT a finding and must not
+ *     be persisted as a CDS suggestion — the "verify manually" warning is
+ *     surfaced at the prescribing/safety-service layer, not as rule_engine
+ *     output). This keeps the dead-API error from leaking a spurious non-
+ *     rule_engine suggestion into the evaluation result while still NEVER
+ *     treating an unavailable screen as "no interactions."
+ *
+ * Returns CDS suggestions for any REAL interactions found.
  */
 async function evaluateRxNormInteractions(medications) {
   if (!drugSafetyService || !medications || medications.length < 2) return [];
@@ -528,6 +542,12 @@ async function evaluateRxNormInteractions(medications) {
         med.medication_name, otherMeds
       );
       for (const interaction of interactions) {
+        // Fail-closed sentinel: screening could not be completed for this pair.
+        // This is NOT a clinical finding — skip it so it is never persisted as
+        // a CDS suggestion (the "interaction check unavailable — verify
+        // manually" warning lives in the safety-service alert path, not here).
+        if (interaction && interaction.unavailable) continue;
+
         const pairKey = [interaction.drug1, interaction.drug2].sort().join('|');
         if (checked.has(pairKey)) continue;
         checked.add(pairKey);

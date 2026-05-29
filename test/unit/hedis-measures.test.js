@@ -188,12 +188,21 @@ describe('hedis: CBP exclusions', () => {
 });
 
 describe('hedis: CBP numerator dual-rate', () => {
-  const baseProblems = [{ icd10_code: 'I10', status: 'active' }];
+  // NOTE (2026-05-28, hedis-cbp-denominator-10): CBP now enforces NCQA timing
+  // (HTN dx on/before June 30) + qualifying-event gates. A patient can only be
+  // counted numerator-COMPLIANT when denominator membership is CONFIRMED, so
+  // these tests now supply a dated HTN dx + a qualifying in-year encounter. An
+  // undated dx with no encounter would be `denominator_uncertain` and is covered
+  // by the dedicated gating tests below.
+  const yearStart = new Date(new Date().getFullYear(), 0, 5).toISOString(); // early-Jan, ≤ June 30
+  const baseProblems = [{ icd10_code: 'I10', status: 'active', onset_date: yearStart }];
+  const baseEncounters = [{ type: 'office_visit', date: isoMonthsAgo(2) }];
+  const confirmedDenom = { problems: baseProblems, encounters: baseEncounters };
 
   test('BP 130/82 → meets Rate 1 (<140/90), NOT Rate 2 (<130/80)', () => {
     const r = cbp.evaluate({
       patient: { dob: dobAt(50) },
-      problems: baseProblems,
+      ...confirmedDenom,
       bp_observations: [{ systolic_bp: 130, diastolic_bp: 82, observed_date: new Date().toISOString() }]
     });
     // 130 < 140 ✓ AND 82 < 90 ✓ → Rate 1 = true
@@ -205,7 +214,7 @@ describe('hedis: CBP numerator dual-rate', () => {
   test('BP 138/88 → meets Rate 1, not Rate 2', () => {
     const r = cbp.evaluate({
       patient: { dob: dobAt(50) },
-      problems: baseProblems,
+      ...confirmedDenom,
       bp_observations: [{ systolic_bp: 138, diastolic_bp: 88, observed_date: new Date().toISOString() }]
     });
     assert.equal(r.in_numerator_rate1, true);
@@ -216,7 +225,7 @@ describe('hedis: CBP numerator dual-rate', () => {
   test('BP 125/75 → meets BOTH rates', () => {
     const r = cbp.evaluate({
       patient: { dob: dobAt(50) },
-      problems: baseProblems,
+      ...confirmedDenom,
       bp_observations: [{ systolic_bp: 125, diastolic_bp: 75, observed_date: new Date().toISOString() }]
     });
     assert.equal(r.in_numerator_rate1, true);
@@ -227,7 +236,7 @@ describe('hedis: CBP numerator dual-rate', () => {
   test('BP 145/95 → gap, not at goal', () => {
     const r = cbp.evaluate({
       patient: { dob: dobAt(50) },
-      problems: baseProblems,
+      ...confirmedDenom,
       bp_observations: [{ systolic_bp: 145, diastolic_bp: 95, observed_date: new Date().toISOString() }]
     });
     assert.equal(r.in_numerator_rate1, false);
@@ -237,7 +246,7 @@ describe('hedis: CBP numerator dual-rate', () => {
   test('multiple BPs → uses most recent', () => {
     const r = cbp.evaluate({
       patient: { dob: dobAt(50) },
-      problems: baseProblems,
+      ...confirmedDenom,
       bp_observations: [
         { systolic_bp: 145, diastolic_bp: 95, observed_date: isoMonthsAgo(11) },  // older, uncontrolled
         { systolic_bp: 128, diastolic_bp: 78, observed_date: isoMonthsAgo(1) }     // recent, controlled
@@ -250,11 +259,97 @@ describe('hedis: CBP numerator dual-rate', () => {
   test('no BP recorded in measurement year → gap', () => {
     const r = cbp.evaluate({
       patient: { dob: dobAt(50) },
-      problems: baseProblems,
+      ...confirmedDenom,
       bp_observations: []
     });
     assert.equal(r.status, 'gap');
     assert.match(r.reason, /No BP recorded/);
+  });
+});
+
+// ============================================================
+// hedis-cbp-denominator-10: NCQA timing/event gates + non-certified labeling.
+describe('hedis: CBP denominator timing/event gates (NCQA MY 2026)', () => {
+  const dobConfirmed = () => dobAt(55);
+  const jan = () => new Date(new Date().getFullYear(), 0, 10).toISOString();   // ≤ June 30
+  const aug = () => new Date(new Date().getFullYear(), 7, 10).toISOString();   // > June 30
+  const inYearVisit = () => ({ type: 'office_visit', date: isoMonthsAgo(2) });
+  const goodBP = () => [{ systolic_bp: 125, diastolic_bp: 75, observed_date: new Date().toISOString() }];
+
+  test('every CBP result is labeled NOT NCQA-certified', () => {
+    const r = cbp.evaluate({
+      patient: { dob: dobConfirmed() },
+      problems: [{ icd10_code: 'I10', status: 'active', onset_date: jan() }],
+      encounters: [inYearVisit()],
+      bp_observations: goodBP()
+    });
+    assert.equal(r.certified, false);
+    assert.match(r.disclaimer, /NOT NCQA-certified/i);
+  });
+
+  test('HTN dx dated AFTER June 30 → out of denominator', () => {
+    const r = cbp.evaluate({
+      patient: { dob: dobConfirmed() },
+      problems: [{ icd10_code: 'I10', status: 'active', onset_date: aug() }],
+      encounters: [inYearVisit()],
+      bp_observations: goodBP()
+    });
+    assert.equal(r.in_denominator, false);
+    assert.match(r.reason, /June 30/);
+  });
+
+  test('HTN dx dated on/before June 30 + qualifying visit → confirmed denominator, can be compliant', () => {
+    const r = cbp.evaluate({
+      patient: { dob: dobConfirmed() },
+      problems: [{ icd10_code: 'I10', status: 'active', onset_date: jan() }],
+      encounters: [inYearVisit()],
+      bp_observations: goodBP()
+    });
+    assert.equal(r.in_denominator, true);
+    assert.equal(r.denominator_uncertain, false);
+    assert.equal(r.in_numerator_rate1, true);
+    assert.equal(r.denominator_gates.htn_diagnosis_timing, 'met');
+    assert.equal(r.denominator_gates.qualifying_event, 'met');
+  });
+
+  test('explicitly supplied encounters with no qualifying type → out of denominator (event gate)', () => {
+    const r = cbp.evaluate({
+      patient: { dob: dobConfirmed() },
+      problems: [{ icd10_code: 'I10', status: 'active', onset_date: jan() }],
+      encounters: [{ type: 'lab_only', date: isoMonthsAgo(2) }],
+      bp_observations: goodBP()
+    });
+    assert.equal(r.in_denominator, false);
+    assert.match(r.reason, /qualifying encounter/i);
+  });
+
+  test('FAIL-CONSERVATIVE: undated dx + no encounter data + controlled BP → NOT counted compliant', () => {
+    const r = cbp.evaluate({
+      patient: { dob: dobConfirmed() },
+      problems: [{ icd10_code: 'I10', status: 'active' }], // no date
+      // no encounters supplied
+      bp_observations: goodBP()
+    });
+    assert.equal(r.in_denominator, true);
+    assert.equal(r.denominator_uncertain, true);
+    // BP is controlled in raw terms…
+    assert.equal(r.bp_controlled_rate1, true);
+    // …but we MUST NOT count it as numerator-compliant (don't over-count compliant).
+    assert.equal(r.in_numerator_rate1, false);
+    assert.equal(r.in_numerator_rate2, false);
+    assert.equal(r.status, 'gap');
+    assert.ok(Array.isArray(r.denominator_caveats) && r.denominator_caveats.length > 0);
+  });
+
+  test('has_qualifying_event boolean override is honored', () => {
+    const r = cbp.evaluate({
+      patient: { dob: dobConfirmed() },
+      problems: [{ icd10_code: 'I10', status: 'active', onset_date: jan() }],
+      has_qualifying_event: true,
+      bp_observations: goodBP()
+    });
+    assert.equal(r.in_denominator, true);
+    assert.equal(r.denominator_gates.qualifying_event, 'met');
   });
 });
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const repository = require('../repositories/patient-portal-repository');
 const { processVoiceIntent, verifyPatient } = require('../integrations/patient-voice');
 const { FrontDeskAgent } = require('../agents/front-desk-agent');
@@ -55,6 +56,91 @@ setInterval(() => {
     }
   }
 }, VERIFY_WINDOW_MS).unref();
+
+// ------------------------------------------------------------------
+// CSRF protection for the cookie-backed portal session (sec-portal-csrf-07)
+//
+// The portal authenticates with an HttpOnly + SameSite=Lax cookie. SameSite=Lax
+// does NOT cover cross-site state-changing requests in every browser/scenario
+// (top-level navigations, certain method/redirect chains), so a synchronizer
+// CSRF token is layered on top. This lives entirely in the route module — the
+// shared portal-session-service is consumed read-only and is NOT modified.
+//
+// Model (synchronizer token):
+//   - On a successful /verify, mint a random CSRF token, store it server-side
+//     keyed by the session's hash (the same sha256(token) the session service
+//     uses), and return it in the JSON body as `csrfToken`.
+//   - State-changing portal requests (POST/PUT/PATCH/DELETE under the session
+//     guard) must echo that token in the `x-portal-csrf` header. The header is
+//     not a cookie, so a cross-site attacker riding the ambient session cookie
+//     cannot read or set it (it requires script access to the JSON response,
+//     which the same-origin policy denies cross-site).
+//   - Fail closed: missing OR mismatched token -> 403. Tokens are bound to the
+//     specific session, so a token from session A cannot authorize a write on
+//     session B.
+//
+// This does NOT touch the Wave-1 verify rate-limit/lockout or the Wave-2
+// mandatory-MRN verify logic — it is strictly additive.
+// ------------------------------------------------------------------
+const CSRF_HEADER = 'x-portal-csrf';
+const csrfTokens = new Map(); // sessionHash -> { token, expiresAt }
+
+// Replicates portal-session-service's token->hash derivation (sha256 hex) so we
+// can key CSRF tokens by session WITHOUT importing/altering the shared service's
+// internals. If that derivation ever changes, this must track it.
+function sessionHashFor(sessionToken) {
+  return crypto.createHash('sha256').update(sessionToken).digest('hex');
+}
+
+function issueCsrfToken(sessionToken, expiresAtIso) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = expiresAtIso ? new Date(expiresAtIso).getTime() : (Date.now() + 8 * 60 * 60 * 1000);
+  csrfTokens.set(sessionHashFor(sessionToken), { token, expiresAt });
+  return token;
+}
+
+function timingSafeEqualStr(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Prune expired CSRF tokens periodically; unref so this never holds the process
+// (or a test runner) open.
+setInterval(() => {
+  const now = Date.now();
+  for (const [hash, data] of csrfTokens) {
+    if (!data || now >= data.expiresAt) {
+      csrfTokens.delete(hash);
+    }
+  }
+}, 15 * 60 * 1000).unref();
+
+// CSRF guard for state-changing methods. Registered AFTER requirePortalSession,
+// so req.portalSession.session_hash is always available and identifies the
+// session whose CSRF token we must match. Safe methods (GET/HEAD/OPTIONS) pass
+// through untouched.
+function requireCsrfToken(req, res, next) {
+  const method = (req.method || 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    return next();
+  }
+
+  const sessionHash = req.portalSession && req.portalSession.session_hash;
+  const stored = sessionHash ? csrfTokens.get(sessionHash) : null;
+  const supplied = req.headers[CSRF_HEADER];
+
+  // Fail closed on anything missing or expired.
+  if (!stored || Date.now() >= stored.expiresAt) {
+    return res.status(403).json({ error: 'CSRF token required. Please re-establish your session.' });
+  }
+  if (!supplied || !timingSafeEqualStr(supplied, stored.token)) {
+    return res.status(403).json({ error: 'Invalid or missing CSRF token.' });
+  }
+
+  return next();
+}
 
 function clientIpFor(req) {
   const fwd = req.headers && req.headers['x-forwarded-for'];
@@ -165,8 +251,14 @@ router.post('/verify', async (req, res) => {
     const session = await createSession(patient.id, req);
     attachSessionCookie(res, session.cookie);
 
+    // sec-portal-csrf-07: mint a CSRF token bound to this session and return it
+    // in the body. The SPA stores it in memory and echoes it via the
+    // x-portal-csrf header on every state-changing request.
+    const csrfToken = issueCsrfToken(session.token, session.expiresAt);
+
     return res.json({
       verified: true,
+      csrfToken,
       patient: {
         id: patient.id,
         mrn: patient.mrn,
@@ -190,6 +282,9 @@ router.post('/logout', async (req, res) => {
 });
 
 router.use(requirePortalSession);
+// sec-portal-csrf-07: every state-changing request past this point must carry a
+// valid per-session CSRF token. Safe (GET/HEAD/OPTIONS) requests pass through.
+router.use(requireCsrfToken);
 
 router.get('/session', async (req, res) => {
   const patient = await repository.getPatientSessionProfile(req.portalPatient.id);
@@ -239,9 +334,10 @@ router.post('/appointments/checkin', async (req, res) => {
 // status='scheduled' (not auto-confirmed). Front-desk staff confirm via the
 // existing clinician schedule UI.
 //
-// CSRF: these endpoints inherit the existing portal-wide CSRF gap
-// (HttpOnly + SameSite=Lax cookies only — no CSRF token validation). The
-// gap predates this change and is tracked separately for follow-up.
+// CSRF (sec-portal-csrf-07, resolved): these state-changing endpoints sit
+// behind requireCsrfToken (registered just after requirePortalSession), so a
+// valid per-session x-portal-csrf token is mandatory in addition to the
+// HttpOnly + SameSite=Lax session cookie.
 // ------------------------------------------------------------------
 
 function getFrontDeskAgent() {

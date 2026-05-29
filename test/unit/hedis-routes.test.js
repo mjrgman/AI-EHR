@@ -129,7 +129,11 @@ describe('hedis-routes: POST /api/quality/hedis/evaluate/:measureId', () => {
   test('CBP for 50yo with HTN + BP 125/75 → met both rates', async () => {
     const r = await request(port, 'POST', '/api/quality/hedis/evaluate/CBP', {
       patient: { id: 2, dob: dobAt(50) },
-      problems: [{ icd10_code: 'I10', status: 'active' }],
+      // hedis-cbp-denominator-10: supply dated HTN dx (≤ June 30) + qualifying
+      // in-year encounter so denominator membership is CONFIRMED and the patient
+      // can be counted numerator-compliant.
+      problems: [{ icd10_code: 'I10', status: 'active', onset_date: monthsAgoISO(8) }],
+      encounters: [{ type: 'office_visit', date: monthsAgoISO(2) }],
       bp_observations: [{ systolic_bp: 125, diastolic_bp: 75, observed_date: monthsAgoISO(1) }]
     });
     assert.equal(r.status, 200);
@@ -155,7 +159,9 @@ describe('hedis-routes: POST /api/quality/hedis/all', () => {
   test('returns all measures for valid patient', async () => {
     const r = await request(port, 'POST', '/api/quality/hedis/all', {
       patient: { id: 1, dob: dobAt(60), sex: 'F' },
-      problems: [{ icd10_code: 'I10', status: 'active' }],
+      // hedis-cbp-denominator-10: dated HTN dx + qualifying encounter confirm CBP denominator.
+      problems: [{ icd10_code: 'I10', status: 'active', onset_date: monthsAgoISO(8) }],
+      encounters: [{ type: 'office_visit', date: monthsAgoISO(2) }],
       bp_observations: [{ systolic_bp: 130, diastolic_bp: 82, observed_date: new Date().toISOString() }],
       procedures: [{ cpt_code: '77067', performed_date: monthsAgoISO(6) }]
     });
