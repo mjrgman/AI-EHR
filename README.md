@@ -100,7 +100,7 @@ agentic-ehr/
 │   │   ├── knowledge-base.js        # Strict rule loader (fails fast on broken rules)
 │   │   ├── functional-med-engine.js # Rule evaluator (mirrors cds-engine)
 │   │   └── rules/
-│   │       ├── hrt-rules.js         # 9 HRT rules (testosterone, estradiol, progesterone)
+│   │       ├── hrt-rules.js         # 8 HRT rules (testosterone, estradiol, progesterone)
 │   │       ├── peptide-rules.js     # 7 peptide rules (GLP-1, sermorelin, BPC-157)
 │   │       └── functional-med-rules.js # 7 FM pattern rules
 │   ├── integrations/
@@ -260,7 +260,7 @@ so it can never override standard-of-care alerts.
   testosterone initiation proposal is discarded at engine level if CDS
   flagged an active prostate cancer contraindication — no "just this
   once" bypass.
-- **Rule files** live in `server/domain/rules/` — 9 HRT rules, 7
+- **Rule files** live in `server/domain/rules/` — 8 HRT rules, 7
   peptide rules, 7 functional-medicine pattern rules. Every rule carries
   a mandatory `evidence_source` field (Endocrine Society, NAMS, ACOG,
   AUA). Rules with empty evidence are rejected at load time by

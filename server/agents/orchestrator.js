@@ -4,6 +4,7 @@
  *
  * Encounter execution order (respects dependencies):
  *   Phase 1 (parallel): Scribe + CDS
+ *   Phase 1b: Domain Logic (after CDS; Tier 3 specialty layer — HRT/peptide/FM rules)
  *   Phase 2 (parallel): Orders + Coding
  *   Phase 3: Quality
  *

@@ -1,6 +1,6 @@
 /**
  * Agentic EHR Base Agent Class
- * Foundation for all clinical AI agents in the 9-agent system.
+ * Foundation for all clinical AI agents in the 10-agent runtime (part of the 14-module catalog).
  *
  * Architecture:
  *   Orchestrator → dispatches encounter context to each agent
