@@ -14,10 +14,10 @@ export default function CDSSuggestionCard({ suggestion, onAccept, onReject }) {
 
   if (suggestion.status === 'accepted') {
     return (
-      <div className="border-l-4 border-l-green-500 bg-green-50/50 rounded-r-xl p-3 opacity-70">
+      <div className="border-l-4 border-l-success-500 bg-success-50/60 rounded-r-xl p-3 opacity-70">
         <div className="flex items-center gap-2 text-sm">
           <span>\u2705</span>
-          <span className="font-medium text-green-800 line-through">{suggestion.title}</span>
+          <span className="font-medium text-success-800 line-through">{suggestion.title}</span>
           <Badge variant="success">Accepted</Badge>
         </div>
       </div>
@@ -26,17 +26,17 @@ export default function CDSSuggestionCard({ suggestion, onAccept, onReject }) {
   if (suggestion.status === 'rejected') return null;
 
   return (
-    <div className={`border-l-4 ${isUrgent ? 'border-l-red-500 bg-red-50/50' : 'border-l-blue-500'} rounded-r-xl p-3 transition-all`}>
+    <div className={`border-l-4 rounded-r-xl p-3 transition-all ${isUrgent ? 'border-l-danger-500 bg-danger-50/60' : 'border-l-navy-500 bg-offWhite-100'} shadow-mc`}>
       <div className="flex items-start gap-2">
         <span className="text-lg mt-0.5">{icon}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h4 className="font-semibold text-sm text-gray-900">{suggestion.title}</h4>
+            <h4 className="font-semibold text-sm text-navy-700">{suggestion.title}</h4>
             {isUrgent && <Badge variant="urgent">Urgent</Badge>}
             {suggestion.source === 'provider_learning' && <Badge variant="purple">Your Pattern</Badge>}
           </div>
-          <p className="text-xs text-gray-600 mt-1">{suggestion.description}</p>
-          {suggestion.rationale && <p className="text-xs text-gray-400 mt-0.5 italic">{suggestion.rationale}</p>}
+          <p className="text-xs text-slate-600 mt-1">{suggestion.description}</p>
+          {suggestion.rationale && <p className="text-xs text-slate-400 mt-0.5 italic">{suggestion.rationale}</p>}
         </div>
       </div>
       <div className="flex gap-2 mt-3 ml-7">

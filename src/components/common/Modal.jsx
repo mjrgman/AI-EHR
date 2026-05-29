@@ -53,18 +53,18 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-navy-900/45 backdrop-blur-[1px]" onClick={onClose} />
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative bg-white rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}
+        className={`relative bg-offWhite-100 rounded-2xl shadow-mc-xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}
       >
         {title && (
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
-            <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 id={titleId} className="font-display text-lg font-semibold text-navy-700">{title}</h2>
+            <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-ivory-200 rounded-lg text-slate-400 hover:text-slate-600">
               &#x2715;
             </button>
           </div>

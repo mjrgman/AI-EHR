@@ -44,8 +44,8 @@ function EncounterTimer({ startTime }) {
   }, [startTime]);
 
   return (
-    <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-mono font-semibold">
-      <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+    <div className="flex items-center gap-1.5 bg-navy-50 text-navy-700 px-3 py-1 rounded-full text-sm font-mono font-semibold border border-navy-100">
+      <span className="w-2 h-2 bg-navy-500 rounded-full animate-pulse" />
       {elapsed}
     </div>
   );
@@ -150,8 +150,8 @@ function LabModalForm({ onSubmit, onClose }) {
       <label className="flex items-center gap-2 cursor-pointer">
         <input type="checkbox" checked={form.fasting_required}
           onChange={e => set('fasting_required', e.target.checked)}
-          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-        <span className="text-sm text-gray-700">Fasting required</span>
+          className="w-4 h-4 rounded border-slate-300 text-navy-600 focus:ring-navy-500" />
+        <span className="text-sm text-slate-700">Fasting required</span>
       </label>
       <div>
         <label className="label-clinical">Special Instructions</label>
@@ -201,8 +201,8 @@ function ImagingModalForm({ onSubmit, onClose }) {
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={form.contrast_required}
             onChange={e => set('contrast_required', e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-          <span className="text-sm text-gray-700">Contrast required</span>
+            className="w-4 h-4 rounded border-slate-300 text-navy-600 focus:ring-navy-500" />
+          <span className="text-sm text-slate-700">Contrast required</span>
         </label>
         <div>
           <label className="label-clinical">Priority</label>
@@ -574,39 +574,39 @@ export default function EncounterPage() {
   // Left Panel: Patient Summary
   // ============================================================
   const leftPanel = (
-    <div className="p-3 space-y-3">
+    <div className="p-3 space-y-4 mc-reveal-stagger">
       {/* Problems */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Problems
         </h3>
         {patient?.problems && patient.problems.length > 0 ? (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {patient.problems.map((p, i) => (
-              <div key={i} className="bg-white rounded-lg p-2 text-sm border border-gray-100">
-                <div className="font-medium text-gray-900">{p.name || p.problem_name}</div>
+              <div key={i} className="bg-offWhite-100 rounded-lg p-2.5 text-sm border border-slate-100 shadow-mc">
+                <div className="font-medium text-navy-700">{p.name || p.problem_name}</div>
                 {p.icd10_code && (
-                  <div className="text-xs text-gray-500 font-mono">{p.icd10_code}</div>
+                  <div className="text-xs text-slate-500 font-mono">{p.icd10_code}</div>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs text-gray-400 px-1">No active problems</p>
+          <p className="text-xs text-slate-400 px-1">No active problems</p>
         )}
       </div>
 
       {/* Medications */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Medications
         </h3>
         {patient?.medications && patient.medications.length > 0 ? (
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {patient.medications.map((m, i) => (
-              <div key={i} className="bg-white rounded-lg p-2 text-sm border border-gray-100">
-                <div className="font-medium text-gray-900">{m.name || m.medication_name}</div>
-                <div className="text-xs text-gray-500">
+              <div key={i} className="bg-offWhite-100 rounded-lg p-2.5 text-sm border border-slate-100 shadow-mc">
+                <div className="font-medium text-navy-700">{m.name || m.medication_name}</div>
+                <div className="text-xs text-slate-500">
                   {m.dosage}
                   {m.frequency ? ` \u2022 ${m.frequency}` : ''}
                 </div>
@@ -614,31 +614,31 @@ export default function EncounterPage() {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-gray-400 px-1">No medications</p>
+          <p className="text-xs text-slate-400 px-1">No medications</p>
         )}
       </div>
 
       {/* Latest Vitals */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Latest Vitals
         </h3>
         {patient?.vitals && patient.vitals.length > 0 ? (
           <VitalsDisplay vitals={patient.vitals[0]} compact />
         ) : (
-          <p className="text-xs text-gray-400 px-1">No vitals recorded</p>
+          <p className="text-xs text-slate-400 px-1">No vitals recorded</p>
         )}
       </div>
 
       {/* Recent Labs */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Recent Labs
         </h3>
         {patient?.labs && patient.labs.length > 0 ? (
           <LabResults labs={patient.labs} compact />
         ) : (
-          <p className="text-xs text-gray-400 px-1">No lab results</p>
+          <p className="text-xs text-slate-400 px-1">No lab results</p>
         )}
       </div>
     </div>
@@ -648,7 +648,7 @@ export default function EncounterPage() {
   // Center Panel: Transcript, Data, Note, Orders
   // ============================================================
   const centerPanel = (
-    <div className="max-w-2xl mx-auto p-4 space-y-4">
+    <div className="max-w-2xl mx-auto p-4 space-y-4 mc-reveal-stagger">
 
       {/* Encounter Timer + Start Exam */}
       <div className="flex items-center justify-between">
@@ -661,10 +661,10 @@ export default function EncounterPage() {
           {examStartTime && <EncounterTimer startTime={examStartTime} />}
         </div>
         {autoSaveStatus === 'saving' && (
-          <span className="text-xs text-gray-400">Saving...</span>
+          <span className="text-xs text-slate-400">Saving...</span>
         )}
         {autoSaveStatus === 'saved' && (
-          <span className="text-xs text-green-500">Saved</span>
+          <span className="text-xs font-medium text-success-600">Saved</span>
         )}
       </div>
 
@@ -672,10 +672,10 @@ export default function EncounterPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between w-full">
-            <span>Encounter Transcript</span>
+            <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">Encounter Transcript</span>
             {speech.isListening && (
-              <span className="flex items-center gap-1 text-red-500 text-xs animate-pulse">
-                <span className="w-2 h-2 bg-red-500 rounded-full" />
+              <span className="flex items-center gap-1 text-danger-600 text-xs font-semibold animate-pulse">
+                <span className="w-2 h-2 bg-danger-500 rounded-full" />
                 Recording...
               </span>
             )}
@@ -689,9 +689,9 @@ export default function EncounterPage() {
             className="textarea-clinical w-full min-h-[120px] resize-y"
             rows={5}
           />
-          {/* Live interim text in blue */}
+          {/* Live interim text */}
           {speech.isListening && speech.interimTranscript && (
-            <div className="bg-blue-50 rounded-lg p-2 text-sm text-blue-600 italic">
+            <div className="bg-navy-50 rounded-lg p-2 text-sm text-navy-600 italic border border-navy-100">
               {speech.interimTranscript}
             </div>
           )}
@@ -735,56 +735,56 @@ export default function EncounterPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <span>Extracted Clinical Data</span>
+              <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">Extracted Clinical Data</span>
               <Badge variant="success">AI Parsed</Badge>
             </div>
           </CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Blue = Vitals */}
+              {/* Vitals */}
               {extractedData.vitals && Object.keys(extractedData.vitals).length > 0 && (
-                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                  <h4 className="text-xs font-semibold text-blue-700 uppercase mb-2">Vitals</h4>
+                <div className="bg-navy-50 rounded-lg p-3 border border-navy-100">
+                  <h4 className="text-xs font-semibold text-navy-700 uppercase tracking-wide mb-2">Vitals</h4>
                   {Object.entries(extractedData.vitals).map(([k, v]) => (
                     <div key={k} className="flex justify-between text-sm">
-                      <span className="text-gray-600">{k.replace(/_/g, ' ')}</span>
-                      <span className="font-medium">{v}</span>
+                      <span className="text-slate-600">{k.replace(/_/g, ' ')}</span>
+                      <span className="font-medium text-navy-700">{v}</span>
                     </div>
                   ))}
                 </div>
               )}
-              {/* Green = Medications */}
+              {/* Medications */}
               {extractedData.medications && extractedData.medications.length > 0 && (
-                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                  <h4 className="text-xs font-semibold text-green-700 uppercase mb-2">Medications</h4>
+                <div className="bg-success-50 rounded-lg p-3 border border-success-100">
+                  <h4 className="text-xs font-semibold text-success-700 uppercase tracking-wide mb-2">Medications</h4>
                   {extractedData.medications.map((m, i) => (
-                    <div key={i} className="text-sm mb-1">
+                    <div key={i} className="text-sm mb-1 text-navy-700">
                       <span className="font-medium">{m.name || m.medication}</span>
-                      {m.dosage && <span className="text-gray-500 ml-1">{m.dosage}</span>}
+                      {m.dosage && <span className="text-slate-500 ml-1">{m.dosage}</span>}
                     </div>
                   ))}
                 </div>
               )}
-              {/* Amber = Diagnoses */}
+              {/* Diagnoses */}
               {extractedData.problems && extractedData.problems.length > 0 && (
-                <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-                  <h4 className="text-xs font-semibold text-amber-700 uppercase mb-2">Diagnoses</h4>
+                <div className="bg-gold-50 rounded-lg p-3 border border-gold-200">
+                  <h4 className="text-xs font-semibold text-gold-700 uppercase tracking-wide mb-2">Diagnoses</h4>
                   {extractedData.problems.map((p, i) => (
-                    <div key={i} className="text-sm mb-1">
+                    <div key={i} className="text-sm mb-1 text-navy-700">
                       <span className="font-medium">{p.name || p.problem}</span>
-                      {p.icd10 && <span className="text-gray-500 ml-1">({p.icd10})</span>}
+                      {p.icd10 && <span className="text-slate-500 ml-1">({p.icd10})</span>}
                     </div>
                   ))}
                 </div>
               )}
-              {/* Purple = Labs */}
+              {/* Labs */}
               {extractedData.labs && extractedData.labs.length > 0 && (
-                <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
-                  <h4 className="text-xs font-semibold text-purple-700 uppercase mb-2">Lab Orders</h4>
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Lab Orders</h4>
                   {extractedData.labs.map((l, i) => (
-                    <div key={i} className="text-sm mb-1">
+                    <div key={i} className="text-sm mb-1 text-navy-700">
                       <span className="font-medium">{l.test_name || l.name}</span>
-                      {l.cpt_code && <span className="text-gray-500 ml-1">({l.cpt_code})</span>}
+                      {l.cpt_code && <span className="text-slate-500 ml-1">({l.cpt_code})</span>}
                     </div>
                   ))}
                 </div>
@@ -800,11 +800,11 @@ export default function EncounterPage() {
           <CardHeader>
             <div className="flex items-center gap-2 w-full justify-between">
               <div className="flex items-center gap-2">
-                <span>SOAP Note</span>
+                <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">SOAP Note</span>
                 <Badge variant="info">Editable</Badge>
               </div>
               {autoSaveStatus === 'saving' && (
-                <span className="text-xs text-gray-400">Auto-saving...</span>
+                <span className="text-xs text-slate-400">Auto-saving...</span>
               )}
             </div>
           </CardHeader>
@@ -824,7 +824,7 @@ export default function EncounterPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <span>Orders</span>
+            <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">Orders</span>
             {totalOrders > 0 && <Badge variant="success">{totalOrders}</Badge>}
           </div>
         </CardHeader>
@@ -847,21 +847,21 @@ export default function EncounterPage() {
 
           {/* Display created orders */}
           {totalOrders > 0 && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
+            <div className="space-y-2 pt-2 border-t border-slate-100">
               {prescriptions.map((rx, i) => (
-                <div key={'rx' + i} className="flex items-center gap-2 bg-green-50 rounded-lg p-2 text-sm">
-                  <span className="text-green-600 font-bold text-xs">Rx</span>
-                  <span className="font-medium">{rx.medication_name}</span>
-                  <span className="text-gray-500">{rx.dosage || rx.dose} {rx.frequency}</span>
-                  {rx.route && <span className="text-gray-400">({rx.route})</span>}
+                <div key={'rx' + i} className="flex items-center gap-2 bg-success-50 rounded-lg p-2 text-sm border border-success-100">
+                  <span className="text-success-700 font-bold text-xs">Rx</span>
+                  <span className="font-medium text-navy-700">{rx.medication_name}</span>
+                  <span className="text-slate-500">{rx.dosage || rx.dose} {rx.frequency}</span>
+                  {rx.route && <span className="text-slate-400">({rx.route})</span>}
                   <Badge variant="success">Rx</Badge>
                 </div>
               ))}
               {labOrders.map((lab, i) => (
-                <div key={'lab' + i} className="flex items-center gap-2 bg-purple-50 rounded-lg p-2 text-sm">
-                  <span className="text-purple-600 font-bold text-xs">LAB</span>
-                  <span className="font-medium">{lab.test_name}</span>
-                  {lab.cpt_code && <span className="text-gray-500">({lab.cpt_code})</span>}
+                <div key={'lab' + i} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2 text-sm border border-slate-100">
+                  <span className="text-slate-600 font-bold text-xs">LAB</span>
+                  <span className="font-medium text-navy-700">{lab.test_name}</span>
+                  {lab.cpt_code && <span className="text-slate-500">({lab.cpt_code})</span>}
                   {lab.priority && lab.priority !== 'routine' && (
                     <Badge variant={lab.priority === 'stat' ? 'urgent' : 'warning'}>
                       {lab.priority}
@@ -871,9 +871,9 @@ export default function EncounterPage() {
                 </div>
               ))}
               {imagingOrders.map((img, i) => (
-                <div key={'img' + i} className="flex items-center gap-2 bg-blue-50 rounded-lg p-2 text-sm">
-                  <span className="text-blue-600 font-bold text-xs">IMG</span>
-                  <span className="font-medium">
+                <div key={'img' + i} className="flex items-center gap-2 bg-navy-50 rounded-lg p-2 text-sm border border-navy-100">
+                  <span className="text-navy-600 font-bold text-xs">IMG</span>
+                  <span className="font-medium text-navy-700">
                     {img.study_type || img.modality} - {img.body_part}
                   </span>
                   {img.priority && img.priority !== 'routine' && (
@@ -885,10 +885,10 @@ export default function EncounterPage() {
                 </div>
               ))}
               {referrals.map((ref, i) => (
-                <div key={'ref' + i} className="flex items-center gap-2 bg-amber-50 rounded-lg p-2 text-sm">
-                  <span className="text-amber-600 font-bold text-xs">REF</span>
-                  <span className="font-medium">{ref.specialty}</span>
-                  <span className="text-gray-500">{ref.reason}</span>
+                <div key={'ref' + i} className="flex items-center gap-2 bg-gold-50 rounded-lg p-2 text-sm border border-gold-200">
+                  <span className="text-gold-700 font-bold text-xs">REF</span>
+                  <span className="font-medium text-navy-700">{ref.specialty}</span>
+                  <span className="text-slate-500">{ref.reason}</span>
                   {ref.urgency && ref.urgency !== 'routine' && (
                     <Badge variant={ref.urgency === 'emergent' ? 'urgent' : 'warning'}>
                       {ref.urgency}
@@ -929,10 +929,10 @@ export default function EncounterPage() {
   // Right Panel: CDS
   // ============================================================
   const rightPanel = (
-    <div className="p-3 space-y-3">
+    <div className="p-3 space-y-4 mc-reveal-stagger">
       {/* CDS Suggestions */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1 flex items-center justify-between">
+        <h3 className="mc-section-label px-1 flex items-center justify-between">
           <span>CDS Suggestions</span>
           {pending.length > 0 && (
             <Badge variant="urgent">{pending.length} pending</Badge>
@@ -948,15 +948,15 @@ export default function EncounterPage() {
       {/* Differential Diagnoses */}
       {differentials.length > 0 && (
         <div>
-          <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+          <h3 className="mc-section-label px-1">
             Differential Diagnoses
           </h3>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {differentials.map((d, i) => (
-              <div key={d.id || i} className="bg-white rounded-lg p-2 border border-gray-100">
-                <div className="font-medium text-sm text-gray-900">{d.title}</div>
+              <div key={d.id || i} className="bg-offWhite-100 rounded-lg p-2.5 border border-slate-100 shadow-mc">
+                <div className="font-medium text-sm text-navy-700">{d.title}</div>
                 {d.description && (
-                  <p className="text-xs text-gray-500 mt-1">{d.description}</p>
+                  <p className="text-xs text-slate-500 mt-1">{d.description}</p>
                 )}
               </div>
             ))}
@@ -982,7 +982,7 @@ export default function EncounterPage() {
       {patient && <PatientBanner patient={patient} />}
 
       {/* Workflow Bar */}
-      <div className="bg-white border-b border-gray-100 px-4 py-2 flex items-center justify-between">
+      <div className="bg-offWhite-100 border-b border-slate-100 px-4 py-2 flex items-center justify-between">
         <TouchButton variant="secondary" size="sm" onClick={() => navigate('/')}>
           &#x2190; Dashboard
         </TouchButton>
@@ -993,7 +993,7 @@ export default function EncounterPage() {
           the HRT view. Patient/Encounter/CDS tabs are no-ops on desktop
           (all three panels stay visible); clicking 'HRT / Peptide' swaps the
           entire body to the HRT panel regardless of screen size. */}
-      <div className="bg-white border-b border-gray-200 flex">
+      <div className="bg-offWhite-100 border-b border-slate-200 flex">
         {[
           { key: 'patient', label: 'Patient' },
           { key: 'encounter', label: 'Encounter' },
@@ -1003,15 +1003,15 @@ export default function EncounterPage() {
           <button
             key={tab.key}
             onClick={() => setMobileTab(tab.key)}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium text-center border-b-2 transition-colors ${
+            className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center border-b-2 transition-colors ${
               mobileTab === tab.key
-                ? 'border-blue-500 text-blue-600 bg-blue-50/50'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'border-gold-400 text-navy-700 bg-navy-50/40'
+                : 'border-transparent text-slate-500 hover:text-navy-700'
             }`}
           >
             {tab.label}
             {tab.badge > 0 && (
-              <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">
+              <span className="ml-1.5 bg-danger-500 text-white text-xs rounded-full px-1.5 py-0.5">
                 {tab.badge}
               </span>
             )}
@@ -1022,13 +1022,13 @@ export default function EncounterPage() {
       {/* Body: HRT tab takes over full width when active; otherwise show the
           standard 3-panel layout (desktop: always 3 visible; mobile: one-of). */}
       {mobileTab === 'hrt' ? (
-        <div className="flex-1 overflow-y-auto clinical-scroll bg-gray-50/50">
+        <div className="flex-1 overflow-y-auto clinical-scroll bg-ivory-200/60">
           <HRTPanel regimens={[]} suggestions={suggestions} />
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden">
           {/* LEFT PANEL - desktop always visible, mobile conditional */}
-          <div className={`w-72 border-r border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
+          <div className={`w-72 border-r border-slate-200 bg-ivory-200/60 overflow-y-auto clinical-scroll flex-shrink-0 ${
             mobileTab === 'patient' ? 'block' : 'hidden'
           } lg:block`}>
             {leftPanel}
@@ -1042,7 +1042,7 @@ export default function EncounterPage() {
           </div>
 
           {/* RIGHT PANEL */}
-          <div className={`w-80 border-l border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
+          <div className={`w-80 border-l border-slate-200 bg-ivory-200/60 overflow-y-auto clinical-scroll flex-shrink-0 ${
             mobileTab === 'cds' ? 'block' : 'hidden'
           } lg:block`}>
             {rightPanel}

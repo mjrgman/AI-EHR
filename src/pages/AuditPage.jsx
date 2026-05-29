@@ -32,17 +32,17 @@ const RESOURCE_OPTIONS = [
 
 function StatCard({ label, value, icon, accent = 'blue' }) {
   const accents = {
-    blue: 'border-blue-500 bg-blue-50 text-blue-700',
-    amber: 'border-amber-500 bg-amber-50 text-amber-700',
-    green: 'border-green-500 bg-green-50 text-green-700',
-    red: 'border-red-500 bg-red-50 text-red-700',
+    blue: 'border-navy-500 bg-navy-50 text-navy-700',
+    amber: 'border-gold-500 bg-gold-50 text-gold-700',
+    green: 'border-success-500 bg-success-50 text-success-700',
+    red: 'border-danger-500 bg-danger-50 text-danger-700',
   };
   return (
-    <div className={`rounded-xl border-l-4 p-4 ${accents[accent]}`}>
+    <div className={`rounded-xl border-l-4 p-4 shadow-mc ${accents[accent]}`}>
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider opacity-70">{label}</p>
-          <p className="text-2xl font-bold mt-1">{value ?? '-'}</p>
+          <p className="mt-1 text-2xl font-bold">{value ?? '-'}</p>
         </div>
         <span className="text-2xl opacity-40">{icon}</span>
       </div>
@@ -72,7 +72,7 @@ function formatFullTimestamp(ts) {
 
 function StatusDot({ code }) {
   if (!code) return null;
-  const color = code < 300 ? 'bg-green-400' : code < 400 ? 'bg-blue-400' : code < 500 ? 'bg-amber-400' : 'bg-red-400';
+  const color = code < 300 ? 'bg-success-500' : code < 400 ? 'bg-navy-400' : code < 500 ? 'bg-gold-500' : 'bg-danger-500';
   return <span className={`inline-block w-2 h-2 rounded-full ${color}`} title={`HTTP ${code}`} />;
 }
 
@@ -106,15 +106,15 @@ function AuditDetailPanel({ log, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-end">
-      <div className="fixed inset-0 bg-black/20" onClick={onClose} />
-      <div className="relative w-full max-w-md h-full bg-white shadow-2xl border-l border-gray-200 overflow-y-auto animate-slide-in-right">
-        <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex items-center justify-between z-10">
-          <h3 className="font-semibold text-sm uppercase tracking-wide text-gray-500">Audit Detail</h3>
+      <div className="fixed inset-0 bg-navy-900/30" onClick={onClose} />
+      <div className="relative h-full w-full max-w-md overflow-y-auto border-l border-slate-100 bg-offWhite-100 shadow-mc-xl animate-slide-in-right">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-offWhite-100 px-5 py-4">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-500">Audit Detail</h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close audit detail"
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-ivory-200 hover:text-slate-600"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -127,9 +127,9 @@ function AuditDetailPanel({ log, onClose }) {
           <div className="flex items-center gap-2">
             <Badge variant={ACTION_COLORS[log.action] || 'info'}>{log.action}</Badge>
             <StatusDot code={log.response_status} />
-            <span className="text-xs text-gray-500">HTTP {log.response_status}</span>
+            <span className="text-xs text-slate-500">HTTP {log.response_status}</span>
             {log.phi_accessed ? (
-              <span className="ml-auto flex items-center gap-1 text-xs text-amber-600 font-medium">
+              <span className="ml-auto flex items-center gap-1 text-xs font-medium text-gold-700">
                 <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                 </svg>
@@ -139,11 +139,11 @@ function AuditDetailPanel({ log, onClose }) {
           </div>
 
           {/* Key-value pairs */}
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-slate-100">
             {fields.map(([label, value]) => (
               <div key={label} className="flex items-start justify-between py-2.5">
-                <span className="text-xs text-gray-400 uppercase tracking-wider font-medium">{label}</span>
-                <span className="text-sm text-gray-800 font-mono text-right max-w-[60%] break-all">{value}</span>
+                <span className="text-xs font-medium uppercase tracking-wider text-slate-400">{label}</span>
+                <span className="max-w-[60%] break-all text-right font-mono text-sm text-navy-700">{value}</span>
               </div>
             ))}
           </div>
@@ -151,10 +151,10 @@ function AuditDetailPanel({ log, onClose }) {
           {/* PHI fields */}
           {phiFields.length > 0 && (
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wider font-medium mb-2">PHI Fields Accessed</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">PHI Fields Accessed</p>
               <div className="flex flex-wrap gap-1.5">
                 {phiFields.map(f => (
-                  <span key={f} className="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-mono border border-amber-200">{f}</span>
+                  <span key={f} className="rounded-md border border-gold-200 bg-gold-50 px-2 py-0.5 font-mono text-xs text-gold-700">{f}</span>
                 ))}
               </div>
             </div>
@@ -163,8 +163,8 @@ function AuditDetailPanel({ log, onClose }) {
           {/* Request body summary */}
           {log.request_body_summary && (
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wider font-medium mb-2">Request Body</p>
-              <pre className="text-xs font-mono bg-gray-50 rounded-lg p-3 text-gray-600 overflow-x-auto whitespace-pre-wrap break-all border border-gray-100">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">Request Body</p>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-slate-100 bg-ivory-200 p-3 font-mono text-xs text-slate-600">
                 {log.request_body_summary}
               </pre>
             </div>
@@ -173,8 +173,8 @@ function AuditDetailPanel({ log, onClose }) {
           {/* Error */}
           {log.error_message && (
             <div>
-              <p className="text-xs text-red-400 uppercase tracking-wider font-medium mb-2">Error</p>
-              <pre className="text-xs font-mono bg-red-50 rounded-lg p-3 text-red-700 overflow-x-auto whitespace-pre-wrap border border-red-100">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-danger-500">Error</p>
+              <pre className="overflow-x-auto whitespace-pre-wrap rounded-lg border border-danger-100 bg-danger-50 p-3 font-mono text-xs text-danger-700">
                 {log.error_message}
               </pre>
             </div>
@@ -183,8 +183,8 @@ function AuditDetailPanel({ log, onClose }) {
           {/* User Agent */}
           {log.user_agent && (
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wider font-medium mb-2">User Agent</p>
-              <p className="text-xs font-mono text-gray-500 break-all">{log.user_agent}</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">User Agent</p>
+              <p className="break-all font-mono text-xs text-slate-500">{log.user_agent}</p>
             </div>
           )}
         </div>
@@ -287,34 +287,34 @@ export default function AuditPage() {
   const hasActiveFilters = filters.search || filters.action || filters.resource_type || filters.phi_only || filters.date_from || filters.date_to || filters.user;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-5">
+    <div className="mc-page mc-reveal-stagger max-w-7xl space-y-5">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <h1 className="mc-page-title flex items-center gap-2">
+            <svg className="h-6 w-6 text-gold-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             Audit Log
           </h1>
-          <p className="text-sm text-gray-500 mt-0.5">HIPAA compliance trail &middot; All system activity</p>
+          <p className="mt-1 text-sm text-slate-500">HIPAA compliance trail &middot; All system activity</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={fetchData}
             aria-label="Refresh audit log"
-            className="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            className="rounded-lg px-3 py-2 text-sm text-slate-600 transition-colors hover:bg-ivory-200 hover:text-navy-700"
             title="Refresh">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
           <button
             type="button"
             onClick={handleExport}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            className="flex items-center gap-1.5 rounded-lg bg-navy-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-navy-700">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             Export CSV
@@ -347,8 +347,8 @@ export default function AuditPage() {
         <CardBody className="!p-3">
           <div className="flex flex-wrap items-center gap-2">
             {/* Search */}
-            <div className="relative flex-1 min-w-[200px]">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="relative min-w-[200px] flex-1">
+              <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
@@ -357,48 +357,48 @@ export default function AuditPage() {
                 value={searchInput}
                 onChange={handleSearchChange}
                 placeholder="Search logs..."
-                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full rounded-lg border border-slate-200 bg-offWhite-100 py-2 pl-9 pr-3 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-gold-500"
               />
             </div>
 
             {/* Action filter */}
             <select value={filters.action} onChange={e => updateFilter('action', e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              className="rounded-lg border border-slate-200 bg-offWhite-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500">
               <option value="">All Actions</option>
               {ACTION_OPTIONS.filter(Boolean).map(a => <option key={a} value={a}>{a}</option>)}
             </select>
 
             {/* Resource filter */}
             <select value={filters.resource_type} onChange={e => updateFilter('resource_type', e.target.value)}
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+              className="rounded-lg border border-slate-200 bg-offWhite-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500">
               <option value="">All Resources</option>
               {RESOURCE_OPTIONS.filter(Boolean).map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
             </select>
 
             {/* PHI toggle */}
-            <label className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors select-none">
+            <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm transition-colors hover:bg-ivory-200">
               <input type="checkbox" checked={filters.phi_only} onChange={e => updateFilter('phi_only', e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-gray-300 text-amber-500 focus:ring-amber-500" />
-              <svg className="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                className="h-3.5 w-3.5 rounded border-slate-300 text-gold-600 focus:ring-gold-500" />
+              <svg className="h-3.5 w-3.5 text-gold-600" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
               </svg>
-              <span className="text-gray-600">PHI Only</span>
+              <span className="text-slate-600">PHI Only</span>
             </label>
 
             {/* Date range */}
             <input type="date" value={filters.date_from} onChange={e => updateFilter('date_from', e.target.value)}
               aria-label="From date"
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="rounded-lg border border-slate-200 bg-offWhite-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
               title="From date" />
             <input type="date" value={filters.date_to} onChange={e => updateFilter('date_to', e.target.value)}
               aria-label="To date"
-              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="rounded-lg border border-slate-200 bg-offWhite-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500"
               title="To date" />
 
             {/* Clear */}
             {hasActiveFilters && (
               <button onClick={clearFilters}
-                className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors font-medium">
+                className="rounded-lg px-3 py-2 text-sm font-medium text-danger-600 transition-colors hover:bg-danger-50">
                 Clear
               </button>
             )}
@@ -408,7 +408,7 @@ export default function AuditPage() {
 
       {/* Log table */}
       <Card>
-        <CardHeader action={<span className="text-xs text-gray-400 font-mono">{(Number(total) || 0).toLocaleString()} entries</span>}>
+        <CardHeader action={<span className="font-mono text-xs text-slate-400">{(Number(total) || 0).toLocaleString()} entries</span>}>
           Activity Log
         </CardHeader>
 
@@ -416,12 +416,12 @@ export default function AuditPage() {
           <LoadingSpinner message="Loading audit trail..." />
         ) : logs.length === 0 ? (
           <div className="py-16 text-center">
-            <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="mx-auto mb-3 h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <p className="text-sm text-gray-500">No audit entries found</p>
+            <p className="text-sm text-slate-500">No audit entries found</p>
             {hasActiveFilters && (
-              <button onClick={clearFilters} className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">
+              <button onClick={clearFilters} className="mt-2 text-sm font-medium text-navy-600 hover:text-navy-700">
                 Clear filters
               </button>
             )}
@@ -430,72 +430,72 @@ export default function AuditPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-100">
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Time</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">User</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Action</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Resource</th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Patient</th>
-                  <th className="text-center px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">PHI</th>
-                  <th className="text-center px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
-                  <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Duration</th>
+                <tr className="border-b border-slate-100 bg-ivory-200/70">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">User</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Action</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Resource</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Patient</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">PHI</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Duration</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-slate-100">
                 {logs.map(log => (
                   <tr key={log.id}
                     onClick={() => setSelectedLog(log)}
-                    className="hover:bg-blue-50/40 cursor-pointer transition-colors group">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-gray-800 font-mono text-xs" title={formatFullTimestamp(log.timestamp)}>
+                    className="group cursor-pointer transition-colors hover:bg-ivory-200">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className="font-mono text-xs text-navy-700" title={formatFullTimestamp(log.timestamp)}>
                         {formatTimestamp(log.timestamp)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex items-center gap-1.5">
-                        <span className="text-gray-800 text-xs font-medium truncate max-w-[120px]">{log.user_identity}</span>
+                        <span className="max-w-[120px] truncate text-xs font-medium text-navy-700">{log.user_identity}</span>
                         {log.user_role && log.user_role !== 'unknown' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 uppercase tracking-wider">{log.user_role}</span>
+                          <span className="rounded bg-ivory-300 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-slate-500">{log.user_role}</span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="whitespace-nowrap px-4 py-3">
                       <Badge variant={ACTION_COLORS[log.action] || 'info'}>{log.action}</Badge>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-gray-700 text-xs">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span className="text-xs text-slate-600">
                         {log.resource_type?.replace(/_/g, ' ')}
-                        {log.resource_id ? <span className="text-gray-400 font-mono ml-1">#{log.resource_id}</span> : null}
+                        {log.resource_id ? <span className="ml-1 font-mono text-slate-400">#{log.resource_id}</span> : null}
                       </span>
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="whitespace-nowrap px-4 py-3">
                       {log.patient_id ? (
                         <button
                           onClick={(e) => { e.stopPropagation(); navigate(`/patient/${log.patient_id}`); }}
-                          className="text-xs text-blue-600 hover:text-blue-800 font-mono hover:underline">
+                          className="font-mono text-xs text-navy-600 hover:text-navy-700 hover:underline">
                           #{log.patient_id}
                         </button>
                       ) : (
-                        <span className="text-xs text-gray-300">-</span>
+                        <span className="text-xs text-slate-300">-</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {log.phi_accessed ? (
-                        <svg className="w-4 h-4 mx-auto text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="mx-auto h-4 w-4 text-gold-600" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                         </svg>
                       ) : (
-                        <span className="text-gray-200">-</span>
+                        <span className="text-slate-200">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                    <td className="whitespace-nowrap px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
                         <StatusDot code={log.response_status} />
-                        <span className="text-xs font-mono text-gray-500">{log.response_status}</span>
+                        <span className="font-mono text-xs text-slate-500">{log.response_status}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <span className="text-xs font-mono text-gray-400">
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <span className="font-mono text-xs text-slate-400">
                         {log.duration_ms != null ? `${log.duration_ms}ms` : '-'}
                       </span>
                     </td>
@@ -508,13 +508,13 @@ export default function AuditPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between">
-            <p className="text-xs text-gray-400">
+          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
+            <p className="text-xs text-slate-400">
               Page {page} of {totalPages}
             </p>
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-ivory-200 disabled:cursor-not-allowed disabled:opacity-30">
                 Prev
               </button>
               {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
@@ -525,15 +525,15 @@ export default function AuditPage() {
                 else p = page - 2 + i;
                 return (
                   <button key={p} onClick={() => setPage(p)}
-                    className={`w-8 h-8 text-xs rounded-lg font-medium transition-colors ${
-                      p === page ? 'bg-gray-800 text-white' : 'text-gray-600 hover:bg-gray-100'
+                    className={`h-8 w-8 rounded-lg text-xs font-medium transition-colors ${
+                      p === page ? 'bg-navy-600 text-white' : 'text-slate-600 hover:bg-ivory-200'
                     }`}>
                     {p}
                   </button>
                 );
               })}
               <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-ivory-200 disabled:cursor-not-allowed disabled:opacity-30">
                 Next
               </button>
             </div>

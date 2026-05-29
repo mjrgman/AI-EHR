@@ -154,9 +154,15 @@ export default function SchedulePage() {
   }, {});
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-4">
+    <div className="mc-page max-w-4xl mc-reveal-stagger space-y-5">
+      {/* Page title */}
+      <div className="flex flex-col gap-1">
+        <p className="mc-section-label">Reception</p>
+        <h1 className="mc-page-title">Schedule</h1>
+      </div>
+
       {/* Date navigation */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-3 flex-wrap rounded-2xl border border-slate-100 bg-offWhite-100 px-4 py-3 shadow-mc">
         <div className="flex items-center gap-2">
           <TouchButton
             type="button"
@@ -168,8 +174,8 @@ export default function SchedulePage() {
             &#x2190;
           </TouchButton>
           <div className="text-center min-w-[180px]">
-            <p className="font-semibold text-gray-900">{formatDisplayDate(selectedDate)}</p>
-            <p className="text-xs text-gray-400">{selectedDate}</p>
+            <p className="font-display text-lg font-semibold text-navy-700 tracking-tight">{formatDisplayDate(selectedDate)}</p>
+            <p className="text-xs text-slate-400">{selectedDate}</p>
           </div>
           <TouchButton
             type="button"
@@ -186,7 +192,7 @@ export default function SchedulePage() {
             type="date"
             value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
-            className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
           />
           <TouchButton type="button" variant="secondary" size="sm" onClick={() => setSelectedDate(toDateStr(new Date()))}>
             Today
@@ -199,8 +205,8 @@ export default function SchedulePage() {
 
       {/* Summary badges */}
       {appointments.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
-          <span className="text-sm text-gray-500">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}:</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-slate-500">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}:</span>
           {Object.entries(totalByStatus).map(([status, count]) => (
             <Badge key={status} variant={STATUS_LABELS[status]?.variant || 'routine'}>
               {count} {STATUS_LABELS[status]?.label || status}
@@ -219,7 +225,7 @@ export default function SchedulePage() {
                 type="button"
                 onClick={() => setShowNewForm(false)}
                 aria-label="Close new appointment form"
-                className="text-gray-400 hover:text-gray-600 text-lg leading-none"
+                className="text-slate-400 hover:text-navy-700 text-lg leading-none"
               >
                 &times;
               </button>
@@ -229,10 +235,10 @@ export default function SchedulePage() {
             <form onSubmit={handleNewAppointment} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Patient *</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Patient *</label>
                   <select
                     required
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.patient_id}
                     onChange={e => setForm(f => ({ ...f, patient_id: e.target.value }))}
                   >
@@ -243,9 +249,9 @@ export default function SchedulePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Visit Type</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Visit Type</label>
                   <select
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.visit_type}
                     onChange={e => setForm(f => ({ ...f, visit_type: e.target.value }))}
                   >
@@ -255,29 +261,29 @@ export default function SchedulePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Date</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Date</label>
                   <input
                     type="date"
                     required
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.appointment_date}
                     onChange={e => setForm(f => ({ ...f, appointment_date: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Time</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Time</label>
                   <input
                     type="time"
                     required
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.appointment_time}
                     onChange={e => setForm(f => ({ ...f, appointment_time: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Duration (min)</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Duration (min)</label>
                   <select
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.duration_minutes}
                     onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))}
                   >
@@ -287,10 +293,10 @@ export default function SchedulePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Chief Complaint</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Chief Complaint</label>
                   <input
                     type="text"
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     placeholder="Reason for visit..."
                     value={form.chief_complaint}
                     onChange={e => setForm(f => ({ ...f, chief_complaint: e.target.value }))}
@@ -316,9 +322,9 @@ export default function SchedulePage() {
       ) : appointments.length === 0 ? (
         <Card>
           <CardBody className="text-center py-12">
-            <p className="text-3xl mb-3">📅</p>
-            <p className="text-gray-500 font-medium">No appointments scheduled</p>
-            <p className="text-sm text-gray-400 mt-1">for {formatDisplayDate(selectedDate)}</p>
+            <span className="text-4xl mb-3 inline-block opacity-80">📅</span>
+            <h3 className="font-display text-lg font-semibold text-navy-700">No appointments scheduled</h3>
+            <p className="text-sm text-slate-500 mt-1">for {formatDisplayDate(selectedDate)}</p>
             <div className="mt-4">
               <TouchButton type="button" variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
                 Schedule an Appointment
@@ -339,23 +345,23 @@ export default function SchedulePage() {
                     <div className="flex items-start gap-3">
                       {/* Time column */}
                       <div className="flex-shrink-0 w-16 text-center">
-                        <p className="text-sm font-bold text-gray-900">{formatTime(appt.appointment_time)}</p>
-                        <p className="text-xs text-gray-400">{appt.duration_minutes || 30}m</p>
+                        <p className="text-sm font-bold text-navy-700 tabular-nums">{formatTime(appt.appointment_time)}</p>
+                        <p className="text-xs text-slate-400">{appt.duration_minutes || 30}m</p>
                       </div>
 
                       {/* Info column */}
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 border-l border-slate-100 pl-3">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-gray-900 text-sm">
+                          <p className="font-semibold text-navy-700 text-sm">
                             {appt.patient_last_name ? `${appt.patient_last_name}, ${appt.patient_first_name}` : `Patient #${appt.patient_id}`}
                           </p>
                           <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                           {appt.visit_type && (
-                            <span className="text-xs text-gray-400 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
+                            <span className="text-xs text-slate-400 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
                           )}
                         </div>
                         {appt.chief_complaint && (
-                          <p className="text-xs text-gray-500 mt-0.5 truncate">{appt.chief_complaint}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 truncate">{appt.chief_complaint}</p>
                         )}
                       </div>
 
@@ -367,7 +373,7 @@ export default function SchedulePage() {
                               <button
                                 onClick={() => handleStatusChange(appt.id, 'confirmed')}
                                 disabled={isUpdating}
-                                className="text-xs px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                                className="text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 transition-colors disabled:opacity-50 font-medium"
                               >
                                 Confirm
                               </button>
@@ -375,14 +381,14 @@ export default function SchedulePage() {
                             <button
                               onClick={() => handleCheckin(appt)}
                               disabled={isUpdating}
-                              className="text-xs px-2.5 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50 font-medium"
+                              className="text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 transition-colors disabled:opacity-50 font-semibold"
                             >
                               Check In
                             </button>
                             <button
                               onClick={() => handleStatusChange(appt.id, 'no-show')}
                               disabled={isUpdating}
-                              className="text-xs px-2.5 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                              className="text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus:ring-2 focus:ring-danger-500 focus:ring-offset-1"
                             >
                               No-Show
                             </button>
@@ -390,7 +396,7 @@ export default function SchedulePage() {
                         ) : appt.status === 'arrived' && appt.encounter_id ? (
                           <button
                             onClick={() => navigate('/checkin/' + appt.encounter_id)}
-                            className="text-xs px-2.5 py-1.5 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors font-medium"
+                            className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 transition-colors font-medium"
                           >
                             Open Encounter
                           </button>
@@ -401,7 +407,7 @@ export default function SchedulePage() {
                             onClick={() => handleDelete(appt.id)}
                             disabled={isUpdating}
                             aria-label={`Cancel appointment for ${appt.patient_last_name ? `${appt.patient_first_name} ${appt.patient_last_name}` : `patient ${appt.patient_id}`} at ${formatTime(appt.appointment_time)}`}
-                            className="text-xs px-2 py-1.5 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
+                            className="text-xs px-2 py-1.5 text-slate-400 hover:text-danger-600 transition-colors disabled:opacity-50"
                             title="Cancel appointment"
                           >
                             &times;

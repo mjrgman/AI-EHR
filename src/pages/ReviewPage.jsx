@@ -161,7 +161,7 @@ export default function ReviewPage() {
     <div>
       {patient && <PatientBanner patient={patient} />}
 
-      <div className="max-w-4xl mx-auto p-4 space-y-4">
+      <div className="max-w-4xl mx-auto p-4 space-y-4 mc-reveal-stagger">
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <TouchButton variant="secondary" size="sm" onClick={() => navigate('/encounter/' + encounterId)}>
@@ -177,24 +177,24 @@ export default function ReviewPage() {
             <div className="flex flex-wrap gap-6 text-sm">
               <div>
                 <span className="label-clinical">Check-in</span>
-                <p className="font-semibold text-gray-900">{formatTime(timestamps.checkIn)}</p>
+                <p className="font-semibold text-navy-700">{formatTime(timestamps.checkIn)}</p>
               </div>
               <div>
                 <span className="label-clinical">Exam Start</span>
-                <p className="font-semibold text-gray-900">{formatTime(timestamps.examStart)}</p>
+                <p className="font-semibold text-navy-700">{formatTime(timestamps.examStart)}</p>
               </div>
               <div>
                 <span className="label-clinical">Duration</span>
-                <p className="font-semibold text-gray-900">{timestamps.duration || '--'}</p>
+                <p className="font-semibold text-navy-700">{timestamps.duration || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">Encounter Type</span>
-                <p className="font-semibold text-gray-900">{encounter.encounter_type || 'Office Visit'}</p>
+                <p className="font-semibold text-navy-700">{encounter.encounter_type || 'Office Visit'}</p>
               </div>
               {encounter.chief_complaint && (
                 <div>
                   <span className="label-clinical">Chief Complaint</span>
-                  <p className="font-semibold text-gray-900">{encounter.chief_complaint}</p>
+                  <p className="font-semibold text-navy-700">{encounter.chief_complaint}</p>
                 </div>
               )}
             </div>
@@ -221,7 +221,7 @@ export default function ReviewPage() {
           <CardBody>
             {soapNote || encounter.soap_note ? (
               <textarea
-                className="textarea-clinical w-full min-h-[280px] font-mono text-sm leading-relaxed resize-y border border-gray-300 rounded-xl p-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="textarea-clinical w-full min-h-[280px] font-mono text-sm leading-relaxed resize-y border border-slate-300 rounded-xl p-4 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                 value={soapNote}
                 onChange={(e) => {
                   setSoapNote(e.target.value);
@@ -230,7 +230,7 @@ export default function ReviewPage() {
               />
             ) : (
               <div className="text-center py-8">
-                <p className="text-gray-400 italic">No SOAP note generated for this encounter.</p>
+                <p className="text-slate-400 italic">No SOAP note generated for this encounter.</p>
                 <TouchButton
                   variant="secondary"
                   size="sm"
@@ -253,7 +253,7 @@ export default function ReviewPage() {
             <CardBody className="space-y-3">
               {accepted.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Accepted ({accepted.length})</h4>
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Accepted ({accepted.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {accepted.map((s) => (
                       <Badge key={s.id} variant="success">
@@ -265,12 +265,12 @@ export default function ReviewPage() {
               )}
               {rejected.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Rejected ({rejected.length})</h4>
+                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Rejected ({rejected.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {rejected.map((s) => (
                       <span
                         key={s.id}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400 line-through"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-ivory-200 text-slate-400 border border-slate-100 line-through"
                       >
                         {s.title || s.suggestion_type}
                       </span>
@@ -287,21 +287,21 @@ export default function ReviewPage() {
           <CardHeader>Orders Summary ({orderCounts.total} total)</CardHeader>
           <CardBody className="space-y-4">
             {orderCounts.total === 0 && (
-              <p className="text-sm text-gray-400 italic">No orders created for this encounter.</p>
+              <p className="text-sm text-slate-400 italic">No orders created for this encounter.</p>
             )}
 
             {orders?.prescriptions?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                   Prescriptions ({orders.prescriptions.length})
                 </h4>
                 <div className="space-y-1">
                   {orders.prescriptions.map((rx, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
                       <Badge variant="success">Rx</Badge>
-                      <span className="font-medium">{rx.medication_name}</span>
-                      <span className="text-gray-500">{rx.dose} {rx.route} {rx.frequency}</span>
-                      <span className="text-gray-400 text-xs ml-auto">{rx.status}</span>
+                      <span className="font-medium text-navy-700">{rx.medication_name}</span>
+                      <span className="text-slate-500">{rx.dose} {rx.route} {rx.frequency}</span>
+                      <span className="text-slate-400 text-xs ml-auto">{rx.status}</span>
                     </div>
                   ))}
                 </div>
@@ -310,16 +310,16 @@ export default function ReviewPage() {
 
             {orders?.lab_orders?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                   Lab Orders ({orders.lab_orders.length})
                 </h4>
                 <div className="space-y-1">
                   {orders.lab_orders.map((lab, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
                       <Badge variant="routine">Lab</Badge>
-                      <span className="font-medium">{lab.test_name}</span>
-                      {lab.cpt_code && <span className="text-gray-400 text-xs">CPT: {lab.cpt_code}</span>}
-                      <span className="text-gray-400 text-xs ml-auto">{lab.priority}</span>
+                      <span className="font-medium text-navy-700">{lab.test_name}</span>
+                      {lab.cpt_code && <span className="text-slate-400 text-xs">CPT: {lab.cpt_code}</span>}
+                      <span className="text-slate-400 text-xs ml-auto">{lab.priority}</span>
                     </div>
                   ))}
                 </div>
@@ -328,15 +328,15 @@ export default function ReviewPage() {
 
             {orders?.imaging_orders?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                   Imaging ({orders.imaging_orders.length})
                 </h4>
                 <div className="space-y-1">
                   {orders.imaging_orders.map((img, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
                       <Badge variant="purple">Imaging</Badge>
-                      <span className="font-medium">{img.study_type}</span>
-                      <span className="text-gray-500">{img.body_part}</span>
+                      <span className="font-medium text-navy-700">{img.study_type}</span>
+                      <span className="text-slate-500">{img.body_part}</span>
                     </div>
                   ))}
                 </div>
@@ -345,15 +345,15 @@ export default function ReviewPage() {
 
             {orders?.referrals?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                   Referrals ({orders.referrals.length})
                 </h4>
                 <div className="space-y-1">
                   {orders.referrals.map((ref, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
+                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-slate-100 last:border-0">
                       <Badge variant="warning">Referral</Badge>
-                      <span className="font-medium">{ref.specialty}</span>
-                      <span className="text-gray-500">{ref.reason}</span>
+                      <span className="font-medium text-navy-700">{ref.specialty}</span>
+                      <span className="text-slate-500">{ref.reason}</span>
                     </div>
                   ))}
                 </div>
@@ -370,18 +370,18 @@ export default function ReviewPage() {
                 type="checkbox"
                 checked={attested}
                 onChange={(e) => setAttested(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="mt-1 w-5 h-5 rounded border-slate-300 text-navy-600 focus:ring-navy-500"
               />
               <div>
-                <p className="font-semibold text-gray-900">
+                <p className="font-semibold text-navy-700">
                   I have reviewed and approve this documentation
                 </p>
-                <p className="text-sm text-gray-500 mt-0.5">
+                <p className="text-sm text-slate-500 mt-0.5">
                   By checking this box, I attest that the SOAP note, orders, and clinical decision support
                   actions accurately reflect the care provided during this encounter.
                 </p>
                 {providerName && (
-                  <p className="text-xs text-gray-400 mt-1">Signing as: {providerName}</p>
+                  <p className="text-xs text-slate-400 mt-1">Signing as: {providerName}</p>
                 )}
               </div>
             </label>

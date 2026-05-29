@@ -19,8 +19,15 @@ export default function WorkflowTracker({ timeline, currentState, compact = fals
 
   if (compact) {
     const cfg = STATE_CONFIG[currentState] || { label: currentState, icon: '?' };
+    // Signed reads as success; the terminal "done" state reads slate; everything
+    // in-flight reads navy-authority.
+    const tone = currentState === 'signed'
+      ? 'bg-success-50 text-success-700 border border-success-100'
+      : currentState === 'checked-out'
+        ? 'bg-ivory-200 text-slate-600 border border-slate-100'
+        : 'bg-navy-50 text-navy-700 border border-navy-100';
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${tone}`}>
         {cfg.icon} {cfg.label}
       </span>
     );
@@ -36,14 +43,27 @@ export default function WorkflowTracker({ timeline, currentState, compact = fals
         const cfg = STATE_CONFIG[s.state] || { label: s.state, icon: '?' };
         const done = s.status === 'completed';
         const cur = s.status === 'current';
+        // The "signed" milestone is the clinical success beat.
+        const signed = s.state === 'signed' && (done || cur);
         return (
           <React.Fragment key={s.state}>
-            {i > 0 && <div className={`h-0.5 w-3 flex-shrink-0 ${done || cur ? 'bg-blue-400' : 'bg-gray-200'}`} />}
+            {i > 0 && <div className={`h-0.5 w-3 flex-shrink-0 ${done || cur ? 'bg-navy-300' : 'bg-slate-100'}`} />}
             <div className={`flex flex-col items-center flex-shrink-0 ${cur ? 'scale-110' : ''}`}>
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${
-                done ? 'bg-blue-100 text-blue-600' : cur ? 'bg-blue-600 text-white ring-2 ring-blue-300' : 'bg-gray-100 text-gray-400'
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs transition-colors ${
+                signed
+                  ? (cur ? 'bg-success-500 text-white ring-2 ring-success-200' : 'bg-success-100 text-success-600')
+                  : done
+                    ? 'bg-navy-100 text-navy-600'
+                    : cur
+                      ? 'bg-navy-600 text-white ring-2 ring-navy-200'
+                      : 'bg-ivory-300 text-slate-400'
               }`}>{done ? '\u2713' : cfg.icon}</div>
-              <span className={`text-[9px] mt-0.5 whitespace-nowrap ${cur ? 'font-bold text-blue-700' : done ? 'text-blue-500' : 'text-gray-400'}`}>{cfg.label}</span>
+              <span className={`text-[9px] mt-0.5 whitespace-nowrap ${
+                signed && cur ? 'font-bold text-success-700'
+                  : cur ? 'font-bold text-navy-700'
+                  : done ? 'text-navy-500'
+                  : 'text-slate-400'
+              }`}>{cfg.label}</span>
             </div>
           </React.Fragment>
         );

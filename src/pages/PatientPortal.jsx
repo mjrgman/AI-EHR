@@ -29,19 +29,21 @@ function formatTime(timeStr) {
 
 function StatusPill({ status }) {
   const palette = {
-    scheduled: 'bg-blue-100 text-blue-800',
-    confirmed: 'bg-sky-100 text-sky-800',
-    checked_in: 'bg-emerald-100 text-emerald-800',
-    completed: 'bg-slate-100 text-slate-700',
-    submitted: 'bg-amber-100 text-amber-800',
-    physician_review: 'bg-orange-100 text-orange-800',
-    sent: 'bg-emerald-100 text-emerald-800',
-    read: 'bg-slate-100 text-slate-700',
+    scheduled: 'bg-navy-50 text-navy-700 border border-navy-100',
+    confirmed: 'bg-navy-50 text-navy-700 border border-navy-100',
+    checked_in: 'bg-success-50 text-success-700 border border-success-100',
+    completed: 'bg-ivory-200 text-slate-600 border border-slate-100',
+    submitted: 'bg-gold-50 text-gold-700 border border-gold-200',
+    physician_review: 'bg-gold-50 text-gold-700 border border-gold-200',
+    sent: 'bg-success-50 text-success-700 border border-success-100',
+    read: 'bg-ivory-200 text-slate-600 border border-slate-100',
+    abnormal: 'bg-danger-50 text-danger-700 border border-danger-200',
+    normal: 'bg-success-50 text-success-700 border border-success-100',
   };
 
   const label = String(status || 'unknown').replace(/[_-]/g, ' ');
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${palette[status] || 'bg-slate-100 text-slate-700'}`}>
+    <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${palette[status] || 'bg-ivory-200 text-slate-600 border border-slate-100'}`}>
       {label}
     </span>
   );
@@ -58,32 +60,35 @@ function VerifyIdentity({ loading, error, onVerify }) {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#dbeafe,_#f8fafc_45%,_#f8fafc_80%)] px-4 py-12">
-      <div className="mx-auto max-w-5xl rounded-[2rem] border border-sky-100 bg-white/85 p-6 shadow-[0_30px_80px_rgba(14,116,144,0.12)] backdrop-blur md:grid md:grid-cols-[1.1fr_0.9fr] md:gap-10 md:p-10">
+    <div className="min-h-screen bg-ivory-200 px-4 py-12">
+      <div className="mc-reveal mx-auto max-w-5xl overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-xl md:grid md:grid-cols-[1.1fr_0.9fr] md:gap-10 md:p-10">
         <section className="mb-8 md:mb-0">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Patient Portal</p>
-          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900">Verify your identity to access appointments, labs, and messages.</h1>
+          <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-gold-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-gold-500" aria-hidden="true" />
+            Patient Portal
+          </p>
+          <h1 className="mt-4 font-display text-4xl font-semibold tracking-tight text-navy-700">Verify your identity to access appointments, labs, and messages.</h1>
           <p className="mt-5 max-w-xl text-base leading-7 text-slate-600">
-            Portal access now runs on a dedicated patient session. Once verified, every refill request, secure message, and triage submission is tied to your server-side portal identity.
+            Portal access runs on a dedicated patient session. Once verified, every refill request, secure message, and triage submission is tied to your server-side portal identity.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">Appointments</p>
-              <p className="mt-2 text-sm text-slate-700">Check upcoming visits and self check-in when available.</p>
+            <div className="rounded-2xl border border-navy-100 bg-navy-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-navy-700">Appointments</p>
+              <p className="mt-2 text-sm text-slate-600">Check upcoming visits and self check-in when available.</p>
             </div>
-            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Messaging</p>
-              <p className="mt-2 text-sm text-slate-700">Secure refill and care-team requests persist into the shared workflow.</p>
+            <div className="rounded-2xl border border-success-100 bg-success-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-success-700">Messaging</p>
+              <p className="mt-2 text-sm text-slate-600">Secure refill and care-team requests persist into the shared workflow.</p>
             </div>
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Triage</p>
-              <p className="mt-2 text-sm text-slate-700">Report symptoms with a severity score so the team can route urgent follow-up.</p>
+            <div className="rounded-2xl border border-gold-200 bg-gold-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gold-700">Triage</p>
+              <p className="mt-2 text-sm text-slate-600">Report symptoms with a severity score so the team can route urgent follow-up.</p>
             </div>
           </div>
         </section>
 
-        <section className="rounded-[1.75rem] border border-slate-200 bg-white p-8 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-          <h2 className="text-2xl font-semibold text-slate-900">Verify identity</h2>
+        <section className="rounded-3xl border border-slate-100 bg-ivory-100 p-8 shadow-mc-lg">
+          <h2 className="font-display text-2xl font-semibold text-navy-700">Verify identity</h2>
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             {[
               ['first_name', 'First name', 'text'],
@@ -97,20 +102,20 @@ function VerifyIdentity({ loading, error, onVerify }) {
                   type={type}
                   value={form[key]}
                   onChange={(event) => update(key, event.target.value)}
-                  className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                  className="w-full rounded-2xl border border-slate-200 bg-offWhite-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
                   required={key !== 'mrn'}
                 />
               </label>
             ))}
 
             {error ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+              <div className="rounded-2xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm font-medium text-danger-700">{error}</div>
             ) : null}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-base font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+              className="w-full rounded-2xl bg-navy-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
             >
               {loading ? 'Verifying...' : 'Continue to Portal'}
             </button>
@@ -127,31 +132,31 @@ function DashboardView({ appointments, medications, labs, patientName }) {
   const refillPending = medications.filter((medication) => medication.refill_status === 'physician_review');
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <div className="rounded-3xl border border-sky-100 bg-white p-6 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-wide text-sky-700">Welcome</p>
-        <h3 className="mt-2 text-2xl font-semibold text-slate-900">{patientName}</h3>
+    <div className="mc-reveal-stagger grid gap-4 lg:grid-cols-3">
+      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
+        <p className="text-sm font-semibold uppercase tracking-wide text-gold-700">Welcome</p>
+        <h3 className="mt-2 font-display text-2xl font-semibold text-navy-700">{patientName}</h3>
         {upcoming ? (
-          <div className="mt-5 rounded-2xl bg-sky-50 p-4">
-            <p className="text-sm font-semibold text-sky-800">Next appointment</p>
-            <p className="mt-2 text-lg font-semibold text-slate-900">{formatDate(upcoming.appointment_date)}</p>
+          <div className="mt-5 rounded-2xl border border-navy-100 bg-navy-50 p-4">
+            <p className="text-sm font-semibold text-navy-700">Next appointment</p>
+            <p className="mt-2 text-lg font-semibold text-navy-700">{formatDate(upcoming.appointment_date)}</p>
             <p className="text-sm text-slate-600">{formatTime(upcoming.appointment_time)} with {upcoming.provider_name}</p>
           </div>
         ) : (
           <p className="mt-5 text-sm text-slate-600">No upcoming appointments are scheduled.</p>
         )}
       </div>
-      <div className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">Medications</p>
-        <p className="mt-3 text-4xl font-semibold text-slate-900">{medications.length}</p>
+      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
+        <p className="text-sm font-semibold uppercase tracking-wide text-success-700">Medications</p>
+        <p className="mt-3 font-display text-4xl font-semibold text-navy-700">{medications.length}</p>
         <p className="mt-1 text-sm text-slate-600">Active medications on file</p>
-        <p className="mt-5 text-sm text-slate-700">{refillPending.length} refill requests currently under review.</p>
+        <p className="mt-5 text-sm text-slate-600">{refillPending.length} refill requests currently under review.</p>
       </div>
-      <div className="rounded-3xl border border-amber-100 bg-white p-6 shadow-sm">
-        <p className="text-sm font-semibold uppercase tracking-wide text-amber-700">Lab results</p>
-        <p className="mt-3 text-4xl font-semibold text-slate-900">{labs.length}</p>
+      <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
+        <p className="text-sm font-semibold uppercase tracking-wide text-gold-700">Lab results</p>
+        <p className="mt-3 font-display text-4xl font-semibold text-navy-700">{labs.length}</p>
         <p className="mt-1 text-sm text-slate-600">Recent results available</p>
-        <p className="mt-5 text-sm text-slate-700">{abnormalLabs.length} flagged results need clinician review.</p>
+        <p className="mt-5 text-sm text-slate-600">{abnormalLabs.length} flagged results need clinician review.</p>
       </div>
     </div>
   );
@@ -218,7 +223,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 transition hover:bg-sky-100"
+        className="rounded-2xl border border-navy-100 bg-navy-50 px-4 py-2 text-sm font-semibold text-navy-700 transition hover:bg-navy-100"
       >
         Request a new appointment
       </button>
@@ -226,9 +231,9 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
   }
 
   return (
-    <div className="rounded-3xl border border-sky-200 bg-sky-50/40 p-5">
+    <div className="rounded-3xl border border-navy-100 bg-navy-50/40 p-5">
       <div className="flex items-start justify-between gap-4">
-        <h3 className="text-lg font-semibold text-slate-900">Request a new appointment</h3>
+        <h3 className="font-display text-lg font-semibold text-navy-700">Request a new appointment</h3>
         <button
           onClick={() => { reset(); setOpen(false); }}
           className="text-xs font-semibold uppercase tracking-wide text-slate-500 hover:text-slate-700"
@@ -241,7 +246,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
         <select
           value={appointmentType}
           onChange={(e) => { setAppointmentType(e.target.value); setSlots([]); }}
-          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="rounded-xl border border-slate-200 bg-offWhite-100 px-3 py-2 text-sm text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-100"
         >
           {APPOINTMENT_TYPE_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -254,7 +259,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
           onChange={(e) => setReason(e.target.value)}
           placeholder="What would you like to discuss?"
           rows={2}
-          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+          className="rounded-xl border border-slate-200 bg-offWhite-100 px-3 py-2 text-sm text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-100"
         />
       </div>
 
@@ -262,7 +267,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
         <button
           onClick={handleFindSlots}
           disabled={findingSlots}
-          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+          className="rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
         >
           {findingSlots ? 'Finding slots...' : 'Find available slots'}
         </button>
@@ -279,7 +284,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
                 key={slot.slotId}
                 onClick={() => handleBookSlot(slot)}
                 disabled={submittingSlotId !== null}
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm font-medium text-slate-800 transition hover:border-sky-400 hover:bg-sky-50 disabled:opacity-50"
+                className="rounded-xl border border-slate-200 bg-offWhite-100 px-3 py-2 text-left text-sm font-medium text-navy-700 transition hover:border-gold-400 hover:bg-gold-50 disabled:opacity-50"
               >
                 {submittingSlotId === slot.slotId ? 'Submitting...' : slot.dateTimeFormatted}
                 <span className="block text-xs font-normal text-slate-500">{slot.duration} min</span>
@@ -298,18 +303,18 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
       <RequestAppointmentForm onSubmitted={onRequestSubmitted} setError={setError} />
 
       {appointments.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600">
+        <div className="rounded-3xl border border-dashed border-slate-300 bg-offWhite-100 p-8 text-sm text-slate-600">
           No upcoming appointments. Use the form above to request one.
         </div>
       ) : (
         <div className="space-y-4">
           {appointments.map((appointment) => (
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" key={appointment.id}>
+            <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={appointment.id}>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-xl font-semibold text-slate-900">{formatDate(appointment.appointment_date)}</h3>
+                  <h3 className="font-display text-xl font-semibold text-navy-700">{formatDate(appointment.appointment_date)}</h3>
                   <p className="mt-1 text-sm text-slate-600">{formatTime(appointment.appointment_time)} with {appointment.provider_name}</p>
-                  <p className="mt-2 text-sm text-slate-500 capitalize">{String(appointment.appointment_type || 'visit').replace(/_/g, ' ')}</p>
+                  <p className="mt-2 text-sm capitalize text-slate-500">{String(appointment.appointment_type || 'visit').replace(/_/g, ' ')}</p>
                 </div>
                 <div className="flex items-center gap-3">
                   <StatusPill status={appointment.status} />
@@ -317,7 +322,7 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
                     <button
                       onClick={() => checkInAppointment(appointment.id)}
                       disabled={activeCheckInId === appointment.id}
-                      className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:bg-emerald-300"
+                      className="rounded-xl bg-success-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-success-700 disabled:bg-success-300"
                     >
                       {activeCheckInId === appointment.id ? 'Checking in...' : 'Check in'}
                     </button>
@@ -334,16 +339,16 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
 
 function MedicationsView({ medications, requestRefill, activeMedicationId }) {
   if (!medications.length) {
-    return <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600">No active medications on file.</div>;
+    return <div className="rounded-3xl border border-dashed border-slate-300 bg-offWhite-100 p-8 text-sm text-slate-600">No active medications on file.</div>;
   }
 
   return (
     <div className="space-y-4">
       {medications.map((medication) => (
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" key={medication.id}>
+        <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={medication.id}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">{medication.medication_name}</h3>
+              <h3 className="font-display text-lg font-semibold text-navy-700">{medication.medication_name}</h3>
               <p className="mt-1 text-sm text-slate-600">
                 {[medication.dose, medication.route, medication.frequency].filter(Boolean).join(' • ')}
               </p>
@@ -354,7 +359,7 @@ function MedicationsView({ medications, requestRefill, activeMedicationId }) {
               <button
                 onClick={() => requestRefill(medication)}
                 disabled={activeMedicationId === medication.id}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+                className="rounded-xl bg-navy-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
               >
                 {activeMedicationId === medication.id ? 'Submitting...' : 'Request refill'}
               </button>
@@ -368,16 +373,16 @@ function MedicationsView({ medications, requestRefill, activeMedicationId }) {
 
 function LabsView({ labs }) {
   if (!labs.length) {
-    return <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600">No lab results are available yet.</div>;
+    return <div className="rounded-3xl border border-dashed border-slate-300 bg-offWhite-100 p-8 text-sm text-slate-600">No lab results are available yet.</div>;
   }
 
   return (
     <div className="space-y-4">
       {labs.map((lab) => (
-        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" key={lab.id}>
+        <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={lab.id}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">{lab.plain_name || lab.test_name}</h3>
+              <h3 className="font-display text-lg font-semibold text-navy-700">{lab.plain_name || lab.test_name}</h3>
               <p className="mt-1 text-sm text-slate-600">
                 {lab.result_value} {lab.units || ''} {lab.reference_range ? ` • Ref ${lab.reference_range}` : ''}
               </p>
@@ -396,10 +401,10 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
     <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
       <div className="space-y-4">
         {messages.length ? messages.map((message) => (
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" key={message.id}>
+          <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-5 shadow-mc" key={message.id}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">{message.subject || 'Message'}</h3>
+                <h3 className="font-display text-lg font-semibold text-navy-700">{message.subject || 'Message'}</h3>
                 <p className="mt-1 text-xs uppercase tracking-wide text-slate-400">{message.message_type || 'general'}</p>
               </div>
               <StatusPill status={message.status} />
@@ -407,19 +412,19 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
             <p className="mt-3 text-sm leading-6 text-slate-600">{message.plain_language_content || message.content}</p>
           </div>
         )) : (
-          <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-sm text-slate-600">No messages yet.</div>
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-offWhite-100 p-8 text-sm text-slate-600">No messages yet.</div>
         )}
       </div>
 
-      <form className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" onSubmit={sendMessage}>
-        <h3 className="text-xl font-semibold text-slate-900">Send a secure message</h3>
+      <form className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc" onSubmit={sendMessage}>
+        <h3 className="font-display text-xl font-semibold text-navy-700">Send a secure message</h3>
         <div className="mt-4 space-y-4">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-700">Subject</span>
             <input
               value={messageForm.subject}
               onChange={(event) => setMessageForm((current) => ({ ...current, subject: event.target.value }))}
-              className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+              className="w-full rounded-2xl border border-slate-200 bg-ivory-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
             />
           </label>
           <label className="block">
@@ -428,14 +433,14 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
               value={messageForm.message}
               onChange={(event) => setMessageForm((current) => ({ ...current, message: event.target.value }))}
               rows={6}
-              className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+              className="w-full rounded-2xl border border-slate-200 bg-ivory-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
               required
             />
           </label>
           <button
             type="submit"
             disabled={sendingMessage}
-            className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-base font-semibold text-white transition hover:bg-slate-800 disabled:bg-slate-400"
+            className="w-full rounded-2xl bg-navy-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-navy-700 disabled:bg-slate-400"
           >
             {sendingMessage ? 'Sending...' : 'Send message'}
           </button>
@@ -447,10 +452,10 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
 
 function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
   return (
-    <form className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" onSubmit={onSubmit}>
-      <h3 className="text-2xl font-semibold text-slate-900">Report symptoms</h3>
+    <form className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc" onSubmit={onSubmit}>
+      <h3 className="font-display text-2xl font-semibold text-navy-700">Report symptoms</h3>
       <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-        This feature is the first Track C slice. Symptom reports persist into the care-team workflow and are routed based on severity.
+        Symptom reports persist into the care-team workflow and are routed based on severity.
       </p>
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <label className="block lg:col-span-2">
@@ -459,7 +464,7 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
             value={form.symptoms}
             onChange={(event) => setForm((current) => ({ ...current, symptoms: event.target.value }))}
             rows={4}
-            className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+            className="w-full rounded-2xl border border-slate-200 bg-ivory-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
             required
           />
         </label>
@@ -471,7 +476,7 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
             max="10"
             value={form.severity}
             onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value }))}
-            className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+            className="w-full rounded-2xl border border-slate-200 bg-ivory-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
             required
           />
         </label>
@@ -480,7 +485,7 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
           <input
             value={form.onset}
             onChange={(event) => setForm((current) => ({ ...current, onset: event.target.value }))}
-            className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+            className="w-full rounded-2xl border border-slate-200 bg-ivory-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
             placeholder="Example: started this morning"
           />
         </label>
@@ -490,14 +495,14 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
             value={form.notes}
             onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
             rows={4}
-            className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-base outline-none transition focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+            className="w-full rounded-2xl border border-slate-200 bg-ivory-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
           />
         </label>
       </div>
       <button
         type="submit"
         disabled={submitting}
-        className="mt-6 rounded-2xl bg-rose-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-rose-700 disabled:bg-rose-300"
+        className="mt-6 rounded-2xl bg-danger-600 px-5 py-3 text-base font-semibold text-white transition hover:bg-danger-700 disabled:bg-danger-300"
       >
         {submitting ? 'Submitting...' : 'Send symptom report'}
       </button>
@@ -507,12 +512,12 @@ function SymptomTriageView({ form, setForm, onSubmit, submitting }) {
 
 function VisitPrepView({ checklist }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h3 className="text-2xl font-semibold text-slate-900">Visit checklist</h3>
+    <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
+      <h3 className="font-display text-2xl font-semibold text-navy-700">Visit checklist</h3>
       <ul className="mt-5 space-y-3">
         {checklist.map((item) => (
           <li className="flex items-start gap-3 text-sm leading-6 text-slate-700" key={item}>
-            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-sky-500" />
+            <span className="mt-1 h-2.5 w-2.5 rounded-full bg-gold-500" />
             <span>{item}</span>
           </li>
         ))}
@@ -718,17 +723,20 @@ export default function PatientPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,_#eff6ff_0%,_#f8fafc_18%,_#f8fafc_100%)]">
-      <header className="border-b border-sky-100 bg-white/90 backdrop-blur">
+    <div className="min-h-screen bg-ivory-200">
+      <header className="border-b border-slate-100 bg-offWhite-100/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:px-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-700">Patient Portal</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">{patientName}</h1>
+            <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-gold-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-gold-500" aria-hidden="true" />
+              Patient Portal
+            </p>
+            <h1 className="mt-2 font-display text-3xl font-semibold text-navy-700">{patientName}</h1>
             <p className="mt-2 text-sm text-slate-600">Appointments, labs, refill requests, and secure care-team communication.</p>
           </div>
           <button
             onClick={handleLogout}
-            className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            className="rounded-2xl border border-slate-200 bg-offWhite-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-ivory-200"
           >
             End portal session
           </button>
@@ -742,7 +750,7 @@ export default function PatientPortal() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeTab === tab.key ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-100'
+                activeTab === tab.key ? 'bg-navy-600 text-white shadow-mc' : 'bg-offWhite-100 text-slate-600 hover:bg-ivory-300'
               }`}
             >
               {tab.label}
@@ -751,11 +759,11 @@ export default function PatientPortal() {
         </div>
 
         {error ? (
-          <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+          <div className="mb-6 rounded-2xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm font-medium text-danger-700">{error}</div>
         ) : null}
 
         {loading ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-8 text-sm text-slate-600">Loading portal data...</div>
+          <div className="rounded-3xl border border-slate-100 bg-offWhite-100 p-8 text-sm text-slate-600">Loading portal data...</div>
         ) : null}
 
         {!loading && activeTab === 'dashboard' ? (

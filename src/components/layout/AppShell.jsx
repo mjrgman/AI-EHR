@@ -3,10 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../api/client';
 
+// Measured Canon: the top nav is navy authority for every role. The role
+// identity now reads through the status-dot accent only (gold/slate/success),
+// not a different nav background — keeping the rebrand cohesive.
 const ROLE_COLORS = {
-  reception: { bg: 'bg-blue-700', badge: 'bg-blue-400' },
-  ma: { bg: 'bg-purple-700', badge: 'bg-purple-400' },
-  provider: { bg: 'bg-emerald-700', badge: 'bg-emerald-400' },
+  reception: { bg: 'bg-navy-600', badge: 'bg-gold-400' },
+  ma: { bg: 'bg-navy-600', badge: 'bg-slate-300' },
+  provider: { bg: 'bg-navy-600', badge: 'bg-success-400' },
 };
 
 const NAV_ITEMS = [
@@ -68,8 +71,8 @@ export default function AppShell({ children }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className={`${colors.bg} sticky top-0 z-50 text-white shadow-lg`}>
+    <div className="min-h-screen bg-ivory-200 flex flex-col">
+      <header className={`${colors.bg} sticky top-0 z-50 text-white shadow-mc-lg border-b border-navy-800`}>
         <div className="flex h-14 items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <button
@@ -82,38 +85,44 @@ export default function AppShell({ children }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <button type="button" className="flex items-center gap-2" onClick={() => navigate('/')}>
-              <span className="rounded-full bg-white/10 px-2 py-1 text-xs font-semibold tracking-[0.2em]">AI</span>
+            <button type="button" className="flex items-center gap-2.5" onClick={() => navigate('/')}>
+              <span className="flex h-7 w-7 items-center justify-center rounded-full border border-gold-400/60 bg-gold-500/15 text-[11px] font-bold tracking-[0.12em] text-gold-300">AI</span>
               <div className="text-left">
-                <h1 className="text-base font-bold leading-tight tracking-tight">MJR-EHR</h1>
-                <p className="hidden text-[10px] leading-tight opacity-75 sm:block">Intelligent Clinical Agent</p>
+                <h1 className="font-display text-base font-semibold leading-tight tracking-tight">MJR-EHR</h1>
+                <p className="hidden text-[10px] leading-tight text-white/70 sm:block">Intelligent Clinical Agent</p>
               </div>
             </button>
             <nav className="ml-3 hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.path}
-                  type="button"
-                  onClick={() => navigate(item.path)}
-                  className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
-                    isActiveNav(item.path)
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-white/85 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+              {NAV_ITEMS.map((item) => {
+                const active = isActiveNav(item.path);
+                return (
+                  <button
+                    key={item.path}
+                    type="button"
+                    onClick={() => navigate(item.path)}
+                    className={`relative rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
+                      active
+                        ? 'text-white'
+                        : 'text-white/75 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {item.label}
+                    {active && (
+                      <span className="pointer-events-none absolute inset-x-2.5 -bottom-0.5 h-0.5 rounded-full bg-gold-400" />
+                    )}
+                  </button>
+                );
+              })}
             </nav>
           </div>
 
           <div className="hidden items-center gap-3 text-sm md:flex">
             {queueError ? (
-              <div className="rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-medium text-red-100">
+              <div className="rounded-lg border border-danger-300/40 bg-danger-500/25 px-3 py-1.5 text-xs font-medium text-danger-50">
                 Queue unavailable
               </div>
             ) : (
-              <div className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium">
+              <div className="rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90">
                 {totalActive > 0 ? `${totalActive} active encounters` : 'No active encounters'}
               </div>
             )}
@@ -143,20 +152,20 @@ export default function AppShell({ children }) {
               {menuOpen ? (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 top-full z-50 mt-1 min-w-[220px] rounded-xl border border-gray-100 bg-white py-2 text-slate-900 shadow-xl">
-                    <div className="border-b border-gray-100 px-4 pb-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-400">Session</p>
+                  <div className="absolute right-0 top-full z-50 mt-1 min-w-[220px] rounded-xl border border-slate-100 bg-offWhite-100 py-2 text-navy-700 shadow-mc-xl">
+                    <div className="border-b border-slate-100 px-4 pb-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Session</p>
                     </div>
                     <div className="px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-900">{providerName}</p>
+                      <p className="text-sm font-semibold text-navy-700">{providerName}</p>
                       <p className="text-xs text-slate-500">{user?.username}</p>
                     </div>
-                    <div className="border-t border-gray-100 px-4 pt-3">
+                    <div className="border-t border-slate-100 px-4 pt-3">
                       <button
                         type="button"
                         onClick={handleLogout}
                         disabled={loggingOut}
-                        className="w-full rounded-lg border border-red-100 px-3 py-2 text-left text-sm font-medium text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+                        className="w-full rounded-lg border border-danger-100 px-3 py-2 text-left text-sm font-medium text-danger-600 transition-colors hover:bg-danger-50 disabled:opacity-50"
                       >
                         {loggingOut ? 'Signing out...' : 'Sign out'}
                       </button>
@@ -172,15 +181,16 @@ export default function AppShell({ children }) {
       <div
         role="status"
         aria-live="off"
-        className="sticky top-14 z-40 border-b border-amber-200 bg-amber-50 px-4 py-1.5 text-center text-xs font-semibold tracking-wide text-amber-900 shadow-sm"
+        className="sticky top-14 z-40 flex items-center justify-center gap-2 border-b border-gold-200 bg-gold-50 px-4 py-1.5 text-center text-xs font-semibold tracking-wide text-gold-800 shadow-sm"
       >
+        <span className="inline-block h-1.5 w-1.5 rounded-full bg-gold-500" aria-hidden="true" />
         Synthetic EHR Demo · No PHI · Not for clinical use
       </div>
 
       {sidebarOpen ? (
         <>
-          <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setSidebarOpen(false)} />
-          <aside className="fixed bottom-0 left-0 top-14 z-50 w-72 overflow-y-auto border-r border-gray-100 bg-white shadow-xl lg:hidden">
+          <div className="fixed inset-0 z-40 bg-navy-900/30 lg:hidden" onClick={() => setSidebarOpen(false)} />
+          <aside className="fixed bottom-0 left-0 top-14 z-50 w-72 overflow-y-auto border-r border-slate-100 bg-offWhite-100 shadow-mc-xl lg:hidden">
             <nav className="p-3">
               {NAV_ITEMS.map((item) => (
                 <button
@@ -191,7 +201,9 @@ export default function AppShell({ children }) {
                     setSidebarOpen(false);
                   }}
                   className={`w-full rounded-xl px-4 py-3 text-left text-sm font-medium transition-colors ${
-                    isActiveNav(item.path) ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'
+                    isActiveNav(item.path)
+                      ? 'border-l-2 border-gold-400 bg-navy-50 text-navy-700'
+                      : 'text-slate-600 hover:bg-ivory-200'
                   }`}
                 >
                   {item.label}
@@ -203,6 +215,17 @@ export default function AppShell({ children }) {
       ) : null}
 
       <main className="flex-1 overflow-auto">{children}</main>
+
+      <footer className="border-t border-slate-100 bg-offWhite-100/70 px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3 text-[11px] text-slate-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-success-500" aria-hidden="true" />
+            System Online
+          </span>
+          <span className="hidden sm:inline">{roleConfig.label}</span>
+          <span className="font-medium tracking-wide">MJR-EHR · v1.0</span>
+        </div>
+      </footer>
     </div>
   );
 }

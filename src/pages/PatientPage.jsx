@@ -174,8 +174,8 @@ export default function PatientPage() {
 
   // --- Loading / Error ---
   if (loading) return <LoadingSpinner message="Loading patient..." />;
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
-  if (!patient) return <div className="p-4 text-gray-500">Patient not found</div>;
+  if (error) return <div className="p-4 text-danger-600">Error: {error}</div>;
+  if (!patient) return <div className="p-4 text-slate-500">Patient not found</div>;
 
   const age = calculateAge(patient.dob);
   const latestVitals = patient.vitals && patient.vitals.length > 0 ? patient.vitals[0] : null;
@@ -184,9 +184,9 @@ export default function PatientPage() {
     <div>
       <PatientBanner patient={patient} />
 
-      <div className="max-w-6xl mx-auto p-4 space-y-4">
+      <div className="mc-page mc-reveal-stagger space-y-4">
         {/* Top bar */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <TouchButton variant="secondary" size="sm" onClick={() => navigate('/')}>
             &#x2190; Back
           </TouchButton>
@@ -202,27 +202,27 @@ export default function PatientPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
               <div>
                 <span className="label-clinical">Full Name</span>
-                <p className="font-semibold text-gray-900">{patient.last_name}, {patient.first_name}</p>
+                <p className="font-semibold text-navy-700">{patient.last_name}, {patient.first_name}</p>
               </div>
               <div>
                 <span className="label-clinical">Date of Birth</span>
-                <p className="font-semibold text-gray-900">{formatDate(patient.dob)} (Age {age})</p>
+                <p className="font-semibold text-navy-700">{formatDate(patient.dob)} (Age {age})</p>
               </div>
               <div>
                 <span className="label-clinical">Sex</span>
-                <p className="font-semibold text-gray-900">{patient.sex || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.sex || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">MRN</span>
-                <p className="font-semibold text-gray-900">{patient.mrn || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.mrn || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">Phone</span>
-                <p className="font-semibold text-gray-900">{patient.phone || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.phone || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">Insurance</span>
-                <p className="font-semibold text-gray-900">{patient.insurance || patient.insurance_provider || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.insurance || patient.insurance_provider || '--'}</p>
               </div>
             </div>
           </CardBody>
@@ -286,7 +286,7 @@ export default function PatientPage() {
               {latestVitals ? (
                 <VitalsDisplay vitals={latestVitals} />
               ) : (
-                <p className="text-sm text-gray-400 italic">No vitals recorded</p>
+                <p className="text-sm italic text-slate-400">No vitals recorded</p>
               )}
             </CardBody>
           </Card>
@@ -310,29 +310,29 @@ export default function PatientPage() {
                   <LoadingSpinner message="Loading encounters..." />
                 </div>
               ) : encounters.length === 0 ? (
-                <p className="p-5 text-sm text-gray-400 italic">No encounters on record.</p>
+                <p className="p-5 text-sm italic text-slate-400">No encounters on record.</p>
               ) : (
-                <div className="divide-y divide-gray-50">
+                <div className="divide-y divide-slate-100">
                   {encounters.map((enc) => (
                     <div
                       key={enc.id}
-                      className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                      className="flex cursor-pointer items-center justify-between px-5 py-3 transition-colors hover:bg-ivory-200"
                       onClick={() => goToEncounter(enc)}
                     >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="text-sm">
-                          <p className="font-medium text-gray-900">
+                          <p className="font-medium text-navy-700">
                             {enc.encounter_type || 'Office Visit'}
                           </p>
                           {enc.chief_complaint && (
-                            <p className="text-gray-500 text-xs truncate max-w-xs">
+                            <p className="max-w-xs truncate text-xs text-slate-500">
                               CC: {enc.chief_complaint}
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <span className="text-xs text-gray-400">
+                      <div className="flex flex-shrink-0 items-center gap-3">
+                        <span className="text-xs text-slate-400">
                           {formatDate(enc.created_at || enc.date)}
                         </span>
                         <Badge
@@ -346,7 +346,7 @@ export default function PatientPage() {
                         >
                           {enc.workflow_state || enc.status || 'unknown'}
                         </Badge>
-                        <span className="text-gray-300 text-sm">&#x203A;</span>
+                        <span className="text-sm text-slate-300">&#x203A;</span>
                       </div>
                     </div>
                   ))}
@@ -364,7 +364,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Problem Name *</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Hypertension"
               value={problemForm.problem_name}
               onChange={(e) => setProblemForm({ ...problemForm, problem_name: e.target.value })}
@@ -375,7 +375,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">ICD-10 Code</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. I10"
               value={problemForm.icd10_code}
               onChange={(e) => setProblemForm({ ...problemForm, icd10_code: e.target.value })}
@@ -384,7 +384,7 @@ export default function PatientPage() {
           <div>
             <label className="label-clinical block mb-1">Status</label>
             <select
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               value={problemForm.status}
               onChange={(e) => setProblemForm({ ...problemForm, status: e.target.value })}
             >
@@ -411,7 +411,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Medication Name *</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Lisinopril"
               value={medForm.medication_name}
               onChange={(e) => setMedForm({ ...medForm, medication_name: e.target.value })}
@@ -423,7 +423,7 @@ export default function PatientPage() {
               <label className="label-clinical block mb-1">Dose</label>
               <input
                 type="text"
-                className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="input-clinical text-sm"
                 placeholder="e.g. 10mg"
                 value={medForm.dose}
                 onChange={(e) => setMedForm({ ...medForm, dose: e.target.value })}
@@ -432,7 +432,7 @@ export default function PatientPage() {
             <div>
               <label className="label-clinical block mb-1">Route</label>
               <select
-                className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="input-clinical text-sm"
                 value={medForm.route}
                 onChange={(e) => setMedForm({ ...medForm, route: e.target.value })}
               >
@@ -451,7 +451,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Frequency</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Once daily"
               value={medForm.frequency}
               onChange={(e) => setMedForm({ ...medForm, frequency: e.target.value })}
@@ -460,7 +460,7 @@ export default function PatientPage() {
           <div>
             <label className="label-clinical block mb-1">Status</label>
             <select
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               value={medForm.status}
               onChange={(e) => setMedForm({ ...medForm, status: e.target.value })}
             >
@@ -487,7 +487,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Allergen *</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Penicillin"
               value={allergyForm.allergen}
               onChange={(e) => setAllergyForm({ ...allergyForm, allergen: e.target.value })}
@@ -498,7 +498,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Reaction</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Rash, Anaphylaxis"
               value={allergyForm.reaction}
               onChange={(e) => setAllergyForm({ ...allergyForm, reaction: e.target.value })}
@@ -507,7 +507,7 @@ export default function PatientPage() {
           <div>
             <label className="label-clinical block mb-1">Severity</label>
             <select
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               value={allergyForm.severity}
               onChange={(e) => setAllergyForm({ ...allergyForm, severity: e.target.value })}
             >

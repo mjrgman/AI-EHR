@@ -10,17 +10,17 @@ const ICONS = {
 };
 
 const COLORS = {
-  success: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-  error: 'bg-red-50 border-red-200 text-red-800',
-  warning: 'bg-amber-50 border-amber-200 text-amber-800',
-  info: 'bg-blue-50 border-blue-200 text-blue-800',
+  success: 'bg-success-50 border-success-200 text-success-700',
+  error: 'bg-danger-50 border-danger-200 text-danger-700',
+  warning: 'bg-gold-50 border-gold-200 text-gold-700',
+  info: 'bg-navy-50 border-navy-100 text-navy-700',
 };
 
 const ICON_COLORS = {
-  success: 'bg-emerald-100 text-emerald-600',
-  error: 'bg-red-100 text-red-600',
-  warning: 'bg-amber-100 text-amber-600',
-  info: 'bg-blue-100 text-blue-600',
+  success: 'bg-success-100 text-success-600',
+  error: 'bg-danger-100 text-danger-600',
+  warning: 'bg-gold-100 text-gold-600',
+  info: 'bg-navy-100 text-navy-600',
 };
 
 function ToastItem({ toast, onRemove }) {
@@ -35,7 +35,7 @@ function ToastItem({ toast, onRemove }) {
   }, [toast, onRemove]);
 
   return (
-    <div className={`${exiting ? 'toast-exit' : 'toast-enter'} flex items-start gap-3 px-4 py-3 rounded-xl border shadow-lg ${COLORS[toast.type]} max-w-sm w-full`}>
+    <div className={`${exiting ? 'toast-exit' : 'toast-enter'} flex items-start gap-3 px-4 py-3 rounded-xl border shadow-mc-lg ${COLORS[toast.type]} max-w-sm w-full`}>
       <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${ICON_COLORS[toast.type]}`}>
         {ICONS[toast.type]}
       </span>

@@ -17,11 +17,15 @@ import { useAuth } from '../context/AuthContext';
 // `waiting`/`with_provider`) silently reads 0. The unit test in
 // test/unit/dashboard-queue-config.test.js asserts every key below is a member
 // of the canonical STATE_CONFIG key set (single source of truth).
+//
+// `accent`/`dot` are presentation-only Measured Canon brand classes layered on
+// the .mc-stat-card surface. `key` + `label` are unchanged (the test parses
+// `key:` and asserts the four canonical states + four-card count).
 const QUEUE_CONFIG = [
-  { key: 'checked-in', label: 'Waiting', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', icon: '\u23F3' },
-  { key: 'roomed', label: 'Roomed', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', icon: '\uD83D\uDEAA' },
-  { key: 'provider-examining', label: 'With Provider', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', icon: '\uD83D\uDC68\u200D\u2695\uFE0F' },
-  { key: 'signed', label: 'Signed', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', icon: '\u2705' },
+  { key: 'checked-in', label: 'Waiting', accent: 'text-gold-600', dot: 'bg-gold-500', icon: '⏳' },
+  { key: 'roomed', label: 'Roomed', accent: 'text-slate-600', dot: 'bg-slate-400', icon: '🚪' },
+  { key: 'provider-examining', label: 'With Provider', accent: 'text-navy-600', dot: 'bg-navy-500', icon: '👨‍⚕️' },
+  { key: 'signed', label: 'Signed', accent: 'text-success-600', dot: 'bg-success-500', icon: '✅' },
 ];
 
 const NEW_PATIENT_FIELDS = [
@@ -176,58 +180,54 @@ export default function DashboardPage() {
   const today = new Date();
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-10">
-      {/* ── Summary Header ── */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4 sm:px-6 animate-fade-in">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {getGreeting()}, {providerName || 'Doctor'}
-              </h1>
-              <p className="text-sm text-gray-500 mt-0.5">{formatDate(today)}</p>
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <span className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-medium">
-                <span className="text-base">{'\uD83D\uDC65'}</span>
-                {dashboard?.patient_count ?? patients.length} Patients
-              </span>
-              <span className="flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1.5 rounded-full font-medium">
-                <span className="text-base">{'\uD83D\uDCCB'}</span>
-                {dashboard?.active_encounters ?? 0} Active Encounters
-              </span>
-            </div>
+    <div className="pb-24">
+      <div className="mc-page mc-reveal-stagger space-y-6">
+        {/* Branded greeting header */}
+        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mc-section-label">{formatDate(today)}</p>
+            <h1 className="mc-page-title">
+              {getGreeting()}, {providerName || 'Doctor'}
+            </h1>
           </div>
-        </div>
-      </div>
+          <div className="flex flex-wrap items-center gap-2.5 text-sm">
+            <span className="inline-flex items-center gap-2 rounded-full border border-navy-100 bg-navy-50 px-3.5 py-1.5 font-medium text-navy-700">
+              <span className="text-base" aria-hidden="true">{'👥'}</span>
+              {dashboard?.patient_count ?? patients.length} Patients
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-success-100 bg-success-50 px-3.5 py-1.5 font-medium text-success-700">
+              <span className="text-base" aria-hidden="true">{'📋'}</span>
+              {dashboard?.active_encounters ?? 0} Active Encounters
+            </span>
+          </div>
+        </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* ── Queue Count Summary Cards ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-slide-up">
+        {/* Queue count summary cards */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {QUEUE_CONFIG.map((q) => (
-            <div
-              key={q.key}
-              className={`${q.bg} ${q.border} border rounded-xl p-4 text-center transition-shadow hover:shadow-md`}
-            >
-              <div className="text-2xl mb-1">{q.icon}</div>
-              <div className={`text-2xl font-bold ${q.color}`}>
+            <div key={q.key} className="mc-stat-card mc-card-hover">
+              <div className="flex items-center justify-between">
+                <span className="text-xl leading-none" aria-hidden="true">{q.icon}</span>
+                <span className={`h-2 w-2 rounded-full ${q.dot}`} aria-hidden="true" />
+              </div>
+              <div className={`mt-1 font-display text-3xl font-semibold tabular-nums ${q.accent}`}>
                 {queueCounts[q.key] ?? 0}
               </div>
-              <div className={`text-xs font-medium ${q.color} mt-0.5`}>
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                 {q.label}
               </div>
             </div>
           ))}
         </div>
 
-        {/* ── Main Grid: 1 col mobile, 2 cols desktop ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column -- Patient List */}
-          <div className="animate-slide-up">
+        {/* Main grid: 1 col mobile, 2 cols desktop */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Left column -- Patient list */}
+          <div>
             <Card>
               <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <h2 className="section-header m-0">Patients</h2>
+                  <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Patients</h2>
                   <TouchButton
                     type="button"
                     variant="primary"
@@ -250,13 +250,13 @@ export default function DashboardPage() {
               </CardHeader>
               <CardBody>
                 {filteredPatients.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">
+                  <p className="text-slate-500 text-center py-8">
                     {searchQuery
                       ? 'No patients match your search.'
                       : 'No patients found.'}
                   </p>
                 ) : (
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-slate-100">
                     {filteredPatients.map((patient) => {
                       const fullName = `${patient.first_name} ${patient.last_name}`;
                       const initials = getInitials(patient.first_name, patient.last_name);
@@ -265,13 +265,13 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={patient.id}
-                          className="flex items-center gap-3 py-3 px-1 hover:bg-gray-50 rounded-lg transition-colors group"
+                          className="flex items-center gap-3 py-3 px-1 hover:bg-ivory-200 rounded-lg transition-colors group"
                         >
                           {/* Avatar */}
                           <button
                             type="button"
                             onClick={() => navigate(`/patient/${patient.id}`)}
-                            className={`${bgColor} w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-blue-400 transition-shadow border-0`}
+                            className={`${bgColor} w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-navy-400 transition-shadow border-0`}
                             title={`View ${fullName}`}
                           >
                             {initials}
@@ -283,10 +283,10 @@ export default function DashboardPage() {
                             onClick={() => navigate(`/patient/${patient.id}`)}
                             className="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-0 p-0"
                           >
-                            <div className="font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                            <div className="font-medium text-navy-700 truncate group-hover:text-navy-600 transition-colors">
                               {fullName}
                             </div>
-                            <div className="text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                            <div className="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                               {patient.mrn && <span>MRN: {patient.mrn}</span>}
                               {patient.dob && <span>DOB: {patient.dob}</span>}
                               {patient.sex && <span>{patient.sex}</span>}
@@ -315,11 +315,11 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* Right Column -- Active Encounters */}
-          <div className="animate-slide-up">
+          {/* Right column -- Active encounters */}
+          <div>
             <Card>
               <CardHeader>
-                <h2 className="section-header m-0">Active Encounters</h2>
+                <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Active Encounters</h2>
               </CardHeader>
               <CardBody>
                 <QueueDashboard />
@@ -329,23 +329,23 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── System Status Bar ── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-gray-300 text-xs px-4 py-2 flex items-center justify-between z-30">
+      {/* System status bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between border-t border-navy-800 bg-navy-700 px-4 py-2 text-xs text-white/80">
         <div className="flex items-center gap-3">
           <Badge variant="success" dot>System Online</Badge>
-          <span className="text-gray-500">|</span>
+          <span className="text-white/30">|</span>
           <span>Role: {currentRole || 'Provider'}</span>
-          <span className="text-gray-500">|</span>
+          <span className="text-white/30">|</span>
           <span>CDS Engine: Active</span>
         </div>
         <div className="flex items-center gap-3">
-          <span>{formatDate(today)}</span>
-          <span className="text-gray-500">|</span>
-          <span>MJR EHR v1.0</span>
+          <span className="hidden sm:inline">{formatDate(today)}</span>
+          <span className="hidden text-white/30 sm:inline">|</span>
+          <span className="font-medium tracking-wide text-gold-300">MJR-EHR v1.0</span>
         </div>
       </div>
 
-      {/* ── New Patient Modal ── */}
+      {/* New patient modal */}
       <Modal
         isOpen={showNewPatient}
         onClose={() => {
@@ -362,7 +362,7 @@ export default function DashboardPage() {
                 <label className="label-clinical">
                   {field.label}
                   {field.required && (
-                    <span className="text-red-500 ml-0.5">*</span>
+                    <span className="text-danger-500 ml-0.5">*</span>
                   )}
                 </label>
 
@@ -398,7 +398,7 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <TouchButton
               variant="ghost"
               type="button"

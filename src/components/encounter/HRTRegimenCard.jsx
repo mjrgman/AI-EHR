@@ -38,13 +38,13 @@ export default function HRTRegimenCard({ regimen }) {
     : 'info';
 
   return (
-    <div className="border border-gray-200 rounded-xl p-3 bg-white">
+    <div className={`rounded-xl p-3 shadow-mc ${overdue ? 'border border-danger-200 bg-danger-50/40' : 'border border-slate-200 bg-offWhite-100'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="font-semibold text-sm text-gray-900 truncate">
+          <div className="font-semibold text-sm text-navy-700 truncate">
             {regimen.medication_name || 'Unknown medication'}
           </div>
-          <div className="text-xs text-gray-500 mt-0.5">
+          <div className="text-xs text-slate-500 mt-0.5">
             {regimen.therapy_type && <span>{regimen.therapy_type} &middot; </span>}
             {regimen.dose || '?'} {regimen.route || ''}
             {regimen.frequency && <span> &middot; {regimen.frequency}</span>}
@@ -57,14 +57,14 @@ export default function HRTRegimenCard({ regimen }) {
 
       <div className="grid grid-cols-2 gap-2 mt-3 text-xs">
         <div>
-          <div className="text-gray-400 uppercase tracking-wide">Last adjusted</div>
-          <div className="text-gray-700 font-medium">
+          <div className="text-slate-400 uppercase tracking-wide">Last adjusted</div>
+          <div className="text-slate-700 font-medium">
             {formatDate(regimen.last_adjusted_at)}
           </div>
         </div>
         <div>
-          <div className="text-gray-400 uppercase tracking-wide">Next labs due</div>
-          <div className={`font-medium ${overdue ? 'text-red-600' : 'text-gray-700'}`}>
+          <div className="text-slate-400 uppercase tracking-wide">Next labs due</div>
+          <div className={`font-medium ${overdue ? 'text-danger-600 font-semibold' : 'text-slate-700'}`}>
             {formatDate(regimen.next_lab_due_at)}
             {overdue && <span className="ml-1" aria-label="overdue">!</span>}
           </div>

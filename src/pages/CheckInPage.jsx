@@ -132,8 +132,8 @@ export default function CheckInPage() {
 
   if (!encounter) {
     return (
-      <div className="max-w-3xl mx-auto p-6 text-center animate-fade-in">
-        <p className="text-gray-500 text-lg">Encounter not found.</p>
+      <div className="mc-page max-w-3xl text-center mc-reveal">
+        <p className="text-slate-500 text-lg">Encounter not found.</p>
         <TouchButton
           variant="secondary"
           className="mt-4"
@@ -148,13 +148,13 @@ export default function CheckInPage() {
   const isLoading = patientLoading;
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-8">
+    <div className="min-h-screen pb-8">
       {/* Patient Banner */}
       {patient && <PatientBanner patient={patient} />}
 
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+      <div className="mc-page max-w-3xl mc-reveal-stagger space-y-5">
         {/* Navigation + Workflow */}
-        <div className="flex items-center justify-between animate-fade-in">
+        <div className="flex items-center justify-between">
           <TouchButton
             variant="ghost"
             size="sm"
@@ -170,122 +170,120 @@ export default function CheckInPage() {
         </div>
 
         {/* Arrival Timestamp */}
-        <div className="flex items-center gap-2 text-sm text-gray-600 animate-fade-in">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
           <Badge variant="info">Arrived</Badge>
-          <span className="font-medium">{formatTimestamp(arrivalTime)}</span>
+          <span className="font-medium tabular-nums">{formatTimestamp(arrivalTime)}</span>
         </div>
 
-        {/* Allergy Alerts */}
+        {/* Allergy Alerts — prominent danger treatment */}
         {!isLoading && (
-          <div className="animate-slide-up">
+          hasAllergies ? (
+            <div className="rounded-2xl border-2 border-danger-300 bg-danger-50 shadow-mc overflow-hidden">
+              <div className="flex items-center gap-2 bg-danger-500 px-5 py-2.5">
+                <span className="text-white text-base leading-none" aria-hidden="true">&#x26A0;</span>
+                <h3 className="font-display text-sm font-bold uppercase tracking-[0.12em] text-white m-0">
+                  Allergy Alerts
+                </h3>
+                <Badge variant="urgent" className="ml-auto bg-white text-danger-700 border-white">
+                  {allergies.length} {allergies.length === 1 ? 'Allergy' : 'Allergies'}
+                </Badge>
+              </div>
+              <div className="p-4">
+                <AllergyBadges allergies={allergies} />
+              </div>
+            </div>
+          ) : (
             <Card>
               <CardHeader>
-                <div className="flex items-center gap-2">
-                  <h3 className="section-header m-0">Allergy Alerts</h3>
-                  {hasAllergies && (
-                    <Badge variant="urgent">
-                      {allergies.length} {allergies.length === 1 ? 'Allergy' : 'Allergies'}
-                    </Badge>
-                  )}
-                </div>
+                <h3 className="section-header m-0">Allergy Alerts</h3>
               </CardHeader>
               <CardBody>
-                {hasAllergies ? (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <AllergyBadges allergies={allergies} />
-                  </div>
-                ) : (
-                  <p className="text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm font-medium">
-                    No known allergies (NKA)
-                  </p>
-                )}
+                <p className="text-success-700 bg-success-50 border border-success-100 rounded-lg px-3 py-2 text-sm font-medium">
+                  No known allergies (NKA)
+                </p>
               </CardBody>
             </Card>
-          </div>
+          )
         )}
 
         {/* Demographics Confirmation */}
         {patient && (
-          <div className="animate-slide-up">
-            <Card>
-              <CardHeader>
-                <h3 className="section-header m-0">Demographics Confirmation</h3>
-              </CardHeader>
-              <CardBody>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                  <div>
-                    <span className="label-clinical">Name</span>
-                    <p className="text-gray-900 font-medium">
-                      {patient.first_name} {patient.last_name}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="label-clinical">Date of Birth</span>
-                    <p className="text-gray-900 font-medium">
-                      {patient.dob || '--'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="label-clinical">Sex</span>
-                    <p className="text-gray-900 font-medium">
-                      {patient.sex || '--'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="label-clinical">Phone</span>
-                    <p className="text-gray-900 font-medium">
-                      {patient.phone || '--'}
-                    </p>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <span className="label-clinical">Insurance</span>
-                    <p className="text-gray-900 font-medium">
-                      {patient.insurance_carrier || '--'}
-                    </p>
-                  </div>
+          <Card>
+            <CardHeader>
+              <h3 className="section-header m-0">Demographics Confirmation</h3>
+            </CardHeader>
+            <CardBody>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <div>
+                  <span className="label-clinical">Name</span>
+                  <p className="text-navy-700 font-medium">
+                    {patient.first_name} {patient.last_name}
+                  </p>
                 </div>
-              </CardBody>
-            </Card>
-          </div>
+                <div>
+                  <span className="label-clinical">Date of Birth</span>
+                  <p className="text-navy-700 font-medium">
+                    {patient.dob || '--'}
+                  </p>
+                </div>
+                <div>
+                  <span className="label-clinical">Sex</span>
+                  <p className="text-navy-700 font-medium">
+                    {patient.sex || '--'}
+                  </p>
+                </div>
+                <div>
+                  <span className="label-clinical">Phone</span>
+                  <p className="text-navy-700 font-medium">
+                    {patient.phone || '--'}
+                  </p>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="label-clinical">Insurance</span>
+                  <p className="text-navy-700 font-medium">
+                    {patient.insurance_carrier || '--'}
+                  </p>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
         )}
 
         {/* Previous Visit Summary */}
         {previousEncounter && (
-          <div className="animate-slide-up">
-            <Card>
-              <CardHeader>
-                <h3 className="section-header m-0">Previous Visit</h3>
-              </CardHeader>
-              <CardBody>
-                <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="label-clinical">Date:</span>
-                    <span className="text-gray-900 font-medium">
-                      {formatDateShort(previousEncounter.date || previousEncounter.created_at)}
+          <Card>
+            <CardHeader>
+              <h3 className="section-header m-0">Previous Visit</h3>
+            </CardHeader>
+            <CardBody>
+              <div className="bg-ivory-100 border border-slate-100 rounded-xl p-3 text-sm space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="label-clinical">Date:</span>
+                  <span className="text-navy-700 font-medium">
+                    {formatDateShort(previousEncounter.date || previousEncounter.created_at)}
+                  </span>
+                </div>
+                {previousEncounter.chief_complaint && (
+                  <div className="flex items-start gap-2">
+                    <span className="label-clinical shrink-0">Chief Complaint:</span>
+                    <span className="text-navy-700">
+                      {previousEncounter.chief_complaint}
                     </span>
                   </div>
-                  {previousEncounter.chief_complaint && (
-                    <div className="flex items-start gap-2">
-                      <span className="label-clinical shrink-0">Chief Complaint:</span>
-                      <span className="text-gray-900">
-                        {previousEncounter.chief_complaint}
-                      </span>
-                    </div>
-                  )}
-                  {previousEncounter.encounter_type && (
-                    <div className="flex items-center gap-2">
-                      <span className="label-clinical">Type:</span>
-                      <Badge variant="info">{previousEncounter.encounter_type}</Badge>
-                    </div>
-                  )}
-                </div>
-              </CardBody>
-            </Card>
-          </div>
+                )}
+                {previousEncounter.encounter_type && (
+                  <div className="flex items-center gap-2">
+                    <span className="label-clinical">Type:</span>
+                    <Badge variant="info">{previousEncounter.encounter_type}</Badge>
+                  </div>
+                )}
+              </div>
+            </CardBody>
+          </Card>
         )}
 
         {/* Check-In Form */}
-        <div className="animate-slide-up">
+        <div>
           <Card>
             <CardHeader>
               <h3 className="section-header m-0">Check-In</h3>

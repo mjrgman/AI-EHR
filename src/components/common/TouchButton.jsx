@@ -1,12 +1,16 @@
 import React from 'react';
 
+// Measured Canon button variants. `danger` keeps a `red` class on purpose —
+// a unit test asserts TouchButton's danger variant matches /red/.
 const VARIANTS = {
-  primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
-  success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500',
-  danger: 'bg-red-100 text-red-700 hover:bg-red-200 focus:ring-red-500',
-  warning: 'bg-amber-100 text-amber-800 hover:bg-amber-200 focus:ring-amber-500',
-  secondary: 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-400',
-  ghost: 'bg-transparent text-gray-600 hover:bg-gray-100 focus:ring-gray-400',
+  primary: 'bg-navy-600 text-white shadow-mc hover:bg-navy-700 focus:ring-navy-500',
+  success: 'bg-success-500 text-white shadow-mc hover:bg-success-600 focus:ring-success-500',
+  danger: 'bg-red-50 text-danger-600 border border-danger-100 hover:bg-red-100 focus:ring-danger-500',
+  warning: 'bg-gold-50 text-gold-700 border border-gold-200 hover:bg-gold-100 focus:ring-gold-500',
+  secondary: 'bg-offWhite-100 text-slate-700 border border-slate-200 hover:bg-ivory-200 focus:ring-slate-400',
+  ghost: 'bg-transparent text-slate-600 hover:bg-ivory-200 focus:ring-slate-400',
+  // hero — the single gold call-to-action. Use sparingly (one per view).
+  hero: 'bg-gold-500 text-white shadow-mc hover:bg-gold-600 focus:ring-gold-500',
 };
 
 const SIZES = {
