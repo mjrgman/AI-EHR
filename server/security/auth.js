@@ -300,6 +300,47 @@ async function me(req, res) {
 // MIDDLEWARE
 // ==========================================
 
+function extractToken(req) {
+  const authHeader = req.headers['authorization'];
+  return authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : req.headers['x-auth-token'];
+}
+
+function attachAuthenticatedUser(req, decoded) {
+  req.user = decoded;
+  req.session = req.session || {};
+  req.session.userId = decoded.username || decoded.sub || 'unknown';
+  req.session.userRole = decoded.role || 'guest';
+}
+
+function authenticateRequest(req) {
+  const token = extractToken(req);
+  if (!token) {
+    return { authenticated: false, tokenPresent: false, error: null };
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return {
+      authenticated: false,
+      tokenPresent: true,
+      error: 'Invalid or expired token',
+    };
+  }
+
+  if (decoded.jti && tokenBlacklist.has(decoded.jti)) {
+    return {
+      authenticated: false,
+      tokenPresent: true,
+      error: 'Token has been revoked',
+    };
+  }
+
+  attachAuthenticatedUser(req, decoded);
+  return { authenticated: true, tokenPresent: true, user: decoded };
+}
+
 /**
  * Authentication middleware — validates JWT from:
  *   1. Authorization: Bearer <token>
@@ -316,28 +357,12 @@ function requireAuth(req, res, next) {
     return next();
   }
 
-  // Extract token
-  const authHeader = req.headers['authorization'];
-  const token = authHeader?.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : req.headers['x-auth-token'];
-
-  if (token) {
-    const decoded = verifyToken(token);
-    if (decoded) {
-      // S-H1: Check if token has been revoked (blacklisted)
-      if (decoded.jti && tokenBlacklist.has(decoded.jti)) {
-        return res.status(401).json({ error: 'Token has been revoked' });
-      }
-      // Attach user info to request (replaces the old x-user-id/x-user-role headers)
-      req.user = decoded;
-      req.session = req.session || {};
-      req.session.userId = decoded.username;
-      req.session.userRole = decoded.role;
-      return next();
-    }
-    // Token present but invalid
-    return res.status(401).json({ error: 'Invalid or expired token' });
+  const authResult = authenticateRequest(req);
+  if (authResult.authenticated) {
+    return next();
+  }
+  if (authResult.tokenPresent) {
+    return res.status(401).json({ error: authResult.error });
   }
 
   // No token — development bypass is explicit opt-in and still requires headers.
@@ -353,19 +378,15 @@ function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    req.user = {
+    attachAuthenticatedUser(req, {
       sub: 0,
       username: headerUser,
       role: headerRole,
       fullName: req.headers['x-user-name'] || String(headerUser),
-    };
-    req.session = req.session || {};
-    req.session.userId = req.user.username;
-    req.session.userRole = req.user.role;
+    });
     return next();
   }
 
-  // Production — reject
   return res.status(401).json({ error: 'Authentication required' });
 }
 
@@ -477,6 +498,7 @@ module.exports = {
   changePassword,
   signToken,
   verifyToken,
+  authenticateRequest,
   // S-C3: JWT_SECRET is NOT exported — use signToken/verifyToken wrappers instead.
   // Note: server/fhir/smart/token.js references auth.JWT_SECRET and will need updating.
 };

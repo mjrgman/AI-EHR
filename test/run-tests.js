@@ -4238,26 +4238,41 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   // Route: GET /api/medivault/export/:patientId
   //
   // Mirrors the LabCorp route test harness: spin up a tiny Express
-  // app, inject req.user via middleware, mount the route module,
-  // hit it over HTTP and inspect status + headers + body.
+  // app, mount the route module, and exercise it with bearer auth
+  // and unauthenticated requests over HTTP.
   // ------------------------------------------------------------
 
   const mvHttp = require('http');
   const mvExpress = require('express');
+  const rbac = require('../server/security/rbac');
+  const mvAuth = require('../server/security/auth');
+  const mvClinicianToken = mvAuth.signToken({
+    id: 1,
+    username: 'medivault-test-user',
+    role: 'physician',
+    full_name: 'MediVault Test User',
+  });
   let mvRoutesApp, mvRoutesServer, mvRoutesPort, mvRoutesBase;
   let _mvRoutesLoadOk = true;
   let _mvRoutesLoadErr = null;
   try {
     mvRoutesApp = mvExpress();
     mvRoutesApp.use(mvExpress.json());
-    // Same injection pattern as the LabCorp tests — req.user is what
-    // auth.requireAuth would leave after a real JWT verify.
     mvRoutesApp.use((req, _res, next) => {
-      req.user = { sub: 1, username: 'medivault-test-user', role: 'physician' };
+      const testSessionRole = req.headers['x-test-session-role'];
+      if (testSessionRole) {
+        req.session = {
+          userRole: testSessionRole,
+          userId: req.headers['x-test-session-user'] || 'test-session-user',
+        };
+      }
       next();
     });
     const mvRoutes = require('../server/routes/medivault-routes');
     mvRoutes.mountMediVaultRoutes(mvRoutesApp, { db });
+    mvRoutesApp.get('/_rbac/require-role', rbac.requireRole('physician'), (_req, res) => {
+      res.json({ ok: true });
+    });
     mvRoutesServer = await new Promise((resolve) => {
       const srv = mvRoutesApp.listen(0, '127.0.0.1', () => resolve(srv));
     });
@@ -4268,7 +4283,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     _mvRoutesLoadErr = err;
   }
 
-  function mvRoutesRequest({ method = 'GET', path, body = null, acceptBinary = false }) {
+  function mvRoutesRequest({ method = 'GET', path, body = null, acceptBinary = false, headers = {}, token = null, cookie = null }) {
     return new Promise((resolve, reject) => {
       const url = new URL(mvRoutesBase + path);
       const opts = {
@@ -4276,8 +4291,17 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         hostname: url.hostname,
         port: url.port,
         path: url.pathname + url.search,
-        headers: { 'Accept': acceptBinary ? '*/*' : 'application/fhir+json, application/json' }
+        headers: {
+          'Accept': acceptBinary ? '*/*' : 'application/fhir+json, application/json',
+          ...headers,
+        }
       };
+      if (token) {
+        opts.headers.Authorization = `Bearer ${token}`;
+      }
+      if (cookie) {
+        opts.headers.Cookie = cookie;
+      }
       let bodyStr = null;
       if (body) {
         bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
@@ -4305,8 +4329,41 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assert(mvRoutesBase, 'mvRoutesBase must be populated after server starts');
   });
 
-  await test('MediVault Route: GET /api/medivault/export/:patientId returns 200 with FHIR Bundle + attachment disposition', async () => {
+  await test('RBAC Middleware: requireRole rejects spoofed x-user-role headers without an authenticated session', async () => {
+    const res = await mvRoutesRequest({
+      method: 'GET',
+      path: '/_rbac/require-role',
+      headers: {
+        'x-user-id': 'spoofed-user',
+        'x-user-role': 'physician',
+      },
+    });
+    assertEqual(res.status, 403, `expected 403 for spoofed header auth, got ${res.status}`);
+  });
+
+  await test('RBAC Middleware: requireRole still allows an authenticated session role', async () => {
+    const res = await mvRoutesRequest({
+      method: 'GET',
+      path: '/_rbac/require-role',
+      headers: {
+        'x-test-session-user': 'session-user',
+        'x-test-session-role': 'physician',
+      },
+    });
+    assertEqual(res.status, 200, `expected 200 for authenticated session role, got ${res.status}`);
+  });
+
+  await test('MediVault Route: GET /api/medivault/export/:patientId rejects unauthenticated callers', async () => {
     const res = await mvRoutesRequest({ method: 'GET', path: `/api/medivault/export/${sarahId}` });
+    assertEqual(res.status, 401, `expected 401, got ${res.status}`);
+  });
+
+  await test('MediVault Route: GET /api/medivault/export/:patientId returns 200 with FHIR Bundle + attachment disposition for clinician bearer auth', async () => {
+    const res = await mvRoutesRequest({
+      method: 'GET',
+      path: `/api/medivault/export/${sarahId}`,
+      token: mvClinicianToken,
+    });
     assertEqual(res.status, 200, `expected 200, got ${res.status}: ${typeof res.body === 'string' ? res.body : JSON.stringify(res.body).slice(0, 200)}`);
 
     // FHIR content type
@@ -4332,7 +4389,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   });
 
   await test('MediVault Route: GET /api/medivault/export/:patientId returns 404 for unknown patient', async () => {
-    const res = await mvRoutesRequest({ method: 'GET', path: '/api/medivault/export/99999999' });
+    const res = await mvRoutesRequest({
+      method: 'GET',
+      path: '/api/medivault/export/99999999',
+      token: mvClinicianToken,
+    });
     assertEqual(res.status, 404, `expected 404 for missing patient, got ${res.status}`);
   });
 
@@ -4341,7 +4402,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     // have added unrelated access records for Sarah.
     await db.dbRun('DELETE FROM vault_access_log WHERE patient_id = ? AND access_type = ?', [sarahId, 'EXPORT']);
 
-    const res = await mvRoutesRequest({ method: 'GET', path: `/api/medivault/export/${sarahId}` });
+    const res = await mvRoutesRequest({
+      method: 'GET',
+      path: `/api/medivault/export/${sarahId}`,
+      token: mvClinicianToken,
+    });
     assertEqual(res.status, 200, 'export must succeed before we can assert the audit row');
 
     const rows = await db.dbAll(
@@ -4394,6 +4459,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     'frontdesk@example.com'
   );
   const sarahPatient = await db.getPatientById(sarahId);
+  const robertPatient = await db.getPatientById(robertId);
 
   async function httpRequest(routePath, options = {}) {
     const headers = { ...(options.headers || {}) };
@@ -4442,9 +4508,24 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(res.body.status, 'ok');
   });
 
+  await test('Auth HTTP: protected clinician APIs reject unauthenticated requests', async () => {
+    const res = await httpRequest('/api/patients');
+    assertEqual(res.status, 401, `expected 401, got ${res.status}`);
+  });
+
   await test('Auth HTTP: protected API rejects unauthenticated requests in development mode', async () => {
     const res = await httpRequest('/api/patients');
     assertEqual(res.status, 401, 'protected API must not fall back to a default dev clinician');
+  });
+
+  await test('Auth HTTP: spoofed x-user-role headers do not authenticate clinician APIs', async () => {
+    const res = await httpRequest('/api/patients', {
+      headers: {
+        'x-user-id': 'spoofed-user',
+        'x-user-role': 'physician',
+      }
+    });
+    assertEqual(res.status, 401, `expected 401, got ${res.status}`);
   });
 
   await test('Auth HTTP: POST /api/auth/login returns access and refresh tokens', async () => {
@@ -4783,6 +4864,61 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     });
     const res = await httpRequest('/api/patient-portal/session', { token: login.body.token });
     assertEqual(res.status, 401, 'clinician bearer token must not grant portal session access');
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // MediVault HTTP export (origin/main UR-001/UR-002/UR-003 RBAC hotfix).
+  //
+  // These assertions pin the export RBAC gates: unauthenticated → 401,
+  // clinician bearer → 200 bundle, and a portal session may export ONLY
+  // its own record (cross-patient export → 403). The portal /verify calls
+  // below supply the mandatory MRN third factor required by the wave-1
+  // P1-2 hardening (sec-portal-weak-verify-05) that this branch merges in —
+  // without it, verify now fails closed and no portal session is issued.
+  // ──────────────────────────────────────────────────────────────────
+
+  await test('MediVault HTTP: GET /api/medivault/export/:patientId rejects unauthenticated requests', async () => {
+    const res = await httpRequest(`/api/medivault/export/${sarahId}`);
+    assertEqual(res.status, 401, `expected 401, got ${res.status}`);
+  });
+
+  await test('MediVault HTTP: clinician bearer auth can export a patient bundle', async () => {
+    const login = await httpRequest('/api/auth/login', {
+      method: 'POST',
+      body: { username: 'test.clinician', password: 'SecurePass!234' }
+    });
+    const res = await httpRequest(`/api/medivault/export/${sarahId}`, { token: login.body.token });
+    assertEqual(res.status, 200, `expected 200, got ${res.status}`);
+    assertEqual(res.body.resourceType, 'Bundle', 'expected a FHIR Bundle response');
+    assert((res.headers.get('content-disposition') || '').includes(`medivault-${sarahId}-`), 'expected attachment filename');
+  });
+
+  await test('MediVault HTTP: patient portal session can export only its own record', async () => {
+    const sarahVerify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    const sarahCookie = extractCookie(sarahVerify);
+    const sarahExport = await httpRequest(`/api/medivault/export/${sarahId}`, { cookie: sarahCookie });
+    assertEqual(sarahExport.status, 200, `expected 200, got ${sarahExport.status}`);
+
+    const robertVerify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: robertPatient.first_name,
+        last_name: robertPatient.last_name,
+        dob: robertPatient.dob,
+        mrn: robertPatient.mrn,
+      }
+    });
+    const robertCookie = extractCookie(robertVerify);
+    const robertExport = await httpRequest(`/api/medivault/export/${sarahId}`, { cookie: robertCookie });
+    assertEqual(robertExport.status, 403, `expected 403, got ${robertExport.status}`);
   });
 
   // ──────────────────────────────────────────────────────────────────

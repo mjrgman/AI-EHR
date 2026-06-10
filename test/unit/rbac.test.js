@@ -12,13 +12,28 @@ const assert = require('node:assert/strict');
 const rbac = require('../../server/security/rbac');
 
 // Mock req/res helpers — kept inline so each test is self-contained.
-function mockReq({ role = 'guest', method = 'GET', headers = {}, session = null } = {}) {
+//
+// 2026-04-26: post-security-hotfix (commit 9e939e48), rbac.js no longer
+// reads `req.headers['x-user-role']` — the header-trust model was removed.
+// Identity now flows through `req.session.userRole` (populated by auth
+// middleware from the verified JWT) or `req.user.role`. mockReq populates
+// both `headers` (back-compat for any test that still inspects them) AND
+// a synthesized `session` so RBAC middleware sees the role under the
+// post-hotfix identity model. Pass `session: null` explicitly to test
+// missing-session behavior; pass a custom session object to override.
+function mockReq({ role = 'guest', method = 'GET', headers = {}, session = undefined } = {}) {
+  const effectiveSession = session === undefined
+    ? { userRole: role, userId: 'test-user' }
+    : session;
   return {
     method,
     path: '/api/test',
-    headers,
+    // Back-compat: still expose headers for any test that inspects them, but
+    // the hardened resolveIdentity() never reads x-user-* outside the gated
+    // dev-bypass — identity must resolve from req.user (JWT) or req.session.
+    headers: { 'x-user-role': role, 'x-user-id': 'test-user', ...headers },
     user: { role, username: 'test-user' },
-    session,
+    session: effectiveSession,
   };
 }
 function mockRes() {

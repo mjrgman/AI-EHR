@@ -1,5 +1,7 @@
 # EHR Security Modules
 
+> DEPRECATED: the historical `X-User-Id` / `X-User-Role` header-auth pattern was removed in commits `7b19bbb` and `9744c4f`. Clinician access now uses JWT bearer auth, and patient self-service uses the patient-portal session flow.
+
 Production-ready HIPAA-compliant security middleware for Express/SQLite EHR system.
 
 ## Files
@@ -186,15 +188,17 @@ Production mode:
 
 With curl:
 ```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"user@clinic.local","password":"<password>"}'
+
 curl -X GET http://localhost:3000/api/patients/1 \
-  -H "X-User-Id: user@clinic.local" \
-  -H "X-User-Role: physician" \
+  -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json"
 ```
 
 Response headers include:
 ```
-X-Session-Id: <new-token>
 X-RateLimit-Remaining: 99
 ```
 
@@ -209,7 +213,7 @@ No new npm packages required - uses only Node.js built-ins (crypto, Express).
 ## Next Steps
 
 1. Integrate both modules into server.js
-2. Add authentication middleware (sets X-User-Id, X-User-Role headers)
+2. Add authentication middleware that verifies JWTs and populates `req.user` / `req.session`
 3. Test with different roles
 4. Monitor audit_log table
 5. Configure log retention policy (recommend 7 years for HIPAA)

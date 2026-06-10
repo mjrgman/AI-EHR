@@ -139,21 +139,16 @@ app.get('/api/encounters/:id/codes',
 );
 ```
 
-## Expected User Request Headers
+## Authenticated Request Context
 
-The middleware expects user context in headers (normally set by auth middleware):
-
-```
-X-User-Id: provider@clinic.local
-X-User-Role: physician
-X-Session-Id: <hex-token>  (optional - created on first request)
-```
+Clinician identity must come from verified JWT auth. Downstream security
+middleware should read `req.user` / `req.session`, not trust caller-supplied
+identity headers.
 
 Example with curl:
 ```bash
 curl -X GET http://localhost:3000/api/patients/42 \
-  -H "X-User-Id: provider@clinic.local" \
-  -H "X-User-Role: physician" \
+  -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json"
 ```
 
@@ -364,25 +359,15 @@ const allowedFields = rbac.getPhiScopeFields('ma');  // ['id', 'mrn', 'name', 'd
 ## Testing with curl
 
 ```bash
-# Create session and get access
+# Access a protected endpoint with a clinician JWT
 curl -X GET http://localhost:3000/api/patients/1 \
-  -H "X-User-Id: ma@clinic.local" \
-  -H "X-User-Role: ma" \
+  -H "Authorization: Bearer <ma-jwt>" \
   -H "Content-Type: application/json" \
   -v
-# Response includes: X-Session-Id header
-
-# Reuse session
-curl -X GET http://localhost:3000/api/patients/1 \
-  -H "X-User-Id: ma@clinic.local" \
-  -H "X-User-Role: ma" \
-  -H "X-Session-Id: <session-from-above>" \
-  -H "Content-Type: application/json"
 
 # Unauthorized access (front desk trying to access clinical note)
 curl -X GET http://localhost:3000/api/encounters/1/notes \
-  -H "X-User-Id: frontdesk@clinic.local" \
-  -H "X-User-Role: front_desk" \
+  -H "Authorization: Bearer <front-desk-jwt>" \
   -H "Content-Type: application/json"
 # Response: 403 { "error": "Insufficient permissions" }
 ```

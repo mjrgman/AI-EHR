@@ -245,6 +245,11 @@ app.use('/cds-services', auth.requireAuth, cdsHooksRouter);
 app.use('/api/auth', buildAuthRouter({ auth, db, logger, refreshTokens }));
 app.use('/api/patient-portal', patientPortalRouter);
 
+// MediVault exports accept either a clinician JWT or a matching patient
+// portal session, so the route performs its own auth check before the
+// global /api auth wall.
+mountMediVaultRoutes(app, { db });
+
 // ==========================================
 // AUTHENTICATION & RBAC FOR ALL OTHER API ROUTES
 // ==========================================
@@ -279,13 +284,10 @@ app.use('/api/webhooks', rbac.requireRole('admin'), eventBusRouter);
 // carry the app's JWT — it derives userId from the pending-state record.
 mountLabCorpRoutes(app, { db });
 
-// MediVault patient-owned export (Phase 3c).
-// mountMediVaultRoutes registers:
+// MediVault export routes are mounted above the global /api auth wall so they
+// can accept either a clinician JWT or a matching patient-portal session.
 //   GET /api/medivault/export/:patientId  → FHIR R4 Bundle (collection)
-// The route uses the same auth pipeline as all other /api/* routes and the
-// audit-logger PHI_ROUTES entry (audit-logger.js) captures each export as a
-// vault_export READ for the central audit trail.
-mountMediVaultRoutes(app, { db });
+// audit-logger PHI_ROUTES still captures each export as a vault_export READ.
 
 // Care Management engine routes (Phase 2 of primary-care deepening).
 // mountCareManagementRoutes registers:

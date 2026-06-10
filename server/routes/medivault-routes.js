@@ -3,7 +3,7 @@
 /**
  * MediVault HTTP routes — Phase 3c
  *
- * Single endpoint (for now): the patient-owned export.
+ * Single endpoint (for now): the MediVault export.
  *
  *   GET /api/medivault/export/:patientId
  *     → 200 application/fhir+json — FHIR R4 Bundle (type=collection)
@@ -15,19 +15,87 @@
  * keeps the module test-mountable on a fresh Express app and avoids a
  * circular require with server/database.js during cold start.
  *
+ * Access control: a clinician JWT with role physician / nurse_practitioner /
+ * system may export any patient's bundle. A patient-portal session may export
+ * only its own patient's bundle.
+ *
  * Access auditing: every successful export writes a row into
  * `vault_access_log` with access_type='EXPORT'. That row names the
  * caller (req.user.username or sub), NOT "system" — because the whole
- * point of a patient-owned export is to have a durable record of "who
- * pulled this patient's file on what date". If the audit write fails
- * we still return the bundle (the patient shouldn't be blocked by an
- * infrastructure issue), but we log a warning so ops can investigate.
+ * point of the export is to have a durable record of "who pulled this
+ * patient's file on what date". If the audit write fails we still return
+ * the bundle, but we log a warning so ops can investigate.
  */
 
 const express = require('express');
+const auth = require('../security/auth');
 const { buildPatientBundle } = require('../medivault');
+const { requirePortalSession } = require('../services/portal-session-service');
 const { sendFhir, sendError } = require('../fhir/utils/fhir-response');
-const rbac = require('../security/rbac');
+
+const CLINICIAN_EXPORT_ROLES = new Set(['physician', 'nurse_practitioner', 'system']);
+
+function getRequestRole(req) {
+  return req.session?.userRole || req.user?.role || 'guest';
+}
+
+function getRequestUserId(req) {
+  return String(req.session?.userId || req.user?.username || req.user?.sub || 'anonymous');
+}
+
+function authorizeMediVaultExport(req, res, next) {
+  const patientId = Number(req.params.patientId);
+  if (!Number.isFinite(patientId) || patientId <= 0) {
+    return sendError(res, 400, 'invalid', 'patientId must be a positive integer');
+  }
+
+  const authResult = auth.authenticateRequest(req);
+  if (authResult.authenticated) {
+    const userRole = getRequestRole(req);
+    if (!CLINICIAN_EXPORT_ROLES.has(userRole)) {
+      return res.status(403).json({
+        error: 'Insufficient permissions',
+        requiredRoles: Array.from(CLINICIAN_EXPORT_ROLES),
+        userRole,
+      });
+    }
+
+    req.medivaultExportContext = {
+      accessType: 'clinician',
+      patientId,
+      userId: getRequestUserId(req),
+      userRole,
+    };
+    return next();
+  }
+
+  if (authResult.tokenPresent) {
+    return res.status(401).json({ error: authResult.error || 'Authentication required' });
+  }
+
+  return requirePortalSession(req, res, (error) => {
+    if (error) {
+      return next(error);
+    }
+
+    if (Number(req.portalPatient.id) !== patientId) {
+      return res.status(403).json({
+        error: 'Patient portal users may export only their own record',
+      });
+    }
+
+    req.session = req.session || {};
+    req.session.userId = req.user.username;
+    req.session.userRole = req.user.role;
+    req.medivaultExportContext = {
+      accessType: 'portal',
+      patientId,
+      userId: req.user.username,
+      userRole: req.user.role,
+    };
+    return next();
+  });
+}
 
 /**
  * Mount the MediVault routes onto an Express app.
@@ -48,11 +116,8 @@ function mountMediVaultRoutes(app, { db } = {}) {
   // ----------------------------------------------------------
   // GET /api/medivault/export/:patientId
   // ----------------------------------------------------------
-  router.get('/medivault/export/:patientId', rbac.requireRole('physician', 'nurse_practitioner', 'system'), async (req, res) => {
+  router.get('/medivault/export/:patientId', authorizeMediVaultExport, async (req, res) => {
     const patientId = Number(req.params.patientId);
-    if (!Number.isFinite(patientId) || patientId <= 0) {
-      return sendError(res, 400, 'invalid', 'patientId must be a positive integer');
-    }
 
     let bundle;
     try {
@@ -70,6 +135,13 @@ function mountMediVaultRoutes(app, { db } = {}) {
     try {
       const accessedBy =
         (req.user && (req.user.username || req.user.sub || req.user.id)) || 'unknown';
+
+      if (req.medivaultExportContext?.accessType === 'clinician') {
+        console.warn(
+          `[MediVault] clinician export authorized: patient ${patientId} exported by ${accessedBy} (${getRequestRole(req)})`
+        );
+      }
+
       await db.dbRun(
         `INSERT INTO vault_access_log (patient_id, accessed_by, access_type, resource_accessed, authorized)
          VALUES (?, ?, 'EXPORT', 'patient_bundle', 1)`,

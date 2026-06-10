@@ -846,6 +846,9 @@ function dbGetCompat(db, sql, params = []) {
  * Enables canonical drug identification via NLM RxNorm API.
  */
 async function addRxNormColumns(db) {
+  // dbAllCompat/dbRun unwrap the database module's exports object to the raw
+  // sqlite3 instance internally (see L789/L807), incorporating main's rawDb-
+  // unwrap fix (#12) via the shared compat helpers.
   const tables = ['medications', 'prescriptions'];
   for (const table of tables) {
     try {
@@ -913,6 +916,9 @@ async function createLabCorpTokensTable(db) {
  * Uses the same PRAGMA-then-ALTER pattern as addRxNormColumns. Idempotent.
  */
 async function addLabCorpColumns(db) {
+  // dbAllCompat/dbRun unwrap the database module's exports object to the raw
+  // sqlite3 instance internally (see L789/L807), incorporating main's rawDb-
+  // unwrap fix (#12) via the shared compat helpers.
   const columns = [
     { name: 'external_order_id', type: 'TEXT' },
     { name: 'labcorp_status', type: 'TEXT' },

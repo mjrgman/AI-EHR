@@ -201,23 +201,20 @@ res.header('X-RateLimit-Remaining');  // e.g., "45"
 ## Testing Quick Commands
 
 ```bash
-# Create session and access protected endpoint
+# Access a protected endpoint with a clinician JWT
 curl -X GET http://localhost:3000/api/patients/1 \
-  -H "X-User-Id: doc@clinic.local" \
-  -H "X-User-Role: physician" -v
+  -H "Authorization: Bearer <physician-jwt>" -v
 
 # Try unauthorized access (MA accessing prescriptions)
 curl -X GET http://localhost:3000/api/prescriptions \
-  -H "X-User-Id: ma@clinic.local" \
-  -H "X-User-Role: ma" \
+  -H "Authorization: Bearer <ma-jwt>" \
   -H "Content-Type: application/json"
 # Returns: 403 Insufficient permissions
 
 # Try to exceed rate limit
 for i in {1..150}; do
   curl -s http://localhost:3000/api/health \
-    -H "X-User-Id: user@clinic.local" \
-    -H "X-User-Role: physician" > /dev/null
+    -H "Authorization: Bearer <jwt>" > /dev/null
 done
 # After 100 requests: 429 Rate limit exceeded
 ```
@@ -226,12 +223,14 @@ done
 
 **Authentication middleware (upstream - before HIPAA):**
 ```javascript
-// You need to provide auth middleware that sets headers:
+// You need to provide auth middleware that sets req.user / req.session:
 app.use(async (req, res, next) => {
   // Your JWT/OAuth validation here
   if (tokenValid) {
-    req.headers['x-user-id'] = user.email;
-    req.headers['x-user-role'] = user.role;  // 'physician', 'ma', etc.
+    req.user = { username: user.email, role: user.role };
+    req.session = req.session || {};
+    req.session.userId = user.email;
+    req.session.userRole = user.role;  // 'physician', 'ma', etc.
   }
   next();
 });
@@ -319,7 +318,7 @@ ORDER BY timestamp DESC;
 - May need to add new field to `PHI_FIELDS` definition
 
 **RBAC rejecting valid requests:**
-- Verify user role header: `X-User-Role`
+- Verify JWT claims populate `req.user.role` / `req.session.userRole`
 - Check role exists in `ROLES` object
 - Verify resource type matches (case-sensitive)
 - Check resource is in role's `canAccess` or `canWrite`
