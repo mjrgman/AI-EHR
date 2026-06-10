@@ -1,6 +1,7 @@
 const BASE = '/api';
 const PORTAL_BASE = '/api/patient-portal';
 const AUTH_STORAGE_KEY = 'ehr_auth_session_v1';
+const PORTAL_CSRF_STORAGE_KEY = 'ehr_portal_csrf_v1';
 
 export const safeLog = {
   error: (msg, ...args) => {
@@ -40,14 +41,26 @@ function saveStoredJson(key, value) {
 }
 
 let auditSessionId = isSessionStorageAvailable() ? window.sessionStorage.getItem('audit_session_id') : null;
-let auditUser = null;
-let auditRole = null;
 let authSession = loadStoredJson(AUTH_STORAGE_KEY);
+let portalCsrfToken = isSessionStorageAvailable() ? window.sessionStorage.getItem(PORTAL_CSRF_STORAGE_KEY) : null;
 let authFailureHandler = null;
 
-export function setAuditContext(providerName, role) {
-  auditUser = providerName || null;
-  auditRole = role || null;
+function setPortalCsrfToken(token) {
+  portalCsrfToken = token || null;
+  if (!isSessionStorageAvailable()) return;
+  if (portalCsrfToken) {
+    window.sessionStorage.setItem(PORTAL_CSRF_STORAGE_KEY, portalCsrfToken);
+  } else {
+    window.sessionStorage.removeItem(PORTAL_CSRF_STORAGE_KEY);
+  }
+}
+
+function isStateChangingPortalRequest(method) {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
+}
+
+export function setAuditContext(_providerName, _role) {
+  // Audit identity is resolved server-side from the authenticated JWT.
 }
 
 export function setAuthFailureHandler(handler) {
@@ -127,8 +140,6 @@ async function request(url, options = {}, meta = {}) {
   const { retryCount = 0, suppressUnauthorizedRedirect = false } = meta;
   const auditHeaders = {};
   if (auditSessionId) auditHeaders['X-Audit-Session-Id'] = auditSessionId;
-  if (auditUser) auditHeaders['X-Audit-User'] = auditUser;
-  if (auditRole) auditHeaders['X-Audit-Role'] = auditRole;
 
   const headers = {
     'Content-Type': 'application/json',
@@ -170,27 +181,44 @@ async function request(url, options = {}, meta = {}) {
     }
   }
 
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
     if (!suppressUnauthorizedRedirect) {
       handleUnauthorized();
     }
     const err = await parseResponse(res).catch(() => null);
-    throw new Error(err?.error || 'Session expired. Please log in again.');
+    const error = new Error(err?.error || 'Session expired. Please log in again.');
+    error.status = res.status;
+    throw error;
+  }
+
+  if (res.status === 403) {
+    const err = await parseResponse(res).catch(() => null);
+    const error = new Error(err?.error || 'You do not have permission to access this area.');
+    error.status = res.status;
+    throw error;
   }
 
   if (!res.ok) {
     const err = await parseResponse(res).catch(() => null);
-    throw new Error(err?.error || err?.message || res.statusText || 'Request failed');
+    const error = new Error(err?.error || err?.message || res.statusText || 'Request failed');
+    error.status = res.status;
+    throw error;
   }
 
   return parseResponse(res);
 }
 
 async function portalRequest(path, options = {}) {
+  const method = options.method || 'GET';
+  const csrfHeaders = isStateChangingPortalRequest(method) && !['/verify', '/logout'].includes(path) && portalCsrfToken
+    ? { 'x-portal-csrf': portalCsrfToken }
+    : {};
+
   const res = await fetch(`${PORTAL_BASE}${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...csrfHeaders,
       ...options.headers,
     },
     ...options,
@@ -201,7 +229,14 @@ async function portalRequest(path, options = {}) {
     throw new Error(err?.error || err?.message || res.statusText || 'Portal request failed');
   }
 
-  return parseResponse(res);
+  const payload = await parseResponse(res);
+  if (path === '/verify' && payload?.csrfToken) {
+    setPortalCsrfToken(payload.csrfToken);
+  }
+  if (path === '/logout') {
+    setPortalCsrfToken(null);
+  }
+  return payload;
 }
 
 export const api = {

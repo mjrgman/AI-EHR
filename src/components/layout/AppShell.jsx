@@ -13,9 +13,17 @@ const ROLE_COLORS = {
 };
 
 const NAV_ITEMS = [
-  { path: '/', label: 'Dashboard' },
-  { path: '/schedule', label: 'Schedule' },
-  { path: '/audit', label: 'Audit Log' },
+  {
+    path: '/',
+    label: 'Dashboard',
+    roles: ['physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'front_desk', 'billing', 'system'],
+  },
+  {
+    path: '/schedule',
+    label: 'Schedule',
+    roles: ['physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'front_desk', 'billing', 'system'],
+  },
+  { path: '/audit', label: 'Audit Log', roles: ['admin'] },
 ];
 
 export default function AppShell({ children }) {
@@ -58,6 +66,8 @@ export default function AppShell({ children }) {
   const formatTime = (date) => date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const formatDate = (date) => date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
   const isActiveNav = (path) => (path === '/' ? location.pathname === '/' : location.pathname.startsWith(path));
+  const visibleNavItems = NAV_ITEMS.filter((item) => !item.roles || item.roles.includes(user?.role));
+  const defaultNavPath = visibleNavItems[0]?.path || '/';
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -85,7 +95,7 @@ export default function AppShell({ children }) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <button type="button" className="flex items-center gap-2.5" onClick={() => navigate('/')}>
+            <button type="button" className="flex items-center gap-2.5" onClick={() => navigate(defaultNavPath)}>
               <span className="flex h-7 w-7 items-center justify-center rounded-full border border-gold-400/60 bg-gold-500/15 text-[11px] font-bold tracking-[0.12em] text-gold-300">AI</span>
               <div className="text-left">
                 <h1 className="font-display text-base font-semibold leading-tight tracking-tight">MJR-EHR</h1>
@@ -93,7 +103,7 @@ export default function AppShell({ children }) {
               </div>
             </button>
             <nav className="ml-3 hidden items-center gap-1 lg:flex" aria-label="Primary navigation">
-              {NAV_ITEMS.map((item) => {
+              {visibleNavItems.map((item) => {
                 const active = isActiveNav(item.path);
                 return (
                   <button
@@ -192,7 +202,7 @@ export default function AppShell({ children }) {
           <div className="fixed inset-0 z-40 bg-navy-900/30 lg:hidden" onClick={() => setSidebarOpen(false)} />
           <aside className="fixed bottom-0 left-0 top-14 z-50 w-72 overflow-y-auto border-r border-slate-100 bg-offWhite-100 shadow-mc-xl lg:hidden">
             <nav className="p-3">
-              {NAV_ITEMS.map((item) => (
+              {visibleNavItems.map((item) => (
                 <button
                   key={item.path}
                   type="button"

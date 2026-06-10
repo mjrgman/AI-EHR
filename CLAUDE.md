@@ -1,5 +1,16 @@
 # CLAUDE.md — Clinical\EHR Workspace
 
+## No-HTML Output And Nate Sentinel Policy (2026-06-03)
+
+- Do not create HTML reports, dashboards, previews, rendered pages, or browser-opened proof for routine work in this project. Default closeout is concise Markdown/status plus proof artifacts.
+- Existing `.html`, web-app, JSX/TSX, and browser-based project source files are source assets only; maintaining source is not permission to render or open HTML output.
+- Only a current-turn Michael instruction for a visible UI, browser, or page can change this for that run, and the run must record the exact file/runtime proof.
+- Nate is the local always-on LLM Sentinel and APL-style packet liaison for GSD. Nate lives locally, searches GSD/Code Dispatch status surfaces, keeps Sentinel moving, and makes sure Codex, Claude/Opus, Gemini/Antigravity, and other visible frontier lanes receive clear packets and return proof.
+- Nate may prepare routing nudges, context packs, queue summaries, and packet reminders, but Nate is not a hidden frontier worker, not a paid API lane, and not proof of completion.
+- Every model lane still needs file-backed evidence before pickup or completion is claimed: `status.json`, `result.md` or `progress.md`, outbox return, queue digest, heartbeat, or current runtime proof.
+- If this file conflicts with Code Dispatch `AGENTS.md`, `CODEX_BRAIN.md`, or current local evidence, current local evidence wins.
+
+
 Last updated: 2026-05-19 (currency check; four-layer guardrails re-verified)
 Root: `C:\Users\micha\files\Clinical\EHR\`
 Scope: this working directory and all subdirectories.

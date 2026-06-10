@@ -3,10 +3,15 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ShieldCheck, KeyRound, UserCog } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
+function getPostLoginDestination(user, requestedPath) {
+  const requested = requestedPath || '/';
+  return user?.role === 'admin' && requested === '/' ? '/audit' : requested;
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, login, loading } = useAuth();
+  const { isAuthenticated, login, loading, user } = useAuth();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -14,7 +19,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   if (!loading && isAuthenticated) {
-    const destination = location.state?.from || '/';
+    const destination = getPostLoginDestination(user, location.state?.from);
     return <Navigate to={destination} replace />;
   }
 
@@ -24,8 +29,8 @@ export default function LoginPage() {
     setError('');
 
     try {
-      await login({ username, password });
-      navigate(location.state?.from || '/', { replace: true });
+      const authenticatedUser = await login({ username, password });
+      navigate(getPostLoginDestination(authenticatedUser, location.state?.from), { replace: true });
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {

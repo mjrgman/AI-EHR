@@ -5,7 +5,9 @@ import { avatarTone, getInitials } from '../common/avatarColor';
 
 function calcAge(dob) {
   if (!dob) return '?';
-  const b = new Date(dob), n = new Date();
+  // Noon-anchor the DOB so a date-only string isn't parsed as UTC midnight and
+  // shifted a day (and thus a year) earlier in negative-offset timezones.
+  const b = new Date(`${String(dob).slice(0, 10)}T12:00:00`), n = new Date();
   let age = n.getFullYear() - b.getFullYear();
   if (n.getMonth() < b.getMonth() || (n.getMonth() === b.getMonth() && n.getDate() < b.getDate())) age--;
   return age;

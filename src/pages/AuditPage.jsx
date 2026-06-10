@@ -185,6 +185,7 @@ export default function AuditPage() {
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
@@ -222,6 +223,7 @@ export default function AuditPage() {
   // Fetch data
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setAccessDenied(false);
     try {
       const params = { page, limit: 50 };
       if (filters.search) params.search = filters.search;
@@ -244,6 +246,13 @@ export default function AuditPage() {
       setTotal(Number(logsResult?.total) || 0);
       setStats(statsResult || null);
     } catch (err) {
+      if (err?.status === 403) {
+        setAccessDenied(true);
+        setLogs([]);
+        setStats(null);
+        setTotalPages(1);
+        setTotal(0);
+      }
       safeLog.error('Failed to load audit data:', err);
     }
     setLoading(false);
@@ -282,6 +291,7 @@ export default function AuditPage() {
           </h1>
           <p className="mt-1 text-sm text-slate-500">HIPAA compliance trail &middot; All system activity</p>
         </div>
+        {!accessDenied ? (
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -299,11 +309,33 @@ export default function AuditPage() {
             Export CSV
           </button>
         </div>
+        ) : null}
       </div>
+
+      {accessDenied ? (
+        <Card>
+          <CardBody className="!p-8 text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-danger-50 text-danger-600 ring-1 ring-danger-100">
+              <Lock size={22} strokeWidth={2.25} aria-hidden="true" />
+            </div>
+            <h2 className="font-display text-xl font-semibold text-navy-700">Audit access denied</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+              Your current role cannot view audit logs. Continue from the dashboard or switch to an administrator account.
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate('/')}
+              className="mt-5 rounded-lg bg-navy-600 px-4 py-2 text-sm font-medium text-white shadow-mc transition-colors hover:bg-navy-700"
+            >
+              Back to Dashboard
+            </button>
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* Stats bar — StatTile hierarchy; PHI is the single gold moment (the
           audit's whole reason to exist), error count carries danger. */}
-      {stats && (
+      {!accessDenied && stats && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatTile icon={FileText} label="Total Events" value={stats.total_events?.toLocaleString() ?? '-'} tone="navy" />
           <StatTile icon={Lock} label="PHI Accesses" value={stats.phi_access_count?.toLocaleString() ?? '-'} tone="gold" />
@@ -313,6 +345,7 @@ export default function AuditPage() {
       )}
 
       {/* Filter bar */}
+      {!accessDenied && (
       <Card>
         <CardBody className="!p-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -371,8 +404,10 @@ export default function AuditPage() {
           </div>
         </CardBody>
       </Card>
+      )}
 
       {/* Log table */}
+      {!accessDenied && (
       <Card>
         <CardHeader action={<span className="font-mono text-xs text-slate-400">{(Number(total) || 0).toLocaleString()} entries</span>}>
           Activity Log
@@ -514,9 +549,10 @@ export default function AuditPage() {
           </div>
         )}
       </Card>
+      )}
 
       {/* Detail slide-out panel */}
-      {selectedLog && <AuditDetailPanel log={selectedLog} onClose={() => setSelectedLog(null)} />}
+      {!accessDenied && selectedLog && <AuditDetailPanel log={selectedLog} onClose={() => setSelectedLog(null)} />}
     </div>
   );
 }

@@ -108,7 +108,7 @@ function VerifyIdentity({ loading, error, onVerify }) {
               ['first_name', 'First name', 'text'],
               ['last_name', 'Last name', 'text'],
               ['dob', 'Date of birth', 'date'],
-              ['mrn', 'MRN (optional)', 'text'],
+              ['mrn', 'MRN', 'text'],
             ].map(([key, label, type]) => (
               <label className="block" key={key}>
                 <span className="mb-2 block text-sm font-medium text-slate-700">{label}</span>
@@ -117,7 +117,7 @@ function VerifyIdentity({ loading, error, onVerify }) {
                   value={form[key]}
                   onChange={(event) => update(key, event.target.value)}
                   className="w-full rounded-2xl border border-slate-200 bg-offWhite-100 px-4 py-3 text-base text-navy-700 outline-none transition focus:border-gold-400 focus:ring-4 focus:ring-gold-100"
-                  required={key !== 'mrn'}
+                  required
                 />
               </label>
             ))}
@@ -686,7 +686,7 @@ export default function PatientPortal() {
         first_name: form.first_name,
         last_name: form.last_name,
         dob: form.dob,
-        ...(form.mrn ? { mrn: form.mrn } : {}),
+        mrn: form.mrn,
       });
       await bootstrapSession();
       setActiveTab('dashboard');

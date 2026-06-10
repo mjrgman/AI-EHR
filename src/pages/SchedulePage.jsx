@@ -27,7 +27,19 @@ const STATUS_LABELS = {
   cancelled: { label: 'Cancelled', variant: 'warning' },
 };
 
-const VISIT_TYPES = ['office-visit', 'follow-up', 'new-patient', 'wellness', 'urgent', 'procedure', 'telehealth'];
+const VISIT_TYPES = [
+  { value: 'follow_up', label: 'Follow Up' },
+  { value: 'new_patient', label: 'New Patient' },
+  { value: 'sick_visit', label: 'Sick Visit' },
+  { value: 'wellness', label: 'Wellness' },
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'procedure', label: 'Procedure' },
+  { value: 'telehealth', label: 'Telehealth' },
+];
+
+function formatAppointmentType(value) {
+  return VISIT_TYPES.find((type) => type.value === value)?.label || String(value || '').replace(/_/g, ' ');
+}
 
 function toDateStr(d) {
   return d.toISOString().split('T')[0];
@@ -74,7 +86,7 @@ export default function SchedulePage() {
     appointment_date: toDateStr(new Date()),
     appointment_time: '09:00',
     duration_minutes: 30,
-    visit_type: 'office-visit',
+    appointment_type: 'follow_up',
     chief_complaint: '',
     notes: '',
     provider_name: providerName || '',
@@ -131,6 +143,7 @@ export default function SchedulePage() {
         ...form,
         patient_id: parseInt(form.patient_id),
         duration_minutes: parseInt(form.duration_minutes),
+        provider_name: form.provider_name || providerName || 'Dr. MJR',
       });
       toast.success('Appointment scheduled');
       setShowNewForm(false);
@@ -146,9 +159,9 @@ export default function SchedulePage() {
     try {
       const enc = await api.createEncounter({
         patient_id: appt.patient_id,
-        chief_complaint: appt.chief_complaint || appt.visit_type || 'Office Visit',
+        chief_complaint: appt.chief_complaint || formatAppointmentType(appt.appointment_type) || 'Office Visit',
         encounter_date: selectedDate,
-        encounter_type: appt.visit_type === 'new-patient' ? 'new_patient' : 'office_visit',
+        encounter_type: appt.appointment_type === 'new_patient' ? 'new_patient' : 'office_visit',
       });
       const encId = enc.encounter_id || enc.id;
       await api.updateAppointment(appt.id, { status: 'arrived', encounter_id: encId });
@@ -277,11 +290,11 @@ export default function SchedulePage() {
                   <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Visit Type</label>
                   <select
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
-                    value={form.visit_type}
-                    onChange={e => setForm(f => ({ ...f, visit_type: e.target.value }))}
+                    value={form.appointment_type}
+                    onChange={e => setForm(f => ({ ...f, appointment_type: e.target.value }))}
                   >
                     {VISIT_TYPES.map(t => (
-                      <option key={t} value={t}>{t.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
+                      <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </select>
                 </div>
@@ -431,8 +444,8 @@ export default function SchedulePage() {
                         </td>
                         {/* Visit type */}
                         <td className="whitespace-nowrap px-4 py-3">
-                          {appt.visit_type ? (
-                            <span className="text-xs text-slate-600 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
+                          {appt.appointment_type ? (
+                            <span className="text-xs text-slate-600 capitalize">{formatAppointmentType(appt.appointment_type)}</span>
                           ) : (
                             <span className="text-xs text-slate-400">-</span>
                           )}

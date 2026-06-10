@@ -58,7 +58,7 @@ const ROLES = {
       medications: false,  // Can't directly write meds (must go through prescriptions)
       allergies: true,
       labs: false,  // Labs created by orders, not directly
-      vitals: false,  // Typically entered by MA
+      vitals: true,  // Physicians may enter vitals directly (allow-physician policy 2026-06-09)
       prescriptions: true,
       lab_orders: true,
       imaging_orders: true,
@@ -114,7 +114,7 @@ const ROLES = {
       medications: false,
       allergies: true,
       labs: false,
-      vitals: false,
+      vitals: true,  // NPs may enter vitals directly (allow-physician policy 2026-06-09)
       prescriptions: true,
       lab_orders: true,
       imaging_orders: true,

@@ -37,8 +37,11 @@ const NEW_PATIENT_FIELDS = [
   { name: 'first_name', label: 'First Name', type: 'text', required: true, placeholder: 'First name' },
   { name: 'last_name', label: 'Last Name', type: 'text', required: true, placeholder: 'Last name' },
   { name: 'dob', label: 'Date of Birth', type: 'date', required: true },
-  { name: 'sex', label: 'Sex', type: 'select', required: true, options: ['Male', 'Female', 'Other'] },
-  { name: 'mrn', label: 'MRN', type: 'text', required: false, placeholder: 'Auto-generated if blank' },
+  { name: 'sex', label: 'Sex', type: 'select', required: true, options: [
+    { value: 'M', label: 'Male' },
+    { value: 'F', label: 'Female' },
+    { value: 'Other', label: 'Other' },
+  ] },
   { name: 'phone', label: 'Phone', type: 'tel', required: false, placeholder: '(555) 123-4567' },
   { name: 'insurance_carrier', label: 'Insurance Carrier', type: 'text', required: false, placeholder: 'Insurance carrier name' },
 ];
@@ -405,8 +408,8 @@ export default function DashboardPage() {
                   >
                     <option value="">Select...</option>
                     {field.options.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
                       </option>
                     ))}
                   </select>

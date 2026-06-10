@@ -9,8 +9,6 @@ const crypto = require('crypto');
 const db = require('./database');
 
 const SESSION_HEADER = 'x-audit-session-id';
-const USER_HEADER = 'x-audit-user';
-const ROLE_HEADER = 'x-audit-role';
 
 // ==========================================
 // PHI ROUTE CLASSIFICATION MAP
@@ -88,16 +86,47 @@ const PHI_ROUTES = {
   // --- Dashboard (aggregated, contains patient list) ---
   'GET /api/dashboard':                           { resource_type: 'dashboard', action: 'READ', phi: true, phiFields: ['patient_list'] },
 
-  // --- Patient portal: appointment booking (added with the scheduling-DB refactor) ---
-  // These are the only patient-portal routes currently registered. The wider
-  // gap — every other /api/patient-portal/* endpoint is currently un-audited —
-  // is tracked in CLAUDE.md plan §"Pre-existing gaps" and gets its own PR.
+  // --- Patient portal (all PHI-bearing portal routes mapped) ---
+  // Every /api/patient-portal/* route that touches patient data is classified
+  // below. The two non-PHI portal routes — POST /logout (revokes the session,
+  // returns a static message; runs before requirePortalSession so no
+  // req.portalPatient) and GET /visit-prep (static checklist, no patient data)
+  // — are intentionally NOT in this map; they fall through to the generic
+  // unclassified-route audit entry (phi_accessed:false) in auditMiddleware,
+  // so portal coverage is complete and no PHI access goes unaudited.
   // extractPatientId reads req.portalPatient.id, set by requirePortalSession.
   // The middleware runs the callback inside res.on('finish'), by which point
   // req.portalPatient has been populated by the route handler chain.
+  'POST /api/patient-portal/verify': {
+    resource_type: 'portal_identity',
+    action: 'VERIFY',
+    phi: true,
+    phiFields: ['first_name', 'last_name', 'dob', 'mrn']
+  },
+  'GET /api/patient-portal/session': {
+    resource_type: 'portal_session',
+    action: 'READ',
+    phi: true,
+    phiFields: ['patient_profile'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'GET /api/patient-portal/appointments': {
+    resource_type: 'appointment',
+    action: 'READ',
+    phi: true,
+    phiFields: ['appointment_date', 'provider_name', 'chief_complaint'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/appointments/checkin': {
+    resource_type: 'appointment',
+    action: 'UPDATE',
+    phi: true,
+    phiFields: ['appointment_id', 'checkin_status'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
   'POST /api/patient-portal/appointments/find-slots': {
     resource_type: 'appointment',
-    action: 'access',
+    action: 'READ',
     phi: true,
     phiFields: ['appointment_date', 'provider_name'],
     extractPatientId: (req) => req.portalPatient?.id
@@ -107,6 +136,55 @@ const PHI_ROUTES = {
     action: 'CREATE',
     phi: true,
     phiFields: ['appointment_date', 'provider_name', 'chief_complaint', 'reason'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'GET /api/patient-portal/medications': {
+    resource_type: 'medication',
+    action: 'READ',
+    phi: true,
+    phiFields: ['medication_name', 'dose', 'frequency'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'GET /api/patient-portal/labs': {
+    resource_type: 'lab_result',
+    action: 'READ',
+    phi: true,
+    phiFields: ['test_name', 'result_value', 'interpretation'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'GET /api/patient-portal/messages': {
+    resource_type: 'portal_message',
+    action: 'READ',
+    phi: true,
+    phiFields: ['subject', 'message'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/message': {
+    resource_type: 'portal_message',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['subject', 'message'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/refill-request': {
+    resource_type: 'refill_request',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['medication_name', 'notes'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/symptom-triage': {
+    resource_type: 'triage',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['symptoms', 'severity', 'onset', 'notes'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/voice-intent': {
+    resource_type: 'portal_voice_intent',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['transcript'],
     extractPatientId: (req) => req.portalPatient?.id
   },
 
@@ -160,12 +238,30 @@ function methodToAction(method) {
   return map[method] || method;
 }
 
-function resolveUserIdentity(req) {
+function resolveAuditIdentity(req) {
   // Only trust authenticated identity — never request body fields
-  return req.user?.username
-    || req.user?.sub
-    || req.headers[USER_HEADER]
-    || 'anonymous';
+  if (req.user?.username || req.user?.sub) {
+    return {
+      userIdentity: req.user.username || String(req.user.sub),
+      userRole: req.user.role || 'unknown',
+    };
+  }
+
+  if (req.session?.userId || req.session?.userRole) {
+    return {
+      userIdentity: req.session.userId || 'session',
+      userRole: req.session.userRole || 'unknown',
+    };
+  }
+
+  if (req.portalPatient?.id) {
+    return {
+      userIdentity: `portal-patient:${req.portalPatient.id}`,
+      userRole: 'patient_portal',
+    };
+  }
+
+  return { userIdentity: 'anonymous', userRole: 'unknown' };
 }
 
 function extractResourceId(req) {
@@ -179,7 +275,9 @@ function scrubAndTruncateBody(body, maxLen) {
   // Remove PHI and sensitive fields from audit log body summaries
   const PHI_SCRUB_FIELDS = [
     'transcript', 'soap_note', 'first_name', 'last_name', 'dob',
-    'phone', 'email', 'insurance_id', 'address_line1', 'ssn'
+    'mrn', 'phone', 'email', 'insurance_id', 'address_line1', 'ssn',
+    'subject', 'message', 'medication_name', 'notes', 'symptoms', 'onset',
+    'chief_complaint', 'reason'
   ];
   for (const field of PHI_SCRUB_FIELDS) {
     if (field in scrubbed) scrubbed[field] = '[REDACTED]';
@@ -283,12 +381,8 @@ function auditMiddleware(options = {}) {
       res.setHeader('X-Audit-Session-Id', sessionId);
     }
 
-    // Resolve user identity
-    const userIdentity = resolveUserIdentity(req);
-    const userRole = req.headers[ROLE_HEADER] || 'unknown';
-
     // Attach audit context to request for downstream use
-    req.auditContext = { sessionId, userIdentity, userRole, startTime };
+    req.auditContext = { sessionId, startTime };
 
     // Capture response body for error extraction
     let capturedBody = null;
@@ -305,6 +399,8 @@ function auditMiddleware(options = {}) {
       // Fire-and-forget: audit logging must never block responses
       (async () => {
         try {
+          const { userIdentity, userRole } = resolveAuditIdentity(req);
+
           // Upsert session
           await upsertSession(sessionId, userIdentity, userRole, req.ip, req.headers['user-agent']);
 
@@ -452,4 +548,5 @@ module.exports = {
   PHI_ROUTES,
   matchRoute,
   SESSION_HEADER,
+  resolveAuditIdentity,
 };

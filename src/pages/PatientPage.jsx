@@ -29,7 +29,9 @@ const STATE_ROUTES = {
 
 function calculateAge(dob) {
   if (!dob) return '';
-  const birth = new Date(dob);
+  // Noon-anchor date-only DOB so UTC-midnight parsing does not roll the day back
+  // in negative-offset timezones (keeps age math day-accurate near boundaries).
+  const birth = new Date(/^\d{4}-\d{2}-\d{2}$/.test(dob) ? `${dob}T12:00:00` : dob);
   const now = new Date();
   let age = now.getFullYear() - birth.getFullYear();
   const monthDiff = now.getMonth() - birth.getMonth();
@@ -41,7 +43,11 @@ function calculateAge(dob) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '--';
-  return new Date(dateStr).toLocaleDateString('en-US', {
+  // Anchor date-only strings (YYYY-MM-DD) to local noon so a UTC-midnight parse
+  // is not shifted back a day in negative-offset timezones (off-by-one DOB bug).
+  // Mirrors the idiom already used in SchedulePage.jsx and PatientPortal.jsx.
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T12:00:00` : dateStr;
+  return new Date(normalized).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
   });
 }

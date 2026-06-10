@@ -7,6 +7,7 @@ const db = require('./database');
 const aiClient = require('./ai-client');
 const workflow = require('./workflow-engine');
 const cds = require('./cds-engine');
+const drugSafety = require('./pharma/drug-safety-service');
 const providerLearning = require('./provider-learning');
 const audit = require('./audit-logger');
 const logger = require('./utils/logger');
@@ -254,7 +255,7 @@ app.use('/api/patients', rbac.requireResourceAccess('patients'));
 app.use('/api/encounters', rbac.requireResourceAccess('encounters'));
 app.use('/api/prescriptions', rbac.requireResourceAccess('medications'));
 app.use('/api/medications', rbac.requireResourceAccess('medications'));
-app.use('/api/audit', rbac.requireRole('admin', 'physician'));
+app.use('/api/audit', rbac.requireRole('admin'));
 app.use('/api/billing', rbac.requireResourceAccess('billing'));
 app.use('/api/charges', rbac.requireResourceAccess('billing'));
 app.use('/api/appointments', rbac.requireResourceAccess('encounters'));
@@ -754,6 +755,39 @@ app.post('/api/prescriptions', async (req, res) => {
       status: req.body.status || 'signed'
     };
 
+    // Drug-safety screening at sign time (warn-and-allow policy: the prescription is
+    // never blocked, but interaction / boxed-warning / allergy-contraindication alerts
+    // and a fail-closed screening-unavailable flag are surfaced to the prescriber).
+    let safety = null;
+    try {
+      const [allMeds, allergies] = await Promise.all([
+        db.getPatientMedications(patientId),
+        db.getPatientAllergies(patientId)
+      ]);
+      const activeMeds = (allMeds || []).filter(m => m.status === 'active');
+      const check = await drugSafety.fullSafetyCheck(rxData.medication_name, activeMeds, allergies || []);
+      safety = {
+        alerts: check.alerts,
+        interactionScreeningUnavailable: check.interactionScreeningUnavailable,
+        boxedWarning: check.boxedWarning
+      };
+    } catch (safetyErr) {
+      // Fail closed: a failed screen must NOT read as "no interactions found."
+      console.error('Drug-safety screening error (non-fatal, fail-closed):', safetyErr.message);
+      safety = {
+        alerts: [{
+          type: 'interaction_screening_unavailable',
+          severity: 'warning',
+          title: `Interaction check unavailable: ${rxData.medication_name}`,
+          description: 'Automated drug-safety screening could not be completed. Verify interactions, boxed warnings, and allergies manually.',
+          source: 'drug-safety-service',
+          unavailable: true
+        }],
+        interactionScreeningUnavailable: true,
+        boxedWarning: { hasBoxedWarning: false, warning: null }
+      };
+    }
+
     const result = await db.createPrescription(rxData);
 
     // Also add to medications list if requested
@@ -791,7 +825,7 @@ app.post('/api/prescriptions', async (req, res) => {
       console.error('Provider learning error (non-fatal):', learnErr.message);
     }
 
-    res.status(201).json(result);
+    res.status(201).json({ ...result, safety });
   } catch (error) {
     console.error('Error creating prescription:', error);
     res.status(500).json({ error: 'Failed to create prescription' });
@@ -814,6 +848,13 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
     const medications = aiClient.extractMedications(transcript);
     const prescriptions = [];
 
+    // Fetch patient meds + allergies once for the warn-and-allow safety screen below.
+    const [allMeds, allergies] = await Promise.all([
+      db.getPatientMedications(patientId),
+      db.getPatientAllergies(patientId)
+    ]);
+    const activeMeds = (allMeds || []).filter(m => m.status === 'active');
+
     for (const med of medications) {
       const isNew = transcript.toLowerCase().includes('start') &&
                     transcript.toLowerCase().includes(med.name.toLowerCase());
@@ -835,8 +876,33 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
           status: 'signed'
         };
 
+        // Warn-and-allow drug-safety screen (never blocks the script; fails closed).
+        let safety = null;
+        try {
+          const check = await drugSafety.fullSafetyCheck(rxData.medication_name, activeMeds, allergies || []);
+          safety = {
+            alerts: check.alerts,
+            interactionScreeningUnavailable: check.interactionScreeningUnavailable,
+            boxedWarning: check.boxedWarning
+          };
+        } catch (safetyErr) {
+          console.error('Drug-safety screening error (non-fatal, fail-closed):', safetyErr.message);
+          safety = {
+            alerts: [{
+              type: 'interaction_screening_unavailable',
+              severity: 'warning',
+              title: `Interaction check unavailable: ${rxData.medication_name}`,
+              description: 'Automated drug-safety screening could not be completed. Verify interactions, boxed warnings, and allergies manually.',
+              source: 'drug-safety-service',
+              unavailable: true
+            }],
+            interactionScreeningUnavailable: true,
+            boxedWarning: { hasBoxedWarning: false, warning: null }
+          };
+        }
+
         const result = await db.createPrescription(rxData);
-        prescriptions.push({ ...rxData, id: result.id });
+        prescriptions.push({ ...rxData, id: result.id, safety });
       }
     }
 
@@ -1323,7 +1389,14 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
     res.json({ ...result, cds_suggestions: cdsSuggestions });
   } catch (error) {
     if (error.message.includes('Invalid transition')) {
+      // Bad/illegal target state for the current state — client error.
       return res.status(400).json({ error: error.message });
+    }
+    if (error.message.includes('cannot transition')) {
+      // Role not permitted for this transition — authorization failure, not a
+      // server fault. Returning 403 (not 500) keeps the encounter from being
+      // stranded behind an opaque server error (UR-005).
+      return res.status(403).json({ error: error.message });
     }
     console.error('Error transitioning workflow:', error);
     res.status(500).json({ error: 'Failed to transition workflow' });

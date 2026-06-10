@@ -83,3 +83,6 @@ HAL_ITERATION_*.preview.png
 *.html
 !index.html
 *.preview.html
+
+# Dispatch packets filed by Sonnet lane (historical records, not project source)
+_dispatch_archive/

@@ -29,7 +29,7 @@ export default function VitalsDisplay({ vitals }) {
       <VitalItem label="Temp" value={vitals.temperature} unit="°F" alert={vitals.temperature > 100.4} />
       <VitalItem label="Weight" value={vitals.weight} unit="lbs" />
       {vitals.spo2 && <VitalItem label="SpO2" value={vitals.spo2} unit="%" alert={vitals.spo2 < 92} />}
-      {vitals.respiratory_rate && <VitalItem label="RR" value={vitals.respiratory_rate} unit="/min" />}
+      {vitals.respiratory_rate && <VitalItem label="RR" value={vitals.respiratory_rate} unit="/min" alert={vitals.respiratory_rate < 10 || vitals.respiratory_rate > 20} />}
     </div>
   );
 }

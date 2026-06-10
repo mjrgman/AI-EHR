@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Mic, Square, FileText, Save, Sparkles, ClipboardCheck,
   Pill, FlaskConical, Camera, Send, Download, RefreshCw, CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import api, { safeLog } from '../api/client';
 import { exportPatient as exportMediVaultPatient } from '../api/medivault';
@@ -284,7 +285,7 @@ export default function EncounterPage() {
   const { patient } = usePatient(encounter?.patient_id);
   const { workflow, timeline, transition } = useWorkflow(eid);
   const {
-    suggestions, pending, evaluate, accept, reject, refresh: refreshCDS,
+    suggestions, pending, evaluate, accept, reject, refresh: refreshCDS, error: cdsError,
   } = useCDS(eid, encounter?.patient_id, { pollInterval: 5000, autoEvaluate: true });
   const speech = useSpeechRecognition();
 
@@ -570,7 +571,7 @@ export default function EncounterPage() {
   const referrals      = orders?.referrals       || [];
   const totalOrders    = prescriptions.length + labOrders.length + imagingOrders.length + referrals.length;
 
-  const canReviewSign = !!(soapNote || totalOrders > 0);
+  const canReviewSign = soapNote.trim().length > 0;
 
   if (loading || !encounter) return <LoadingSpinner message="Loading encounter..." />;
 
@@ -605,21 +606,26 @@ export default function EncounterPage() {
         <h3 className="mc-section-label px-1">
           Medications
         </h3>
-        {patient?.medications && patient.medications.length > 0 ? (
-          <div className="space-y-1">
-            {patient.medications.map((m, i) => (
-              <div key={i} className="mc-row text-sm">
-                <div className="font-medium text-navy-700">{m.name || m.medication_name}</div>
-                <div className="text-xs text-slate-600">
-                  {m.dosage}
-                  {m.frequency ? ` \u2022 ${m.frequency}` : ''}
+        {(() => {
+          // Only active meds belong on the prescribing surface \u2014 a discontinued
+          // drug must not read as current to the provider (UR-009).
+          const activeMeds = (patient?.medications || []).filter(m => m.status === 'active');
+          return activeMeds.length > 0 ? (
+            <div className="space-y-1">
+              {activeMeds.map((m, i) => (
+                <div key={i} className="mc-row text-sm">
+                  <div className="font-medium text-navy-700">{m.name || m.medication_name}</div>
+                  <div className="text-xs text-slate-600">
+                    {m.dosage}
+                    {m.frequency ? ` \u2022 ${m.frequency}` : ''}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400 px-1">No medications</p>
-        )}
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 px-1">No active medications</p>
+          );
+        })()}
       </div>
 
       {/* Latest Vitals */}
@@ -920,7 +926,7 @@ export default function EncounterPage() {
       {!canReviewSign && (
         <div className="flex items-start gap-2 rounded-xl border border-gold-200 bg-gold-50/70 px-4 py-3 text-sm text-gold-800">
           <ClipboardCheck size={16} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-gold-600" aria-hidden="true" />
-          <span>Generate a SOAP note or add at least one order to enable Review &amp; Sign.</span>
+          <span>Generate a SOAP note to enable Review &amp; Sign.</span>
         </div>
       )}
 
@@ -967,6 +973,16 @@ export default function EncounterPage() {
             <Badge variant="urgent">{pending.length} pending</Badge>
           )}
         </h3>
+        {/* A failed CDS evaluation must be visually distinct from "no findings" —
+            an empty list after an error would falsely read as "all clear" (UR-002). */}
+        {cdsError && (
+          <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg bg-danger-50 px-3 py-2 ring-1 ring-danger-200" role="alert" aria-live="assertive">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-danger-600" />
+            <p className="text-xs text-danger-700">
+              CDS screening unavailable — results could not be retrieved. Verify drug interactions, warnings, and care gaps manually; do not read the list below as "no findings."
+            </p>
+          </div>
+        )}
         <CDSSuggestionList
           suggestions={clinicalSuggestions}
           onAccept={handleAcceptSuggestion}

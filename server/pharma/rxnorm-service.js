@@ -19,6 +19,13 @@ const RXNORM_BASE = 'https://rxnav.nlm.nih.gov/REST';
 const CACHE_TTL_DAYS = 30;
 const REQUEST_TIMEOUT_MS = 5000;
 
+// The NLM RxNav /interaction endpoints were retired Jan-2024 (see getInteractions
+// and buildUnavailableInteraction). Calling the dead endpoint only yields a non-JSON
+// response and a "[RxNorm] Invalid JSON" warning before we fail closed anyway, and it
+// makes the test suite depend on a live network call. Default OFF; set
+// RXNORM_INTERACTION_ENABLED=true to re-enable if NLM restores the API.
+const RXNORM_INTERACTION_ENABLED = process.env.RXNORM_INTERACTION_ENABLED === 'true';
+
 // ──────────────────────────────────────────
 // HTTP CLIENT
 // ──────────────────────────────────────────
@@ -293,6 +300,15 @@ async function getInteractions(rxcui1, rxcui2, name1, name2) {
         curated: true
       }];
     }
+  }
+
+  // The live NLM RxNav /interaction API was retired Jan-2024. Skip the dead
+  // network call (and its noisy "[RxNorm] Invalid JSON" warning) unless explicitly
+  // re-enabled — the outcome is identical: we only reach here on a curated MISS, and
+  // a retired source means we fail CLOSED with the UNAVAILABLE sentinel either way.
+  // Set RXNORM_INTERACTION_ENABLED=true to restore the live path if NLM revives it.
+  if (!RXNORM_INTERACTION_ENABLED) {
+    return [buildUnavailableInteraction('NLM /interaction API retired 2024-01')];
   }
 
   const sorted = [rxcui1, rxcui2].sort();

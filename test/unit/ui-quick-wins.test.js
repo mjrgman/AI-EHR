@@ -21,6 +21,12 @@ const touchButtonPath = path.resolve(__dirname, '../../src/components/common/Tou
 const maPath = path.resolve(__dirname, '../../src/pages/MAPage.jsx');
 const schedulePath = path.resolve(__dirname, '../../src/pages/SchedulePage.jsx');
 const auditPath = path.resolve(__dirname, '../../src/pages/AuditPage.jsx');
+const clientPath = path.resolve(__dirname, '../../src/api/client.js');
+const appShellPath = path.resolve(__dirname, '../../src/components/layout/AppShell.jsx');
+const dashboardPath = path.resolve(__dirname, '../../src/pages/DashboardPage.jsx');
+const encounterPath = path.resolve(__dirname, '../../src/pages/EncounterPage.jsx');
+const loginPath = path.resolve(__dirname, '../../src/pages/LoginPage.jsx');
+const portalPath = path.resolve(__dirname, '../../src/pages/PatientPortal.jsx');
 
 // Extract a `const NAME = { ... };` object literal's key -> value (string) map.
 function extractVariantMap(source, constName) {
@@ -132,5 +138,97 @@ describe('ui-audit-noshape-01: AuditPage tolerates a malformed/empty response', 
       !auditSrc.includes('{total.toLocaleString()} entries'),
       'the raw total.toLocaleString() header must be replaced with a guarded form'
     );
+  });
+});
+
+describe('audit authorization UX: forbidden audit access does not destroy the session', () => {
+  const auditSrc = fs.readFileSync(auditPath, 'utf8');
+  const appShellSrc = fs.readFileSync(appShellPath, 'utf8');
+  const clientSrc = fs.readFileSync(clientPath, 'utf8');
+  const loginSrc = fs.readFileSync(loginPath, 'utf8');
+
+  test('client treats 401 and 403 differently', () => {
+    assert.ok(
+      !clientSrc.includes('res.status === 401 || res.status === 403'),
+      '403 must not flow through the session-clearing unauthorized handler'
+    );
+    assert.match(clientSrc, /if \(res\.status === 401\)/);
+    assert.match(clientSrc, /if \(res\.status === 403\)/);
+    assert.match(clientSrc, /error\.status = res\.status/);
+  });
+
+  test('Audit Log nav item is admin-only', () => {
+    assert.match(appShellSrc, /\{ path: '\/audit', label: 'Audit Log', roles: \['admin'\] \}/);
+    assert.match(appShellSrc, /visibleNavItems = NAV_ITEMS\.filter/);
+    assert.match(appShellSrc, /visibleNavItems\.map/);
+    assert.match(appShellSrc, /const defaultNavPath = visibleNavItems\[0\]\?\.path \|\| '\/'/);
+    assert.match(appShellSrc, /navigate\(defaultNavPath\)/);
+  });
+
+  test('direct forbidden AuditPage route renders access denied instead of an empty table', () => {
+    assert.match(auditSrc, /const \[accessDenied, setAccessDenied\] = useState\(false\)/);
+    assert.match(auditSrc, /err\?\.status === 403/);
+    assert.match(auditSrc, /Audit access denied/);
+    assert.match(auditSrc, /Back to Dashboard/);
+  });
+
+  test('admin users land on audit instead of the PHI dashboard', () => {
+    assert.match(loginSrc, /function getPostLoginDestination/);
+    assert.match(loginSrc, /user\?\.role === 'admin' && requested === '\/' \? '\/audit' : requested/);
+    assert.match(loginSrc, /navigate\(getPostLoginDestination\(authenticatedUser, location\.state\?\.from\)/);
+  });
+});
+
+describe('portal hardening contract: MRN and CSRF are wired in the SPA', () => {
+  const clientSrc = fs.readFileSync(clientPath, 'utf8');
+  const portalSrc = fs.readFileSync(portalPath, 'utf8');
+
+  test('portal client stores csrfToken returned by /verify', () => {
+    assert.match(clientSrc, /PORTAL_CSRF_STORAGE_KEY/);
+    assert.match(clientSrc, /path === '\/verify' && payload\?\.csrfToken/);
+    assert.match(clientSrc, /setPortalCsrfToken\(payload\.csrfToken\)/);
+  });
+
+  test('state-changing portal requests attach x-portal-csrf', () => {
+    assert.match(clientSrc, /'x-portal-csrf': portalCsrfToken/);
+    assert.match(clientSrc, /isStateChangingPortalRequest\(method\)/);
+  });
+
+  test('portal verify form requires MRN and no longer labels it optional', () => {
+    assert.ok(!portalSrc.includes('MRN (optional)'));
+    assert.match(portalSrc, /\['mrn', 'MRN', 'text'\]/);
+    assert.match(portalSrc, /mrn: form\.mrn/);
+  });
+});
+
+describe('visible workflow contracts match backend route contracts', () => {
+  const dashboardSrc = fs.readFileSync(dashboardPath, 'utf8');
+  const scheduleSrc = fs.readFileSync(schedulePath, 'utf8');
+  const maSrc = fs.readFileSync(maPath, 'utf8');
+  const encounterSrc = fs.readFileSync(encounterPath, 'utf8');
+
+  test('new patient sex select sends backend enum values, not display labels', () => {
+    assert.match(dashboardSrc, /value: 'M', label: 'Male'/);
+    assert.match(dashboardSrc, /value: 'F', label: 'Female'/);
+    assert.ok(!dashboardSrc.includes("options: ['Male', 'Female', 'Other']"));
+  });
+
+  test('schedule creation uses appointment_type with backend enum values', () => {
+    assert.match(scheduleSrc, /appointment_type: 'follow_up'/);
+    assert.match(scheduleSrc, /value: 'new_patient', label: 'New Patient'/);
+    assert.match(scheduleSrc, /value: 'sick_visit', label: 'Sick Visit'/);
+    assert.ok(!scheduleSrc.includes("visit_type: 'office-visit'"));
+  });
+
+  test('MA handoff guards against empty vitals and incomplete reviews', () => {
+    assert.match(maSrc, /const hasVitals = VITAL_FIELDS\.some/);
+    assert.match(maSrc, /Enter at least one vital/);
+    assert.match(maSrc, /Confirm each active medication/);
+    assert.match(maSrc, /Review allergies before sending/);
+  });
+
+  test('encounter Review & Sign gate requires SOAP note like ReviewPage signing gate', () => {
+    assert.match(encounterSrc, /const canReviewSign = soapNote\.trim\(\)\.length > 0/);
+    assert.ok(!encounterSrc.includes('soapNote || totalOrders > 0'));
   });
 });

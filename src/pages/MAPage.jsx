@@ -182,6 +182,23 @@ export default function MAPage() {
   }
 
   async function handleSave() {
+    const hasVitals = VITAL_FIELDS.some(({ key }) => String(vitals[key] ?? '').trim() !== '');
+    const medicationsReviewed = medications.length === 0
+      || Object.values(medConfirmed).filter(Boolean).length === medications.length;
+
+    if (!hasVitals) {
+      toast.warning('Enter at least one vital before sending the patient to the provider.');
+      return;
+    }
+    if (!medicationsReviewed) {
+      toast.warning('Confirm each active medication before sending the patient to the provider.');
+      return;
+    }
+    if (!allergyReviewed) {
+      toast.warning('Review allergies before sending the patient to the provider.');
+      return;
+    }
+
     setSaving(true);
     try {
       const data = {
@@ -225,7 +242,11 @@ export default function MAPage() {
   // --- Render ---
   if (loading) return <LoadingSpinner message="Loading MA screen..." />;
 
-  const medications = patient?.medications || [];
+  // Reconcile only ACTIVE medications. Discontinued meds must not appear in the
+  // rooming med-rec list (a clinician confirming a stopped drug as current is a
+  // safety risk) and must not inflate the "X/N confirmed" completion gate.
+  // Matches the m.status === 'active' filter in MedList.jsx and cds-engine.js.
+  const medications = (patient?.medications || []).filter(m => m.status === 'active');
   const allergies = patient?.allergies || [];
 
   return (
@@ -493,6 +514,7 @@ export default function MAPage() {
           icon={<Send size={18} />}
           onClick={handleSave}
           loading={saving}
+          disabled={saving}
           className="w-full"
         >
           Save Vitals and Send to Provider

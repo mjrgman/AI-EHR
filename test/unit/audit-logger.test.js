@@ -100,10 +100,50 @@ describe('audit-logger: PHI_ROUTES coverage', () => {
     // Defensive: phiFields shouldn't be set on non-PHI routes.
     assert.equal(cdsAccept.config.phiFields, undefined);
   });
+
+  test('portal message and triage routes are classified as patient-scoped PHI', () => {
+    const message = auditLogger.matchRoute('POST', '/api/patient-portal/message');
+    const triage = auditLogger.matchRoute('POST', '/api/patient-portal/symptom-triage');
+    assert.ok(message);
+    assert.ok(triage);
+    assert.equal(message.config.phi, true);
+    assert.equal(triage.config.phi, true);
+    assert.equal(message.config.extractPatientId({ portalPatient: { id: 42 } }), 42);
+    assert.equal(triage.config.extractPatientId({ portalPatient: { id: 42 } }), 42);
+  });
+
+  test('portal medication and lab reads are classified as patient-scoped PHI', () => {
+    const meds = auditLogger.matchRoute('GET', '/api/patient-portal/medications');
+    const labs = auditLogger.matchRoute('GET', '/api/patient-portal/labs');
+    assert.ok(meds);
+    assert.ok(labs);
+    assert.equal(meds.config.phi, true);
+    assert.equal(labs.config.phi, true);
+    assert.equal(meds.config.extractPatientId({ portalPatient: { id: 7 } }), 7);
+    assert.equal(labs.config.extractPatientId({ portalPatient: { id: 7 } }), 7);
+  });
 });
 
 describe('audit-logger: SESSION_HEADER constant', () => {
   test('exports the expected header name', () => {
     assert.equal(auditLogger.SESSION_HEADER, 'x-audit-session-id');
+  });
+});
+
+describe('audit-logger: identity resolution ignores spoofable audit headers', () => {
+  test('uses authenticated JWT identity over x-audit-* headers', () => {
+    const identity = auditLogger.resolveAuditIdentity({
+      user: { username: 'dr.renner', role: 'physician' },
+      headers: { 'x-audit-user': 'forged-admin', 'x-audit-role': 'admin' },
+    });
+    assert.deepEqual(identity, { userIdentity: 'dr.renner', userRole: 'physician' });
+  });
+
+  test('uses portal patient identity for portal-session requests', () => {
+    const identity = auditLogger.resolveAuditIdentity({
+      portalPatient: { id: 123 },
+      headers: { 'x-audit-user': 'forged-admin', 'x-audit-role': 'admin' },
+    });
+    assert.deepEqual(identity, { userIdentity: 'portal-patient:123', userRole: 'patient_portal' });
   });
 });

@@ -478,10 +478,15 @@ function evaluateHeartScoreProtocol(context) {
     recommendation = 'HEART score ≥ 7 (high risk). Early invasive strategy indicated. Cardiology consult, antiplatelet therapy, and urgent catheterization per institutional protocol.';
   }
 
+  // Dynamic priority so a high-risk (potential ACS) score sorts ABOVE routine
+  // priority-1 alerts under the ascending sort (lower number = higher priority).
+  // High=1, Moderate=2, Low=4.
+  const priority = totalScore <= 3 ? 4 : totalScore <= 6 ? 2 : 1;
+
   return [{
     suggestion_type: 'clinical_protocol',
     category,
-    priority: 5, // Highest priority — potential ACS
+    priority,
     title: `HEART Score: ${totalScore}/10 — ${tier}`,
     description: recommendation,
     rationale: `HEART score components: History=${components.history}, ECG=${components.ecg} (pending review), Age=${components.age}, Risk Factors=${components.riskFactors}, Troponin=${components.troponin}. Note: ECG score defaults to 1 (non-specific) pending physician review.`,
@@ -490,9 +495,11 @@ function evaluateHeartScoreProtocol(context) {
       score: totalScore,
       components,
       ...ecgReview,
+      // type must match the executeSuggestion switch ('create_lab_order') so that
+      // accepting a high-risk HEART suggestion actually creates the serial troponins.
       actions: totalScore >= 4 ? [
-        { type: 'order_lab', description: 'Serial Troponin (3-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } },
-        { type: 'order_lab', description: 'Serial Troponin (6-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } }
+        { type: 'create_lab_order', description: 'Serial Troponin (3-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } },
+        { type: 'create_lab_order', description: 'Serial Troponin (6-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } }
       ] : []
     },
     source: 'heart_score_protocol'

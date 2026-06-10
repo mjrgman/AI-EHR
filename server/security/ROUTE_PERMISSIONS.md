@@ -68,10 +68,10 @@ All routes require JWT authentication (via `auth.requireAuth` middleware) except
 | **Dashboard** | | |
 | `/api/dashboard` | GET | physician, nurse_practitioner, ma, front_desk, admin, system |
 | **Audit** | | |
-| `/api/audit/logs` | GET | admin, physician |
-| `/api/audit/stats` | GET | admin, physician |
+| `/api/audit/logs` | GET | admin |
+| `/api/audit/stats` | GET | admin |
 | `/api/audit/sessions` | GET | admin |
-| `/api/audit/patient/:id` | GET | admin, physician |
+| `/api/audit/patient/:id` | GET | admin |
 | `/api/audit/export` | GET | admin |
 | **Agents** | | |
 | `/api/agents/run` | POST | physician, nurse_practitioner, system |
@@ -89,3 +89,15 @@ All routes require JWT authentication (via `auth.requireAuth` middleware) except
 | `/api/agents/status` | GET | physician, nurse_practitioner, ma, admin, system |
 | `/api/agents/last-result` | GET | physician, nurse_practitioner, system |
 | `/api/agents/summary` | GET | physician, nurse_practitioner, system |
+
+---
+
+## FHIR Patient-Compartment Access (UR-007 — pending enforcement)
+
+**Decision:** `ehr-fhir-access-model-2026-06-06 = compartment` (per-patient isolation, chosen over all-clinicians-see-all).
+
+**Current enforced state (2026-06-09):** the FHIR R4 surface (`/fhir/R4/*`) enforces **role-level** access via `fhirRbacGuard` (`server/fhir/router.js`) and SMART **scope** via `smartScopeCheck`, but **no patient-compartment isolation is enforced yet** — an authenticated clinician (`user`-scope token) can read any patient by id/`?patient=`. This is a **known, documented gap tied to the compartment decision**, not a silent hole.
+
+**Why not yet enforced:** the access-token JWT carries no patient binding, and the clinician compartment *granularity* (care-team vs active-roster) plus the `assigned_provider`/`assigned_ma` data shape must be confirmed before a fail-closed guard is added (a wrong match would deny all clinicians all patients).
+
+**Design + owner decision:** `GSD/Code Dispatch/out/work_runs/EHR_A3_FHIR_COMPARTMENT_DESIGN_2026-06-09.md` (recommended: care-team compartment with audited cross-coverage override).
