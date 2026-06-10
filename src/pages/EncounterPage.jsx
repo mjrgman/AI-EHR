@@ -19,6 +19,7 @@ import VitalsDisplay from '../components/patient/VitalsDisplay';
 import LabResults from '../components/patient/LabResults';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import CDSSuggestionList from '../components/encounter/CDSSuggestionList';
+import RxSafetyAlerts from '../components/encounter/RxSafetyAlerts';
 import HRTPanel, { isHRTRelevant } from '../components/encounter/HRTPanel';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
@@ -298,7 +299,7 @@ export default function EncounterPage() {
   const [loading, setLoading] = useState(true);
 
   // Auto-save indicator
-  const [autoSaveStatus, setAutoSaveStatus] = useState(''); // '', 'saving', 'saved'
+  const [autoSaveStatus, setAutoSaveStatus] = useState(''); // '', 'saving', 'saved', 'failed'
   const autoSaveTimerRef = useRef(null);
 
   // Encounter timer start time
@@ -306,6 +307,15 @@ export default function EncounterPage() {
 
   // Modal state
   const [activeModal, setActiveModal] = useState(null); // 'rx' | 'lab' | 'imaging' | 'referral' | null
+
+  // Drug-safety screen results, surfaced at sign time. The server runs a
+  // warn-and-allow screen on every prescription and returns a `safety` object;
+  // these hold the latest result for each prescription path so the prescriber
+  // SEES interactions / boxed warnings / "screening unavailable" before the
+  // script is finalized (audit UR-001/A2: server computed it, UI ignored it).
+  const [rxSafety, setRxSafety] = useState(null);          // manual Rx modal path
+  const [speechRxSafety, setSpeechRxSafety] = useState([]); // from-speech path (one per Rx)
+  const [generatingRx, setGeneratingRx] = useState(false);
 
   // Mobile tab state — also doubles as the HRT-view toggle on desktop, since
   // 'hrt' is the only value that overrides the 3-panel desktop layout.
@@ -376,6 +386,27 @@ export default function EncounterPage() {
   }, [speech.transcript, speech.isListening]);
 
   // --- Auto-save transcript with 2s debounce ---
+  // Extracted so the visible "save failed — retry" affordance (UR-010) can
+  // re-run the exact same persistence call on demand. A silent failure here
+  // means a prescriber believes the encounter is saved when it is not.
+  async function persistTranscript() {
+    try {
+      setAutoSaveStatus('saving');
+      await api.updateEncounter(eid, {
+        transcript,
+        patient_id: encounter.patient_id,
+      });
+      setAutoSaveStatus('saved');
+      setTimeout(() => setAutoSaveStatus(''), 2000);
+    } catch (e) {
+      // UR-010: do NOT silently blank the indicator. A failed save must remain
+      // visible as a persistent "save failed — retry" state so unsaved work is
+      // never mistaken for saved work.
+      safeLog.error('Auto-save failed:', e);
+      setAutoSaveStatus('failed');
+    }
+  }
+
   useEffect(() => {
     if (!encounter || !transcript) return;
     // Don't auto-save if unchanged from server
@@ -383,28 +414,18 @@ export default function EncounterPage() {
 
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
-    autoSaveTimerRef.current = setTimeout(async () => {
-      try {
-        setAutoSaveStatus('saving');
-        await api.updateEncounter(eid, {
-          transcript,
-          patient_id: encounter.patient_id,
-        });
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus(''), 2000);
-      } catch (e) {
-        safeLog.error('Auto-save failed:', e);
-        setAutoSaveStatus('');
-      }
-    }, 2000);
+    autoSaveTimerRef.current = setTimeout(() => { persistTranscript(); }, 2000);
 
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
+    // persistTranscript closes over transcript/encounter/eid; keep the same
+    // primitive dep list the debounce has always used.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, encounter, eid]);
 
   // --- Unsaved work protection ---
-  const hasUnsavedChanges = autoSaveStatus === 'saving' ||
+  const hasUnsavedChanges = autoSaveStatus === 'saving' || autoSaveStatus === 'failed' ||
     (encounter && transcript !== (encounter.transcript || '')) ||
     (encounter && soapNote !== (encounter.soap_note || ''));
 
@@ -504,12 +525,52 @@ export default function EncounterPage() {
   // --- Order creation handlers ---
   async function handleCreateRx(data) {
     try {
-      await api.createPrescription({ ...data, encounter_id: eid, patient_id: encounter.patient_id });
+      // Server returns { ...result, safety }. Capture `safety` and surface it at
+      // sign time — the drug-safety net is useless if the prescriber never sees
+      // the interaction / boxed-warning / screening-unavailable result.
+      const result = await api.createPrescription({ ...data, encounter_id: eid, patient_id: encounter.patient_id });
+      setRxSafety(result?.safety
+        ? { medication_name: data.medication_name, safety: result.safety }
+        : null);
       await refreshEncounter();
       setActiveModal(null);
       toast.success(`Prescription added: ${data.medication_name}`);
     } catch (e) {
       toast.error('Failed to create prescription: ' + e.message);
+    }
+  }
+
+  // Sign-time Rx-from-speech: parse the live transcript into prescriptions and
+  // surface each script's warn-and-allow drug-safety screen. The server returns
+  // { prescriptions: [{ ...rxData, id, safety }] }; we keep every `safety` so the
+  // interaction / boxed-warning / screening-unavailable alerts are visible.
+  async function handleGenerateRxFromSpeech() {
+    if (!transcript.trim()) {
+      toast.error('No transcript to parse for prescriptions');
+      return;
+    }
+    setGeneratingRx(true);
+    try {
+      const result = await api.generatePrescriptionsFromSpeech({
+        transcript,
+        patient_id: encounter.patient_id,
+        encounter_id: eid,
+      });
+      const created = Array.isArray(result?.prescriptions) ? result.prescriptions : [];
+      setSpeechRxSafety(
+        created.map(rx => ({ medication_name: rx.medication_name, safety: rx.safety }))
+      );
+      await refreshEncounter();
+      if (created.length === 0) {
+        toast.info('No new prescriptions detected in the transcript');
+      } else {
+        toast.success(`${created.length} prescription${created.length > 1 ? 's' : ''} added from speech`);
+      }
+    } catch (e) {
+      safeLog.error('Rx-from-speech failed:', e);
+      toast.error('Failed to generate prescriptions from speech: ' + e.message);
+    } finally {
+      setGeneratingRx(false);
     }
   }
 
@@ -678,6 +739,22 @@ export default function EncounterPage() {
             <CheckCircle2 size={13} /> Saved
           </span>
         )}
+        {autoSaveStatus === 'failed' && (
+          <span
+            className="flex items-center gap-1.5 text-xs font-semibold text-danger-700"
+            role="alert"
+            aria-live="assertive"
+          >
+            <AlertTriangle size={13} className="text-danger-600" /> Save failed
+            <button
+              type="button"
+              onClick={persistTranscript}
+              className="underline underline-offset-2 hover:text-danger-800"
+            >
+              Retry
+            </button>
+          </span>
+        )}
       </div>
 
       {/* Transcript + Voice Recording */}
@@ -822,6 +899,22 @@ export default function EncounterPage() {
               {autoSaveStatus === 'saving' && (
                 <span className="text-xs text-slate-400">Auto-saving...</span>
               )}
+              {autoSaveStatus === 'failed' && (
+                <span
+                  className="flex items-center gap-1.5 text-xs font-semibold text-danger-700"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  <AlertTriangle size={13} className="text-danger-600" /> Save failed
+                  <button
+                    type="button"
+                    onClick={persistTranscript}
+                    className="underline underline-offset-2 hover:text-danger-800"
+                  >
+                    Retry
+                  </button>
+                </span>
+              )}
             </div>
           </CardHeader>
           <CardBody>
@@ -862,6 +955,31 @@ export default function EncounterPage() {
               Add Referral
             </TouchButton>
           </div>
+
+          {/* Sign-time Rx-from-speech: parse the dictated transcript into scripts.
+              Each created prescription's drug-safety screen renders below. */}
+          <TouchButton
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            icon={<Mic size={16} />}
+            onClick={handleGenerateRxFromSpeech}
+            disabled={generatingRx || !transcript.trim()}
+          >
+            {generatingRx ? 'Parsing prescriptions…' : 'Add Rx from Speech'}
+          </TouchButton>
+
+          {/* Drug-safety screen — surfaced at SIGN TIME for BOTH prescription
+              paths. Critical findings (interactions, boxed warnings,
+              contraindications) get danger treatment and must stay visible;
+              "interaction screening unavailable — verify manually" is a
+              warn-and-allow warning, never a hard block (UR-001/A2). */}
+          {rxSafety && (
+            <RxSafetyAlerts safety={rxSafety.safety} medicationName={rxSafety.medication_name} />
+          )}
+          {speechRxSafety.map((rx, i) => (
+            <RxSafetyAlerts key={`speech-rx-${i}`} safety={rx.safety} medicationName={rx.medication_name} />
+          ))}
 
           {/* Display created orders */}
           {totalOrders > 0 && (

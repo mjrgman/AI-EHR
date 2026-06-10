@@ -299,6 +299,10 @@ export const api = {
   },
   createReferral: (data) => request('/referrals', { method: 'POST', body: JSON.stringify(data) }),
   createPrescription: (data) => request('/prescriptions', { method: 'POST', body: JSON.stringify(data) }),
+  // Sign-time Rx-from-speech: returns { prescriptions: [{ ...rxData, id, safety }] }.
+  // Each prescription carries the warn-and-allow drug-safety screen; the caller
+  // must surface `safety` (interactions / boxed warnings / screening-unavailable).
+  generatePrescriptionsFromSpeech: (data) => request('/prescriptions/from-speech', { method: 'POST', body: JSON.stringify(data) }),
   extractData: (data) => request('/ai/extract-data', { method: 'POST', body: JSON.stringify(data) }),
   generateNote: (data) => request('/ai/generate-note', { method: 'POST', body: JSON.stringify(data) }),
   getWorkflow: (encounterId) => request(`/workflow/${encounterId}`),
