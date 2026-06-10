@@ -316,6 +316,11 @@ export const api = {
   rejectSuggestion: (id, data) => request(`/cds/suggestions/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
   deferSuggestion: (id) => request(`/cds/suggestions/${id}/defer`, { method: 'POST', body: JSON.stringify({}) }),
   getProviderPreferences: (provider) => request(`/provider/preferences?provider=${encodeURIComponent(provider)}`),
+  // Decision Queue (provider) + AI triage + MA close-out
+  getDecisions: () => request('/decisions'),
+  decideDecision: (id, payload) => request(`/decisions/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+  getMaCloseouts: () => request('/decisions/ma/closeouts'),
+  closeDecision: (id) => request(`/decisions/${id}/close`, { method: 'POST', body: JSON.stringify({}) }),
   getDashboard: () => request('/dashboard'),
   getHealth: () => request('/health'),
   getAuditLogs: (params) => {

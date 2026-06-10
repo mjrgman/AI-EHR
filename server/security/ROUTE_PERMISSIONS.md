@@ -62,6 +62,11 @@ All routes require JWT authentication (via `auth.requireAuth` middleware) except
 | `/api/cds/suggestions/:id/accept` | POST | physician, nurse_practitioner |
 | `/api/cds/suggestions/:id/reject` | POST | physician, nurse_practitioner |
 | `/api/cds/suggestions/:id/defer` | POST | physician, nurse_practitioner |
+| **Decision Queue (AI triage + provider dispositions)** | | |
+| `/api/decisions` | GET | physician, nurse_practitioner |
+| `/api/decisions/:id/decide` | POST | physician, nurse_practitioner |
+| `/api/decisions/ma/closeouts` | GET | ma, physician, nurse_practitioner |
+| `/api/decisions/:id/close` | POST | ma, physician, nurse_practitioner |
 | **Provider Learning** | | |
 | `/api/provider/preferences` | GET | physician, nurse_practitioner, admin |
 | `/api/provider/preferences/decay` | POST | physician, admin |

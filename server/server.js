@@ -16,6 +16,8 @@ const auth = require('./security/auth');
 const rbac = require('./security/rbac');
 const refreshTokens = require('./security/refresh-tokens');
 const { runMigrations } = require('./database-migrations');
+const triage = require('./triage-service');
+const { seedDecisionQueue } = require('./decision-queue-seed');
 const billing = require('./billing-engine');
 const fhirRouter = require('./fhir/router');
 const { buildSmartConfiguration } = require('./fhir/smart/smart-config');
@@ -1604,6 +1606,297 @@ app.post('/api/cds/suggestions/:id/defer', async (req, res) => {
 });
 
 // ==========================================
+// DECISION QUEUE ENDPOINTS (Provider Decision Queue + AI Triage)
+// ==========================================
+//
+// Two-tier clinical AI surface:
+//   - Upstream TRIAGE (top tier, sonnet) sorts the patient to a level of care
+//     via the AHRQ Emergency Severity Index (ESI, 5-level acuity).
+//   - A MID-tier (haiku) one-paragraph patient summary + a TOP-tier decision
+//     tree of >= 4 one-click options are generated on read for pending items
+//     and persisted (cached) so the demo is deterministic and offline-capable.
+//   - The provider's chosen action (or dictated free text) is routed to the
+//     MEDICAL-ASSISTANT close-out queue and transitions the encounter to
+//     'orders-pending' (the MA-actionable workflow state).
+//
+// RBAC: GET/decide are provider-only (physician/NP); MA close-out is gated to
+// ma + physician/NP. We use requireRole here (not requireResourceAccess)
+// because decision_queue is a feature surface, not a base RBAC resource type,
+// and MA needs POST access that the resource-action matrix would deny.
+
+const PROVIDER_DECISION_ROLES = ['physician', 'nurse_practitioner'];
+const MA_CLOSEOUT_ROLES = ['ma', 'physician', 'nurse_practitioner'];
+
+// Build the patient record passed to the triage/summary/decision functions.
+async function buildDecisionRecord(item) {
+  const patient = await db.getPatientById(item.patient_id);
+  const problems = await db.getPatientProblems(item.patient_id);
+  const vitalsRows = await db.dbAll(
+    'SELECT * FROM vitals WHERE encounter_id = ? ORDER BY recorded_date DESC LIMIT 1',
+    [item.encounter_id]
+  );
+  const vitals = vitalsRows[0] || {};
+  return {
+    first_name: patient?.first_name,
+    last_name: patient?.last_name,
+    sex: patient?.sex,
+    dob: patient?.dob,
+    age: patient ? db.calculateAge(patient.dob) : null,
+    chief_complaint: item.chief_complaint,
+    vitals,
+    problems: (problems || []).filter(p => p.status === 'active' || p.status === 'chronic'),
+  };
+}
+
+// Shape a decision_queue row for the API response (parse JSON options).
+function serializeDecisionItem(row) {
+  let options = [];
+  try {
+    options = row.decision_options ? JSON.parse(row.decision_options) : [];
+  } catch { options = []; }
+  // EMERGENCY BYPASS: ESI 1-2 are emergent (AHRQ ESI v4 — level 1 = immediate
+  // life-saving intervention; level 2 = high-risk, cannot wait). These bypass
+  // the routine deliberative path: they pin to the top, render with critical
+  // styling, and route to immediate handling rather than routine MA close-out.
+  const is_emergency = triage.isEmergency(row.esi_level);
+  // An EMERGENCY ESCALATION is recorded when a provider takes a 911/ED action.
+  // The MA close-out then shows "confirm 911/ED handoff" rather than a routine
+  // task. Derived from the recorded decision_key (preferred) and falls back to
+  // the acuity flag for any decided emergency item.
+  const emergency_escalated =
+    triage.EMERGENCY_DECISION_KEYS.includes(row.decision_key) ||
+    (is_emergency && row.status !== 'pending');
+  return {
+    id: row.id,
+    encounter_id: row.encounter_id,
+    patient_id: row.patient_id,
+    status: row.status,
+    is_emergency,
+    emergency_escalated,
+    patient: {
+      first_name: row.first_name,
+      last_name: row.last_name,
+      mrn: row.mrn,
+      dob: row.dob,
+      sex: row.sex,
+      age: row.dob ? db.calculateAge(row.dob) : null,
+    },
+    chief_complaint: row.chief_complaint,
+    triage: {
+      esi_level: row.esi_level,
+      level_of_care: row.level_of_care,
+      rationale: row.triage_rationale,
+      model: row.triage_model,
+    },
+    summary: row.ai_summary,
+    summary_model: row.summary_model,
+    options,
+    decision_model: row.decision_model,
+    decision: {
+      key: row.decision_key,
+      label: row.decision_label,
+      text: row.decision_text,
+      decided_by: row.decided_by,
+      decided_at: row.decided_at,
+    },
+    ma_status: row.ma_status,
+    closed_by: row.closed_by,
+    closed_at: row.closed_at,
+    created_at: row.created_at,
+  };
+}
+
+// GET /api/decisions — provider queue (pending + decided), sickest-first.
+// For pending items lacking cached AI output, generate triage (top), summary
+// (mid), and the decision tree (top) on read and persist them.
+app.get('/api/decisions', rbac.requireRole(...PROVIDER_DECISION_ROLES), async (req, res) => {
+  try {
+    const items = await db.getProviderDecisionQueue();
+
+    for (const item of items) {
+      const needsGeneration = item.status === 'pending' && (!item.ai_summary || !item.decision_options);
+      if (!needsGeneration) continue;
+
+      const record = await buildDecisionRecord(item);
+      const triageResult = await triage.triagePatient(record);
+      const summaryResult = await triage.summarizePatient(record);
+      const decisionResult = await triage.buildDecisionOptions(record, triageResult);
+
+      await db.updateDecisionQueueAI(item.id, {
+        esi_level: triageResult.esi_level,
+        level_of_care: triageResult.level_of_care,
+        triage_rationale: triageResult.rationale,
+        triage_model: triageResult.model,
+        ai_summary: summaryResult.summary,
+        summary_model: summaryResult.model,
+        decision_options: decisionResult.options,
+        decision_model: decisionResult.model,
+      });
+
+      // Reflect the freshly-generated values onto the row we return now.
+      item.esi_level = triageResult.esi_level;
+      item.level_of_care = triageResult.level_of_care;
+      item.triage_rationale = triageResult.rationale;
+      item.triage_model = triageResult.model;
+      item.ai_summary = summaryResult.summary;
+      item.summary_model = summaryResult.model;
+      item.decision_options = JSON.stringify(decisionResult.options);
+      item.decision_model = decisionResult.model;
+    }
+
+    // Re-sort sickest-first now that pending items have an esi_level.
+    items.sort((a, b) => {
+      const statusRank = (s) => (s === 'pending' ? 0 : 1);
+      if (statusRank(a.status) !== statusRank(b.status)) return statusRank(a.status) - statusRank(b.status);
+      return (a.esi_level || 99) - (b.esi_level || 99);
+    });
+
+    // EMERGENCY BYPASS: count emergent (ESI 1-2) items so the UI can surface a
+    // top-of-page critical banner. The esi-asc sort above already pins these
+    // first; emergency cards render with critical styling and a one-click
+    // "Call 911 / Send to ED now" headline action.
+    const serialized = items.map(serializeDecisionItem);
+    const emergency_count = serialized.filter(i => i.is_emergency).length;
+
+    res.json({
+      mode: aiClient.getMode(),
+      count: items.length,
+      emergency_count,
+      items: serialized,
+    });
+  } catch (error) {
+    logger.error('Error fetching decision queue', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch decision queue' });
+  }
+});
+
+// POST /api/decisions/:id/decide — provider records a decision.
+// Body: { decision_key } (chosen one-click option) OR { decision_text }
+// (dictated custom decision). Sets status='decided', ma_status='awaiting',
+// transitions the encounter workflow to 'orders-pending', and returns the row.
+app.post('/api/decisions/:id/decide', rbac.requireRole(...PROVIDER_DECISION_ROLES), async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid decision ID' });
+
+    const decisionKey = req.body.decision_key ? sanitizeString(req.body.decision_key, 100) : null;
+    const decisionText = req.body.decision_text ? sanitizeString(req.body.decision_text, 2000) : null;
+    if (!decisionKey && !decisionText) {
+      return res.status(400).json({ error: 'Provide either decision_key (a one-click option) or decision_text (a dictated decision)' });
+    }
+
+    const item = await db.getDecisionQueueItemById(id);
+    if (!item) return res.status(404).json({ error: 'Decision item not found' });
+    if (item.status !== 'pending') {
+      return res.status(409).json({ error: `Decision already ${item.status}` });
+    }
+
+    // Resolve the human label for the chosen option from cached options.
+    let decisionLabel = decisionText ? 'Dictated decision' : decisionKey;
+    if (decisionKey && item.decision_options) {
+      try {
+        const opts = JSON.parse(item.decision_options);
+        const match = opts.find(o => o.key === decisionKey);
+        if (match) decisionLabel = match.label;
+      } catch { /* leave label as key */ }
+    }
+
+    // EMERGENCY BYPASS: a 911/ED action is an emergency escalation, not a
+    // routine disposition. Record an unambiguous emergency disposition label so
+    // the MA close-out worklist shows "EMERGENCY — confirm 911/ED handoff"
+    // rather than a routine task. (AHRQ ESI v4 — ESI 1-2 are emergent.)
+    const isEmergencyAction = triage.EMERGENCY_DECISION_KEYS.includes(decisionKey);
+    if (isEmergencyAction) {
+      decisionLabel = '911 activated / ED transfer';
+    }
+
+    const decidedBy = req.user?.name || req.user?.username || process.env.PROVIDER_NAME || 'Provider';
+    const result = await db.recordDecision(id, {
+      decision_key: decisionKey,
+      decision_label: decisionLabel,
+      decision_text: decisionText,
+      decided_by: decidedBy,
+    });
+    if (result.changes === 0) {
+      return res.status(409).json({ error: 'Decision could not be recorded (already decided)' });
+    }
+
+    // Route to the MA queue by advancing the encounter workflow to
+    // 'orders-pending' (the MA-actionable state). Non-fatal if the workflow is
+    // not in a transitionable state — the decision itself is already recorded.
+    let workflowTransition = null;
+    try {
+      const userRole = req.user?.role || null;
+      workflowTransition = await workflow.transitionState(item.encounter_id, 'orders-pending', {}, userRole);
+    } catch (wfErr) {
+      logger.warn('Decision workflow transition skipped (non-fatal)', { encounter_id: item.encounter_id, error: wfErr.message });
+    }
+
+    const updated = await db.getDecisionQueueItemByEncounter(item.encounter_id);
+    const enriched = await db.getProviderDecisionQueue();
+    const joined = enriched.find(r => r.id === updated.id) || { ...updated };
+    res.json({ ...serializeDecisionItem(joined), workflow_transition: workflowTransition });
+  } catch (error) {
+    logger.error('Error recording decision', { error: error.message });
+    res.status(500).json({ error: 'Failed to record decision' });
+  }
+});
+
+// GET /api/decisions/ma/closeouts — MA worklist: decided items awaiting close.
+app.get('/api/decisions/ma/closeouts', rbac.requireRole(...MA_CLOSEOUT_ROLES), async (req, res) => {
+  try {
+    const items = await db.getMaCloseouts();
+    res.json({ count: items.length, items: items.map(serializeDecisionItem) });
+  } catch (error) {
+    logger.error('Error fetching MA close-outs', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch MA close-outs' });
+  }
+});
+
+// POST /api/decisions/:id/close — MA (or provider) closes out a decided item.
+// Sets status='closed', ma_status='closed', records closed_by/closed_at, and
+// advances the encounter workflow forward when legal (non-fatal otherwise).
+app.post('/api/decisions/:id/close', rbac.requireRole(...MA_CLOSEOUT_ROLES), async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid decision ID' });
+
+    const item = await db.getDecisionQueueItemById(id);
+    if (!item) return res.status(404).json({ error: 'Decision item not found' });
+    if (item.status === 'closed') {
+      return res.status(409).json({ error: 'Decision already closed' });
+    }
+    if (item.status !== 'decided') {
+      return res.status(409).json({ error: 'Decision must be decided by a provider before close-out' });
+    }
+
+    const closedBy = req.user?.name || req.user?.username || 'MA';
+    const result = await db.closeDecision(id, { closed_by: closedBy });
+    if (result.changes === 0) {
+      return res.status(409).json({ error: 'Decision could not be closed' });
+    }
+
+    // Advance the encounter forward (orders-pending -> documentation) when the
+    // workflow is in that state. Non-fatal: the close-out itself is recorded.
+    try {
+      const wf = await workflow.getCurrentState(item.encounter_id);
+      if (wf.current_state === 'orders-pending') {
+        const userRole = req.user?.role || null;
+        await workflow.transitionState(item.encounter_id, 'documentation', {}, userRole);
+      }
+    } catch (wfErr) {
+      logger.warn('Close-out workflow transition skipped (non-fatal)', { encounter_id: item.encounter_id, error: wfErr.message });
+    }
+
+    const updated = await db.getDecisionQueueItemById(id);
+    res.json(serializeDecisionItem(updated));
+  } catch (error) {
+    logger.error('Error closing decision', { error: error.message });
+    res.status(500).json({ error: 'Failed to close decision' });
+  }
+});
+
+// ==========================================
 // PROVIDER LEARNING ENDPOINTS
 // ==========================================
 
@@ -2320,6 +2613,12 @@ async function initializeServerState() {
     await runMigrations(db);
     await auth.init(db);
     await refreshTokens.init(db);
+
+    try {
+      await seedDecisionQueue(db);
+    } catch (err) {
+      logger.warn('Decision queue seed on startup failed (non-fatal)', { error: err.message });
+    }
 
     try {
       await providerLearning.decayPreferences();

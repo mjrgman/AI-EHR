@@ -47,6 +47,7 @@ async function runMigrations(db) {
     await addRxNormColumns(db);
     await createLabCorpTokensTable(db);
     await addLabCorpColumns(db);
+    await createDecisionQueueTable(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -931,9 +932,65 @@ async function addLabCorpColumns(db) {
 }
 
 // ==========================================
+// DECISION QUEUE TABLE (Provider Decision Queue + AI Triage)
+// ==========================================
+
+/**
+ * Create decision_queue table backing the provider Decision Queue feature.
+ *
+ * Each row is one encounter awaiting a provider disposition decision. The
+ * upstream AI triage (top tier) sorts the patient to a level of care (ESI 1-5
+ * per AHRQ Emergency Severity Index); the mid-tier model produces a one-
+ * paragraph summary; the top-tier model produces a decision tree of one-click
+ * options. The provider's chosen action is then routed to the medical-
+ * assistant (MA) queue to close out (ma_status awaiting -> closed).
+ *
+ * Model-tier provenance is persisted (summary_model / decision_model) so the
+ * demo visibly shows which tier produced what.
+ *
+ * One row per encounter (encounter_id UNIQUE). Idempotent via
+ * CREATE TABLE IF NOT EXISTS.
+ */
+async function createDecisionQueueTable(db) {
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS decision_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      encounter_id INTEGER NOT NULL UNIQUE,
+      patient_id INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','decided','closed')) DEFAULT 'pending',
+      esi_level INTEGER CHECK(esi_level BETWEEN 1 AND 5),
+      level_of_care TEXT,
+      triage_rationale TEXT,
+      triage_model TEXT,
+      ai_summary TEXT,
+      summary_model TEXT,
+      decision_options TEXT,
+      decision_model TEXT,
+      decision_key TEXT,
+      decision_label TEXT,
+      decision_text TEXT,
+      decided_by TEXT,
+      decided_at DATETIME,
+      ma_status TEXT CHECK(ma_status IN ('awaiting','closed')),
+      closed_by TEXT,
+      closed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_status ON decision_queue(status)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_encounter ON decision_queue(encounter_id)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_ma_status ON decision_queue(ma_status)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_esi ON decision_queue(esi_level)`);
+  console.log('[MIGRATIONS] decision_queue table ready');
+}
+
+// ==========================================
 
 module.exports = {
   runMigrations,
+  createDecisionQueueTable,
   createUsersTable,
   createPatientConsentTable,
   createAgentAuditTrailTable,

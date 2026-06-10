@@ -10,6 +10,7 @@ import AppShell from './components/layout/AppShell';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const CheckInPage = lazy(() => import('./pages/CheckInPage'));
 const MAPage = lazy(() => import('./pages/MAPage'));
+const DecisionQueuePage = lazy(() => import('./pages/DecisionQueuePage'));
 const EncounterPage = lazy(() => import('./pages/EncounterPage'));
 const ReviewPage = lazy(() => import('./pages/ReviewPage'));
 const CheckOutPage = lazy(() => import('./pages/CheckOutPage'));
@@ -87,6 +88,7 @@ export default function App() {
                     <Route path="/patient/:patientId" element={<PatientPage />} />
                     <Route path="/checkin/:encounterId" element={<CheckInPage />} />
                     <Route path="/ma/:encounterId" element={<MAPage />} />
+                    <Route path="/decisions" element={<DecisionQueuePage />} />
                     <Route path="/encounter/:encounterId" element={<EncounterPage />} />
                     <Route path="/review/:encounterId" element={<ReviewPage />} />
                     <Route path="/checkout/:encounterId" element={<CheckOutPage />} />

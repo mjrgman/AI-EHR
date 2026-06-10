@@ -23,6 +23,13 @@ const NAV_ITEMS = [
     label: 'Schedule',
     roles: ['physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'front_desk', 'billing', 'system'],
   },
+  {
+    // Provider Decision Queue (AI triage + one-click dispositions). Shown for
+    // providers; MA also sees it for the close-out worklist surfaced on the page.
+    path: '/decisions',
+    label: 'Decisions',
+    roles: ['physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'system'],
+  },
   { path: '/audit', label: 'Audit Log', roles: ['admin'] },
 ];
 

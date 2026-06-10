@@ -1495,6 +1495,93 @@ const db_helpers = {
 };
 
 // ==========================================
+// DECISION QUEUE HELPERS (Provider Decision Queue + AI Triage)
+// ==========================================
+
+const decision_helpers = {
+  // Create a pending decision-queue row for an encounter (idempotent on
+  // encounter_id via INSERT OR IGNORE; one row per encounter).
+  createDecisionQueueItem: (data) => {
+    const { encounter_id, patient_id } = data;
+    return dbRun(
+      `INSERT OR IGNORE INTO decision_queue (encounter_id, patient_id, status)
+       VALUES (?, ?, 'pending')`,
+      [encounter_id, patient_id]
+    ).then(() => dbGet('SELECT * FROM decision_queue WHERE encounter_id = ?', [encounter_id]));
+  },
+
+  getDecisionQueueItemById: (id) => dbGet('SELECT * FROM decision_queue WHERE id = ?', [id]),
+
+  getDecisionQueueItemByEncounter: (encounterId) =>
+    dbGet('SELECT * FROM decision_queue WHERE encounter_id = ?', [encounterId]),
+
+  // Provider view: pending + decided items joined to patient + encounter,
+  // sorted sickest-first (esi_level ascending; pending before decided).
+  getProviderDecisionQueue: () =>
+    dbAll(
+      `SELECT dq.*, p.first_name, p.last_name, p.mrn, p.dob, p.sex,
+              e.chief_complaint, e.encounter_date
+       FROM decision_queue dq
+       JOIN patients p ON dq.patient_id = p.id
+       JOIN encounters e ON dq.encounter_id = e.id
+       WHERE dq.status IN ('pending','decided')
+       ORDER BY CASE dq.status WHEN 'pending' THEN 0 ELSE 1 END,
+                COALESCE(dq.esi_level, 99) ASC,
+                dq.created_at ASC`
+    ).then(rows => decryptPatientRows(rows)),
+
+  // MA close-out worklist: decided items still awaiting MA close.
+  getMaCloseouts: () =>
+    dbAll(
+      `SELECT dq.*, p.first_name, p.last_name, p.mrn, p.dob, p.sex,
+              e.chief_complaint, e.encounter_date
+       FROM decision_queue dq
+       JOIN patients p ON dq.patient_id = p.id
+       JOIN encounters e ON dq.encounter_id = e.id
+       WHERE dq.status = 'decided' AND dq.ma_status = 'awaiting'
+       ORDER BY dq.decided_at ASC`
+    ).then(rows => decryptPatientRows(rows)),
+
+  // Persist cached triage/summary/options on read (the GET handler generates
+  // them lazily for pending rows). Only the AI-provenance columns are touched.
+  updateDecisionQueueAI: (id, ai) => {
+    const { esi_level, level_of_care, triage_rationale, triage_model,
+            ai_summary, summary_model, decision_options, decision_model } = ai;
+    return dbRun(
+      `UPDATE decision_queue SET
+         esi_level = ?, level_of_care = ?, triage_rationale = ?, triage_model = ?,
+         ai_summary = ?, summary_model = ?, decision_options = ?, decision_model = ?
+       WHERE id = ?`,
+      [esi_level, level_of_care, triage_rationale, triage_model,
+       ai_summary, summary_model,
+       typeof decision_options === 'string' ? decision_options : JSON.stringify(decision_options),
+       decision_model, id]
+    ).then(r => ({ changes: r.changes }));
+  },
+
+  // Provider records a decision (chosen option key OR dictated free text).
+  recordDecision: (id, { decision_key, decision_label, decision_text, decided_by }) =>
+    dbRun(
+      `UPDATE decision_queue SET
+         status = 'decided', ma_status = 'awaiting',
+         decision_key = ?, decision_label = ?, decision_text = ?,
+         decided_by = ?, decided_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'pending'`,
+      [decision_key || null, decision_label || null, decision_text || null, decided_by || null, id]
+    ).then(r => ({ changes: r.changes })),
+
+  // MA (or provider) closes out a decided item.
+  closeDecision: (id, { closed_by }) =>
+    dbRun(
+      `UPDATE decision_queue SET
+         status = 'closed', ma_status = 'closed',
+         closed_by = ?, closed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'decided'`,
+      [closed_by || null, id]
+    ).then(r => ({ changes: r.changes })),
+};
+
+// ==========================================
 // SCHEDULING HELPERS
 // ==========================================
 
@@ -1613,6 +1700,7 @@ module.exports = {
   db, dbRun, dbGet, dbAll,
   ready, close,
   ...db_helpers,
+  ...decision_helpers,
   ...scheduling_helpers,
   ...billing_helpers,
   generateMRN, calculateAge
