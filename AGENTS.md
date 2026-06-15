@@ -19,7 +19,7 @@ Previously a recurring issue where `_eval/SECRETS_FINDINGS.md` would regenerate 
 
 **Do not re-flag** `_eval/SECRETS_FINDINGS.md` unless a guardrail regresses. If a regression occurs: inspect which layer failed, repair that layer specifically, re-verify the other three, then resume.
 
-Historical context and full resolution log: [`C:\Users\micha\.Codex\plans\rosy-crunching-aho.md`](C:\Users\micha\.Codex\plans\rosy-crunching-aho.md)
+Historical context and full resolution log: See `AUDIT_ITERATION_PLAN.md` in this repo for the current iteration plan and resolution notes.
 
 ## Rules
 

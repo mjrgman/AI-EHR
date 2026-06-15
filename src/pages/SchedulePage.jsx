@@ -164,7 +164,7 @@ export default function SchedulePage() {
         encounter_type: appt.appointment_type === 'new_patient' ? 'new_patient' : 'office_visit',
       });
       const encId = enc.encounter_id || enc.id;
-      await api.updateAppointment(appt.id, { status: 'arrived', encounter_id: encId });
+      await api.updateAppointment(appt.id, { status: 'checked-in', encounter_id: encId });
       navigate('/checkin/' + encId);
     } catch (err) {
       toast.error('Check-in failed: ' + err.message);
@@ -281,9 +281,13 @@ export default function SchedulePage() {
                     onChange={e => setForm(f => ({ ...f, patient_id: e.target.value }))}
                   >
                     <option value="">Select patient...</option>
-                    {patients.map(p => (
-                      <option key={p.id} value={p.id}>{p.last_name}, {p.first_name}</option>
-                    ))}
+                    {patients.map(p => {
+                      const dob = p.dob ? ` · DOB ${p.dob}` : '';
+                      const mrn = p.mrn ? ` · MRN ${p.mrn}` : '';
+                      return (
+                        <option key={p.id} value={p.id}>{p.last_name}, {p.first_name}{mrn}{dob}</option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div>

@@ -37,7 +37,7 @@ Previously a recurring issue where `_eval/SECRETS_FINDINGS.md` would regenerate 
 - Layer 3 (PreToolUse hook): `~/.claude/hooks/secret-scrubber.py` exists and is wired in `~/.claude/settings.json` under `hooks.PreToolUse` as a python command. Verified by `Grep`.
 - Layer 4 (OpenBrain directive): "EHR-SECRETS-CYCLE" directive — re-verify on next `get_directives()` call from a session with the openbrain-memory MCP loaded; this currency check did not re-query OpenBrain.
 
-Historical context and full resolution log: [`C:\Users\micha\.claude\plans\rosy-crunching-aho.md`](C:\Users\micha\.claude\plans\rosy-crunching-aho.md)
+Historical context and full resolution log: See `AUDIT_ITERATION_PLAN.md` in this repo for the current iteration plan and resolution notes.
 
 ## Rules
 

@@ -230,7 +230,7 @@ async function portalRequest(path, options = {}) {
   }
 
   const payload = await parseResponse(res);
-  if (path === '/verify' && payload?.csrfToken) {
+  if ((path === '/verify' || path === '/session') && payload?.csrfToken) {
     setPortalCsrfToken(payload.csrfToken);
   }
   if (path === '/logout') {
@@ -356,12 +356,19 @@ export const api = {
     const q = new URLSearchParams(params).toString();
     return request(`/billing/charges${q ? `?${q}` : ''}`);
   },
+  verifyInsuranceEligibility: (data) => request('/insurance/verify-eligibility', { method: 'POST', body: JSON.stringify(data) }),
   addProblem: (patientId, data) => request(`/patients/${patientId}/problems`, { method: 'POST', body: JSON.stringify(data) }),
   addMedication: (patientId, data) => request(`/patients/${patientId}/medications`, { method: 'POST', body: JSON.stringify(data) }),
   addAllergy: (patientId, data) => request(`/patients/${patientId}/allergies`, { method: 'POST', body: JSON.stringify(data) }),
   runAgentPipeline: (data) => request('/agents/run', { method: 'POST', body: JSON.stringify(data) }),
   getAgentBriefing: (patientId, encounterId) => request(`/agents/briefing/${patientId}${encounterId ? `?encounter_id=${encounterId}` : ''}`),
   runMAAgent: (data) => request('/agents/ma', { method: 'POST', body: JSON.stringify(data) }),
+  // B1: Staff portal inbox
+  getStaffPortalMessages: (params) => {
+    const q = params ? new URLSearchParams(params).toString() : '';
+    return request(`/staff/portal-messages${q ? `?${q}` : ''}`);
+  },
+  updatePortalMessage: (id, data) => request(`/staff/portal-messages/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 };
 
 export const portalApi = {
@@ -392,6 +399,13 @@ export const portalApi = {
     method: 'POST',
     body: JSON.stringify({ transcript }),
   }),
+  // C1: MediVault export — uses the portal session cookie for auth
+  exportMediVault: (patientId) => {
+    // This is a direct fetch that triggers a file download
+    return fetch(`/api/medivault/export/${patientId}`, {
+      credentials: 'include',
+    });
+  },
 };
 
 export default api;

@@ -13,6 +13,7 @@ import PatientBanner from '../components/patient/PatientBanner';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import AllergyBadges from '../components/patient/AllergyBadges';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import PreVisitPanel from '../components/agents/PreVisitPanel';
 
 // --- Vital range definitions for abnormal highlighting ---
 const VITAL_RANGES = {
@@ -126,9 +127,11 @@ export default function MAPage() {
   }, [encounterId]);
 
   // --- Previous vitals for trend comparison ---
+  // patient.vitals from the bundle is either a single object (latest) or an array
   const previousVitals = useMemo(() => {
-    if (!patient?.vitals || patient.vitals.length === 0) return null;
-    return patient.vitals[0];
+    if (!patient?.vitals) return null;
+    if (Array.isArray(patient.vitals)) return patient.vitals[0] || null;
+    return patient.vitals; // single object
   }, [patient]);
 
   function formatPrevVital(key) {
@@ -505,6 +508,11 @@ export default function MAPage() {
             </label>
           </CardBody>
         </Card>
+
+        {/* Pre-Visit Intelligence — agent briefing panel for MA prep */}
+        {encounter?.patient_id && (
+          <PreVisitPanel patientId={encounter.patient_id} encounterId={parseInt(encounterId, 10)} />
+        )}
 
         {/* Save Button — terminal complete action (vitals done, handing off to
             the provider): confident brand success green with a send icon. */}

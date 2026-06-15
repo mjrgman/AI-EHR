@@ -2,9 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays, Pill, FlaskConical, MessageSquare, Stethoscope,
   ClipboardCheck, CheckCircle2, LogOut, ShieldCheck, Send, RefreshCw, Search,
+  Download, FileText,
 } from 'lucide-react';
 import { portalApi } from '../api/client';
 import StatTile from '../components/workflow/StatTile';
+import PatientVoice from '../components/PatientVoice';
+import DemoBanner from '../components/common/DemoBanner';
 
 const TABS = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -14,6 +17,8 @@ const TABS = [
   { key: 'messages', label: 'Messages' },
   { key: 'triage', label: 'Symptom Triage' },
   { key: 'prep', label: 'Visit Prep' },
+  { key: 'medivault', label: 'My Records' },  // C1: MediVault export
+  { key: 'voice', label: 'Voice' },
 ];
 
 function formatDate(dateStr) {
@@ -65,7 +70,9 @@ function VerifyIdentity({ loading, error, onVerify }) {
   };
 
   return (
-    <div className="min-h-screen bg-ivory-200 px-4 py-12">
+    <>
+      <DemoBanner className="sticky top-0 z-40" />
+      <div className="min-h-screen bg-ivory-200 px-4 py-12">
       <div className="mc-reveal mx-auto max-w-5xl overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-xl md:grid md:grid-cols-[1.1fr_0.9fr] md:gap-10 md:p-10">
         <section className="mb-8 md:mb-0">
           <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-gold-700">
@@ -138,6 +145,7 @@ function VerifyIdentity({ loading, error, onVerify }) {
         </section>
       </div>
     </div>
+    </>
   );
 }
 
@@ -186,7 +194,7 @@ function DashboardView({ appointments, medications, labs, patientName }) {
           label="Lab Results"
           value={labs.length}
           tone={abnormalLabs.length > 0 ? 'gold' : 'navy'}
-          sublabel={abnormalLabs.length > 0 ? `${abnormalLabs.length} flagged for clinician review` : 'All within range'}
+          sublabel={labs.length === 0 ? 'No results on file' : abnormalLabs.length > 0 ? `${abnormalLabs.length} flagged for clinician review` : 'All within range'}
         />
       </div>
     </div>
@@ -207,6 +215,7 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
   const [slots, setSlots] = useState([]);
   const [findingSlots, setFindingSlots] = useState(false);
   const [submittingSlotId, setSubmittingSlotId] = useState(null);
+  const [confirmedSlot, setConfirmedSlot] = useState(null); // B2: confirmation state
 
   const reset = () => {
     setSlots([]);
@@ -236,19 +245,40 @@ function RequestAppointmentForm({ onSubmitted, setError }) {
     setSubmittingSlotId(slot.slotId);
     setError('');
     try {
-      await portalApi.requestAppointment({
+      const result = await portalApi.requestAppointment({
         slotId: slot.slotId,
         appointmentType,
         reason: reason || 'Patient-requested appointment',
       });
-      reset();
-      setOpen(false);
+      // B2: show confirmation before closing and refreshing list
+      setConfirmedSlot({ slot, result });
       await onSubmitted();
     } catch (err) {
       setError(err.message || 'Failed to request appointment');
       setSubmittingSlotId(null);
     }
   };
+
+  // B2: confirmation banner — shown after successful booking
+  if (confirmedSlot) {
+    return (
+      <div className="rounded-3xl border border-success-200 bg-success-50 p-5 space-y-2">
+        <p className="text-sm font-semibold text-success-700">Appointment request submitted</p>
+        <p className="text-sm text-success-700">
+          {confirmedSlot.slot.dateTimeFormatted || confirmedSlot.result?.dateTimeFormatted || 'Your selected time'} —
+          your request is pending confirmation from the front desk.
+        </p>
+        <p className="text-xs text-success-600">Our team will confirm shortly. You can view the pending appointment below.</p>
+        <button
+          type="button"
+          onClick={() => { setConfirmedSlot(null); reset(); setOpen(false); }}
+          className="mt-1 rounded-xl border border-success-300 px-4 py-1.5 text-xs font-semibold text-success-700 hover:bg-success-100"
+        >
+          Done
+        </button>
+      </div>
+    );
+  }
 
   if (!open) {
     return (
@@ -439,7 +469,11 @@ function MessagesView({ messages, messageForm, setMessageForm, sendMessage, send
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h3 className="font-display text-lg font-semibold text-navy-700">{message.subject || 'Message'}</h3>
-                <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{message.message_type || 'general'}</p>
+                <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+                  {message.message_type === 'refill_notification' ? 'Refill Request' :
+                   message.message_type === 'appointment_request' ? 'Appointment Request' :
+                   'Message'}
+                </p>
               </div>
               <StatusPill status={message.status} />
             </div>
@@ -578,6 +612,51 @@ function VisitPrepView({ checklist }) {
   );
 }
 
+function MediVaultView({ patientId, onExport, exporting, exportError }) {
+  return (
+    <div className="relative overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg">
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
+      <p className="mc-section-label">Health records</p>
+      <h3 className="flex items-center gap-2 font-display text-2xl font-semibold text-navy-700">
+        <FileText size={22} strokeWidth={2} aria-hidden="true" className="text-navy-600" />
+        My Records Export
+      </h3>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+        Download a complete copy of your health records in JSON format — medications, lab results,
+        appointments, allergies, and visit notes. Your file will download immediately.
+      </p>
+
+      {exportError ? (
+        <div className="mt-4 rounded-2xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm font-medium text-danger-700">
+          {exportError}
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={onExport}
+        disabled={exporting}
+        className="mc-btn-fill mc-btn-navy mt-6 flex items-center gap-2 rounded-2xl bg-navy-600 px-5 py-3 text-base font-semibold text-white transition-all hover:bg-navy-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
+      >
+        <Download size={18} strokeWidth={2} aria-hidden="true" className={exporting ? 'animate-bounce' : ''} />
+        {exporting ? 'Preparing download...' : 'Download my records'}
+      </button>
+
+      <div className="mt-6 rounded-2xl border border-slate-100 bg-ivory-100 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">What is included</p>
+        <ul className="mt-2 space-y-1 text-xs text-slate-600">
+          {['Active medications and prescription history', 'Lab results with reference ranges', 'Appointment history', 'Allergies and adverse reactions', 'Visit notes and encounter summaries'].map((item) => (
+            <li key={item} className="flex items-center gap-2">
+              <CheckCircle2 size={12} strokeWidth={2.5} className="flex-shrink-0 text-success-500" aria-hidden="true" />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export default function PatientPortal() {
   const [portalSession, setPortalSession] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -595,6 +674,8 @@ export default function PatientPortal() {
   const [submittingTriage, setSubmittingTriage] = useState(false);
   const [activeMedicationId, setActiveMedicationId] = useState(null);
   const [activeCheckInId, setActiveCheckInId] = useState(null);
+  const [exportingRecords, setExportingRecords] = useState(false); // C1: MediVault
+  const [exportError, setExportError] = useState('');
 
   const patientName = useMemo(() => {
     const patient = portalSession?.patient;
@@ -678,6 +759,34 @@ export default function PatientPortal() {
     }
   }, [activeTab, loadPortalData, portalSession?.authenticated]);
 
+  // C1: MediVault — trigger a browser file download of the full patient record bundle
+  const handleMediVaultExport = async () => {
+    const patientId = portalSession?.patient?.id;
+    if (!patientId) return;
+    setExportingRecords(true);
+    setExportError('');
+    try {
+      const response = await portalApi.exportMediVault(patientId);
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || `Export failed (${response.status})`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `my-records-${patientId}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(err.message || 'Export failed. Please try again.');
+    } finally {
+      setExportingRecords(false);
+    }
+  };
+
   const handleVerify = async (form) => {
     setVerifying(true);
     setError('');
@@ -720,6 +829,7 @@ export default function PatientPortal() {
     }
   };
 
+  const [refillConfirmed, setRefillConfirmed] = useState(null); // C2: confirmation state
   const handleRefill = async (medication) => {
     setActiveMedicationId(medication.id);
     setError('');
@@ -728,6 +838,7 @@ export default function PatientPortal() {
         medication_id: medication.id,
         medication_name: medication.medication_name,
       });
+      setRefillConfirmed(medication.medication_name); // C2: show confirmation
       await loadPortalData('medications');
     } catch (err) {
       setError(err.message || 'Refill request failed');
@@ -776,6 +887,7 @@ export default function PatientPortal() {
 
   return (
     <div className="min-h-screen bg-ivory-200">
+      <DemoBanner />
       <header className="relative border-b border-slate-100 bg-offWhite-100/90 backdrop-blur">
         {/* Signature moment — gold hairline crowns the portal header */}
         <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
@@ -834,7 +946,21 @@ export default function PatientPortal() {
           />
         ) : null}
         {!loading && activeTab === 'medications' ? (
-          <MedicationsView medications={medications} requestRefill={handleRefill} activeMedicationId={activeMedicationId} />
+          <>
+            {refillConfirmed && (
+              <div className="rounded-2xl border border-success-200 bg-success-50 px-4 py-3 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-success-700">Refill request submitted</p>
+                  <p className="text-xs text-success-600 mt-0.5">
+                    Your care team will review the request for <span className="font-medium">{refillConfirmed}</span> and respond within 1–2 business days.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setRefillConfirmed(null)}
+                  className="text-success-500 hover:text-success-700 text-xs font-semibold flex-shrink-0">Dismiss</button>
+              </div>
+            )}
+            <MedicationsView medications={medications} requestRefill={handleRefill} activeMedicationId={activeMedicationId} />
+          </>
         ) : null}
         {!loading && activeTab === 'labs' ? (
           <LabsView labs={labs} />
@@ -853,6 +979,17 @@ export default function PatientPortal() {
         ) : null}
         {!loading && activeTab === 'prep' ? (
           <VisitPrepView checklist={visitPrep} />
+        ) : null}
+        {!loading && activeTab === 'medivault' ? (
+          <MediVaultView
+            patientId={portalSession?.patient?.id}
+            onExport={handleMediVaultExport}
+            exporting={exportingRecords}
+            exportError={exportError}
+          />
+        ) : null}
+        {!loading && activeTab === 'voice' ? (
+          <PatientVoice />
         ) : null}
       </main>
     </div>

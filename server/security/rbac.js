@@ -165,10 +165,10 @@ const ROLES = {
     },
     canWrite: {
       patients: false,  // Can't modify patient demo
-      encounters: false,
+      encounters: true,  // Can create/update encounters for check-in and rooming (A1 fix)
       problems: false,
       medications: false,
-      allergies: false,
+      allergies: true,  // Can record allergies during intake (A1 fix)
       labs: false,
       vitals: true,  // Can record vitals
       prescriptions: false,

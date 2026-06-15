@@ -132,12 +132,33 @@ export default function ReviewPage() {
         await api.updateEncounter(encounterId, { soap_note: soapNote });
       }
 
-      // Transition workflow to documentation then signed
-      const state = workflow?.current_state;
-      if (state !== 'documentation' && state !== 'signed') {
-        try { await transition('documentation'); } catch (e) { /* may already be past this */ }
+      // Advance workflow through all states up to and including 'signed'.
+      // The state machine only accepts one-step transitions, so we walk the
+      // full ordered chain from the current state to 'signed', skipping states
+      // already passed.
+      const STATE_CHAIN = [
+        'scheduled',
+        'checked-in',
+        'roomed',
+        'vitals-recorded',
+        'provider-examining',
+        'documentation',
+        'signed',
+      ];
+      const currentState = workflow?.current_state;
+      const currentIdx = STATE_CHAIN.indexOf(currentState);
+      const signedIdx = STATE_CHAIN.indexOf('signed');
+      if (currentIdx < signedIdx) {
+        for (let i = currentIdx + 1; i <= signedIdx; i++) {
+          try {
+            await transition(STATE_CHAIN[i]);
+          } catch (e) {
+            // If transition fails for a state we've already passed, continue.
+            // Re-throw only if we couldn't reach 'signed'.
+            if (i === signedIdx) throw e;
+          }
+        }
       }
-      try { await transition('signed'); } catch (e) { /* may already be signed */ }
 
       await api.updateEncounter(encounterId, {
         status: 'signed',
@@ -146,7 +167,7 @@ export default function ReviewPage() {
       });
 
       toast.success('Encounter signed successfully.');
-      navigate('/checkout/' + encounterId);
+      navigate('/visit/' + encounterId);
     } catch (err) {
       toast.error('Signing failed: ' + err.message);
     } finally {

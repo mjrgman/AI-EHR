@@ -360,21 +360,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* System status bar */}
-      <div className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-between border-t border-navy-800 bg-navy-700 px-4 py-2 text-xs text-white/80">
-        <div className="flex items-center gap-3">
-          <Badge variant="success" dot>System Online</Badge>
-          <span className="text-white/30">|</span>
-          <span>Role: {currentRole || 'Provider'}</span>
-          <span className="text-white/30">|</span>
-          <span>CDS Engine: Active</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="hidden sm:inline">{formatDate(today)}</span>
-          <span className="hidden text-white/30 sm:inline">|</span>
-          <span className="font-medium tracking-wide text-gold-300">MJR-EHR v1.0</span>
-        </div>
-      </div>
+      {/* Status bar removed — AppShell footer serves this role globally. */}
 
       {/* New patient modal */}
       <Modal

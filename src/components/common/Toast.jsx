@@ -27,17 +27,22 @@ const ICON_COLORS = {
 
 function ToastItem({ toast, onRemove }) {
   const [exiting, setExiting] = useState(false);
+  // Error/warning toasts carry safety-relevant information — give them a
+  // longer default dwell so they are less likely to be missed, and surface
+  // them to assistive tech as assertive alerts (role="alert").
+  const urgent = toast.type === 'error' || toast.type === 'warning';
 
   useEffect(() => {
     const t = setTimeout(() => {
       setExiting(true);
       setTimeout(() => onRemove(toast.id), 300);
-    }, toast.duration || 3500);
+    }, toast.duration || (urgent ? 6000 : 3500));
     return () => clearTimeout(t);
-  }, [toast, onRemove]);
+  }, [toast, onRemove, urgent]);
 
   return (
     <div
+      role={urgent ? 'alert' : 'status'}
       style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 12px rgba(26,58,82,0.08), 0 16px 40px rgba(26,58,82,0.16)' }}
       className={`${exiting ? 'toast-exit' : 'toast-enter'} flex items-start gap-3 px-4 py-3 rounded-xl border ${COLORS[toast.type]} max-w-sm w-full`}
     >
@@ -83,8 +88,16 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={toast}>
       {children}
-      {/* Toast container */}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+      {/* Toast container — always-mounted polite live region so screen readers
+          announce notifications; error/warning items self-escalate to
+          assertive via role="alert". */}
+      <div
+        role="region"
+        aria-label="Notifications"
+        aria-live="polite"
+        aria-atomic="false"
+        className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none"
+      >
         {toasts.map(t => (
           <div key={t.id} className="pointer-events-auto">
             <ToastItem toast={t} onRemove={removeToast} />

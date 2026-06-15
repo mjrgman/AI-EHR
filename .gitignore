@@ -86,3 +86,6 @@ HAL_ITERATION_*.preview.png
 
 # Dispatch packets filed by Sonnet lane (historical records, not project source)
 _dispatch_archive/
+
+# PHI quarantine - NEVER commit (real patient data pending owner disposition)
+_phi_intake/

@@ -258,9 +258,22 @@ mountMediVaultRoutes(app, { db });
 app.use('/api', auth.requireAuth);
 
 // RBAC: resource-level access control per route group
-app.use('/api/patients', rbac.requireResourceAccess('patients'));
+// Clinical subroutes under /api/patients have their own per-route RBAC checks that
+// use the correct resource type (allergies, vitals, labs, etc.). Skip the global
+// patients guard for write operations on those subroutes so the per-route check fires.
+const PATIENT_SUBROUTES_WITH_OWN_RBAC = new Set([
+  'allergies', 'vitals', 'medications', 'labs', 'problems',
+  'lab-orders', 'imaging-orders', 'referrals', 'conditions',
+]);
+app.use('/api/patients', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const lastSeg = req.path.split('/').filter(Boolean).pop();
+    if (lastSeg && PATIENT_SUBROUTES_WITH_OWN_RBAC.has(lastSeg)) return next();
+  }
+  rbac.requireResourceAccess('patients')(req, res, next);
+});
 app.use('/api/encounters', rbac.requireResourceAccess('encounters'));
-app.use('/api/prescriptions', rbac.requireResourceAccess('medications'));
+app.use('/api/prescriptions', rbac.requireResourceAccess('prescriptions'));
 app.use('/api/medications', rbac.requireResourceAccess('medications'));
 app.use('/api/audit', rbac.requireRole('admin'));
 app.use('/api/billing', rbac.requireResourceAccess('billing'));
@@ -2588,6 +2601,68 @@ app.get('/api/insurance/carriers', (req, res) => {
     note: 'Unknown carriers will return eligible: false'
   });
 });
+
+// ==========================================
+// STAFF PORTAL INBOX (B1 — portal-originated work for clinical staff)
+// ==========================================
+
+// GET /api/staff/portal-messages
+// Returns portal-originated messages (refill requests, appointment requests,
+// secure messages) for staff review. Accessible to front_desk, ma, physician, nurse_practitioner.
+// Billing and admin do NOT have access to clinical portal messages.
+app.get('/api/staff/portal-messages',
+  rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'front_desk'),
+  async (req, res) => {
+    try {
+      const { status, message_type, patient_id } = req.query;
+      let query = `
+        SELECT pm.id, pm.patient_id, pm.message_type, pm.subject, pm.content,
+               pm.status, pm.tier, pm.created_at, pm.sent_at,
+               p.first_name, p.last_name, p.mrn
+        FROM patient_messages pm
+        JOIN patients p ON pm.patient_id = p.id
+        WHERE 1=1`;
+      const params = [];
+      if (status) { query += ' AND pm.status = ?'; params.push(status); }
+      if (message_type) { query += ' AND pm.message_type = ?'; params.push(message_type); }
+      if (patient_id) {
+        const pid = validateId(patient_id);
+        if (pid) { query += ' AND pm.patient_id = ?'; params.push(pid); }
+      }
+      query += ' ORDER BY pm.created_at DESC LIMIT 200';
+      const messages = await db.dbAll(query, params);
+      res.json({ messages, count: messages.length });
+    } catch (err) {
+      logger.error('Error fetching staff portal messages', { error: err.message });
+      res.status(500).json({ error: 'Failed to fetch portal messages' });
+    }
+  }
+);
+
+// PATCH /api/staff/portal-messages/:id — mark message as read/actioned
+app.patch('/api/staff/portal-messages/:id',
+  rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'front_desk'),
+  async (req, res) => {
+    try {
+      const id = validateId(req.params.id);
+      if (!id) return res.status(400).json({ error: 'Invalid message ID' });
+      const { status } = req.body;
+      const allowed = ['pending', 'read', 'actioned', 'resolved'];
+      if (!status || !allowed.includes(status)) {
+        return res.status(400).json({ error: `status must be one of: ${allowed.join(', ')}` });
+      }
+      await db.dbRun(
+        `UPDATE patient_messages SET status = ? WHERE id = ?`,
+        [status, id]
+      );
+      const updated = await db.dbGet('SELECT * FROM patient_messages WHERE id = ?', [id]);
+      res.json(updated);
+    } catch (err) {
+      logger.error('Error updating portal message', { error: err.message });
+      res.status(500).json({ error: 'Failed to update message' });
+    }
+  }
+);
 
 // ==========================================
 // SERVE REACT APP (catch-all must be last)

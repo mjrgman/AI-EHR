@@ -21,6 +21,7 @@ import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import CDSSuggestionList from '../components/encounter/CDSSuggestionList';
 import RxSafetyAlerts from '../components/encounter/RxSafetyAlerts';
 import HRTPanel, { isHRTRelevant } from '../components/encounter/HRTPanel';
+import AgentPanel from '../components/agents/AgentPanel';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
@@ -694,7 +695,9 @@ export default function EncounterPage() {
         <h3 className="mc-section-label px-1">
           Latest Vitals
         </h3>
-        {patient?.vitals && patient.vitals.length > 0 ? (
+        {patient?.vitals && typeof patient.vitals === 'object' && !Array.isArray(patient.vitals) ? (
+          <VitalsDisplay vitals={patient.vitals} compact />
+        ) : Array.isArray(patient?.vitals) && patient.vitals.length > 0 ? (
           <VitalsDisplay vitals={patient.vitals[0]} compact />
         ) : (
           <p className="text-xs text-slate-400 px-1">No vitals recorded</p>
@@ -1133,6 +1136,12 @@ export default function EncounterPage() {
           Re-evaluate CDS
         </TouchButton>
       </div>
+
+      {/* Agent Pipeline — 9-agent clinical pipeline status.
+          Mounted as collapsible section in the CDS rail. */}
+      <div className="pt-2 border-t border-slate-100">
+        <AgentPanel encounterId={eid} patientId={encounter?.patient_id || patient?.id} />
+      </div>
     </div>
   );
 
@@ -1189,7 +1198,8 @@ export default function EncounterPage() {
           standard 3-panel layout (desktop: always 3 visible; mobile: one-of). */}
       {mobileTab === 'hrt' ? (
         <div className="flex-1 overflow-y-auto clinical-scroll bg-ivory-200/60">
-          <HRTPanel regimens={[]} suggestions={suggestions} />
+          {/* regimens: no server endpoint yet — panel renders suggestions only */}
+          <HRTPanel regimens={hrtDomain.regimens || []} suggestions={suggestions} />
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden">

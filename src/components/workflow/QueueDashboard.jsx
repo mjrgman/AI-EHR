@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ClipboardCheck } from 'lucide-react';
 import api, { safeLog } from '../../api/client';
 import WorkflowTracker from './WorkflowTracker';
-
-const ROUTES = { 'scheduled': '/checkin', 'checked-in': '/checkin', 'roomed': '/ma', 'vitals-recorded': '/ma', 'provider-examining': '/encounter', 'orders-pending': '/encounter', 'documentation': '/encounter', 'signed': '/review', 'checked-out': '/checkout' };
+import { stateRoute } from '../../utils/stateRoute';
 
 export default function QueueDashboard() {
   const [workflows, setWorkflows] = useState([]);
@@ -35,7 +34,7 @@ export default function QueueDashboard() {
   return (
     <div className="space-y-2 mc-reveal-stagger">
       {active.map(wf => (
-        <div key={wf.encounter_id} onClick={() => navigate((ROUTES[wf.current_state] || '/encounter') + '/' + wf.encounter_id)}
+        <div key={wf.encounter_id} onClick={() => navigate(stateRoute(wf.encounter_id, wf.current_state))}
           className="bg-offWhite-100 rounded-xl border border-slate-100 shadow-mc p-4 hover:border-navy-200 hover:shadow-mc-lg hover:-translate-y-px cursor-pointer transition-all active:scale-[0.99] active:translate-y-0">
           <div className="flex items-center justify-between mb-2">
             <div>

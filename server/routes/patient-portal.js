@@ -288,10 +288,24 @@ router.use(requireCsrfToken);
 
 router.get('/session', async (req, res) => {
   const patient = await repository.getPatientSessionProfile(req.portalPatient.id);
+  // Reseed the client's CSRF token on session restore (page reload, new tab).
+  // Without this, a fresh browser context has no portalCsrfToken in sessionStorage
+  // and any subsequent POST (find-slots, request, refill) returns 403.
+  const sessionHash = req.portalSession.session_hash;
+  let entry = csrfTokens.get(sessionHash);
+  if (!entry || Date.now() >= entry.expiresAt) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = req.portalSession.expires_at
+      ? new Date(req.portalSession.expires_at).getTime()
+      : Date.now() + 8 * 60 * 60 * 1000;
+    entry = { token, expiresAt };
+    csrfTokens.set(sessionHash, entry);
+  }
   return res.json({
     authenticated: true,
     patient,
     expiresAt: req.portalSession.expires_at,
+    csrfToken: entry.token,
   });
 });
 
@@ -341,11 +355,12 @@ router.post('/appointments/checkin', async (req, res) => {
 // ------------------------------------------------------------------
 
 function getFrontDeskAgent() {
-  // Per-request instantiation. In SCHEDULER_MODE=db all state lives in the
-  // appointments table, so no shared instance is needed. In mock mode each
-  // request gets a fresh in-memory list — acceptable for dev because mock
-  // mode is for scenario testing, not multi-user portal traffic.
-  return new FrontDeskAgent();
+  // Per-request instantiation. Always use the DB-backed scheduling repository
+  // for portal requests so that patient appointments persist and appear in the
+  // upcoming-appointments list. (B2 fix — mock mode left appointments in memory
+  // and they were invisible to getUpcomingAppointments queries.)
+  const schedulingRepository = require('../repositories/scheduling-repository');
+  return new FrontDeskAgent({ repository: schedulingRepository });
 }
 
 router.post('/appointments/find-slots', async (req, res) => {
@@ -407,8 +422,25 @@ router.post('/appointments/request', async (req, res) => {
       return res.status(400).json({ error: result.message });
     }
 
+    const appointmentId = result.appointment?.persistedId ?? result.appointmentId;
+    const dateTimeStr = result.appointment?.dateTimeFormatted || result.appointment?.dateTime || 'TBD';
+
+    // Notify staff inbox so front-desk sees the request in the Portal Inbox
+    try {
+      await repository.createMessage(req.portalPatient.id, {
+        message_type: 'appointment_request',
+        subject: `Appointment Request — ${appointmentType}`,
+        content: `Patient ${req.portalPatient.first_name} ${req.portalPatient.last_name} requested a ${appointmentType} appointment for ${dateTimeStr}.${reason ? ' Reason: ' + reason : ''}`,
+        status: 'pending',
+        tier: 2,
+      });
+    } catch (msgErr) {
+      // Non-fatal: appointment is booked; log and continue
+      console.error('[portal] Failed to create staff inbox message for appointment request:', msgErr.message);
+    }
+
     return res.status(201).json({
-      appointment_id: result.appointment?.persistedId ?? result.appointmentId,
+      appointment_id: appointmentId,
       status: 'scheduled',
       dateTime: result.appointment?.dateTime,
       dateTimeFormatted: result.appointment?.dateTimeFormatted,

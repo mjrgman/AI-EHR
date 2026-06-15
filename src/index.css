@@ -291,10 +291,17 @@
   100% { opacity: 1; transform: translateY(0); }
 }
 
-/* Respect reduced-motion: no reveal animation */
+/* Respect reduced-motion: neutralize non-essential motion (WCAG 2.3.3).
+   The loading spinner is intentionally left spinning — it is functional
+   feedback, not decorative motion. */
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   .mc-reveal,
-  .mc-reveal-stagger > * {
+  .mc-reveal-stagger > *,
+  .toast-enter,
+  .toast-exit,
+  .animate-pulse-record,
+  .skeleton {
     animation: none !important;
   }
 }

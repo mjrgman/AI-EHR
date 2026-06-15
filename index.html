@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <!-- Allow pinch-zoom: never disable user scaling on a clinical surface (WCAG 1.4.4 Resize Text). -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>MJR-EHR Intelligent Clinical Agent</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F3E5;</text></svg>" />
   <!-- Measured Canon type system: Inter (clinical legibility) + Source Serif 4 (editorial authority) -->
@@ -12,6 +13,12 @@
 </head>
 <body class="bg-ivory-200 text-navy-600 font-sans antialiased">
   <div id="root"></div>
+  <noscript>
+    <div style="max-width:42rem;margin:4rem auto;padding:1.5rem;font-family:Inter,system-ui,sans-serif;color:#1a3a52;text-align:center">
+      <h1 style="font-size:1.25rem;margin:0 0 .5rem">JavaScript is required</h1>
+      <p style="margin:0;color:#4a5f7f">This synthetic EHR demo needs JavaScript enabled to load. No PHI · Not for clinical use.</p>
+    </div>
+  </noscript>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

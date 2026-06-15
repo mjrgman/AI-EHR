@@ -185,7 +185,7 @@ describe('portal hardening contract: MRN and CSRF are wired in the SPA', () => {
 
   test('portal client stores csrfToken returned by /verify', () => {
     assert.match(clientSrc, /PORTAL_CSRF_STORAGE_KEY/);
-    assert.match(clientSrc, /path === '\/verify' && payload\?\.csrfToken/);
+    assert.match(clientSrc, /path === '\/verify'.*payload\?\.csrfToken/);
     assert.match(clientSrc, /setPortalCsrfToken\(payload\.csrfToken\)/);
   });
 

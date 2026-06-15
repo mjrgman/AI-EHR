@@ -19,37 +19,59 @@ const AuditPage = lazy(() => import('./pages/AuditPage'));
 const SchedulePage = lazy(() => import('./pages/SchedulePage'));
 const PatientPortal = lazy(() => import('./pages/PatientPortal'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const VisitSummaryPage = lazy(() => import('./pages/VisitSummaryPage'));
+const BillingPage = lazy(() => import('./pages/BillingPage'));
+const PatientsPage = lazy(() => import('./pages/PatientsPage'));
+const InboxPage = lazy(() => import('./pages/InboxPage'));
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, message: '' };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, message: error?.message || '' };
   }
 
-  componentDidCatch() {
-    console.error('[ErrorBoundary] Component error caught');
+  componentDidCatch(error) {
+    console.error('[ErrorBoundary] Component error caught:', error?.message || error);
   }
 
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen items-center justify-center bg-gray-50">
-          <div className="p-8 text-center">
-            <h1 className="mb-4 text-2xl font-bold text-gray-800">Something went wrong</h1>
-            <p className="mb-6 text-gray-600">The application encountered an error. Your work has been auto-saved.</p>
-            <button
-              onClick={() => {
-                this.setState({ hasError: false });
-                window.location.reload();
-              }}
-              className="rounded-lg bg-blue-600 px-6 py-2 text-white hover:bg-blue-700"
-            >
-              Reload Application
-            </button>
+        <div className="flex h-screen items-center justify-center bg-ivory-200" role="alert">
+          <div className="mx-4 max-w-md rounded-2xl border border-slate-100 bg-offWhite-100 p-8 text-center shadow-mc-xl">
+            <h1 className="mb-3 font-display text-2xl font-semibold text-navy-700">Something went wrong</h1>
+            <p className="mb-6 text-sm leading-6 text-slate-600">
+              The application hit an unexpected error. Any work that was already auto-saved is preserved, but
+              unsaved changes on this screen may be lost. Reloading restarts the app safely.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+              <button
+                onClick={() => {
+                  this.setState({ hasError: false, message: '' });
+                  window.location.reload();
+                }}
+                className="rounded-lg bg-navy-600 px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-navy-700"
+              >
+                Reload application
+              </button>
+              <button
+                onClick={() => window.location.assign('/')}
+                className="rounded-lg border border-slate-200 bg-offWhite-100 px-6 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-ivory-200"
+              >
+                Return to dashboard
+              </button>
+            </div>
+            {this.state.message ? (
+              <details className="mt-5 text-left">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500">Technical detail</summary>
+                <p className="mt-2 break-words rounded-lg bg-ivory-200 p-3 font-mono text-[11px] text-slate-600">{this.state.message}</p>
+              </details>
+            ) : null}
+            <p className="mt-5 text-[11px] text-slate-400">Synthetic EHR Demo · No PHI · Not for clinical use</p>
           </div>
         </div>
       );
@@ -94,6 +116,10 @@ export default function App() {
                     <Route path="/checkout/:encounterId" element={<CheckOutPage />} />
                     <Route path="/audit" element={<AuditPage />} />
                     <Route path="/schedule" element={<SchedulePage />} />
+                    <Route path="/visit/:encounterId" element={<VisitSummaryPage />} />
+                    <Route path="/billing" element={<BillingPage />} />
+                    <Route path="/patients" element={<PatientsPage />} />
+                    <Route path="/inbox" element={<InboxPage />} />
                   </Route>
                 </Route>
 

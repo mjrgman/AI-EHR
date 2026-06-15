@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { stateRoute } from '../utils/stateRoute';
 import { ArrowLeft, Plus, ChevronRight, CalendarPlus, Stethoscope, Pill, AlertTriangle, Activity, FlaskConical, ClipboardList } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
@@ -16,16 +17,7 @@ import LabResults from '../components/patient/LabResults';
 import AllergyBadges from '../components/patient/AllergyBadges';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
-// Workflow state to route mapping for encounter history navigation
-const STATE_ROUTES = {
-  'checked-in': '/checkin/',
-  'vitals-recorded': '/encounter/',
-  'provider-examining': '/encounter/',
-  'orders-pending': '/encounter/',
-  'documentation': '/review/',
-  'signed': '/checkout/',
-  'checked-out': '/checkout/',
-};
+// stateRoute() imported from utils/stateRoute — single shared canonical map.
 
 function calculateAge(dob) {
   if (!dob) return '';
@@ -193,8 +185,7 @@ export default function PatientPage() {
 
   // --- Navigate to encounter at its workflow stage ---
   function goToEncounter(enc) {
-    const route = STATE_ROUTES[enc.workflow_state] || STATE_ROUTES[enc.status] || '/encounter/';
-    navigate(route + enc.id);
+    navigate(stateRoute(enc.id, enc.workflow_state || enc.status));
   }
 
   // --- Loading / Error ---

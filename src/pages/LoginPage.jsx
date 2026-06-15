@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ShieldCheck, KeyRound, UserCog } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import DemoBanner from '../components/common/DemoBanner';
 
 function getPostLoginDestination(user, requestedPath) {
   const requested = requestedPath || '/';
@@ -168,6 +169,9 @@ export default function LoginPage() {
             Patient access lives at{' '}
             <span className="font-mono text-xs font-semibold text-navy-700">/portal</span> and uses a separate session model.
           </p>
+          {/* Synthetic-data label — visible on every screen size (the brand-panel
+              copy is hidden below lg). */}
+          <DemoBanner variant="inline" className="mt-5" />
           </div>
         </div>
       </section>

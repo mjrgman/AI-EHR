@@ -399,13 +399,13 @@ function initializeDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         patient_id INTEGER NOT NULL,
         message_type TEXT NOT NULL CHECK(message_type IN (
-          'general','refill_notification','lab_result','triage'
+          'general','refill_notification','lab_result','triage','appointment_request'
         )) DEFAULT 'general',
         subject TEXT,
         content TEXT NOT NULL,
         plain_language_content TEXT,
         status TEXT NOT NULL CHECK(status IN (
-          'draft','submitted','physician_review','approved','sent','read','closed'
+          'draft','submitted','pending','physician_review','approved','sent','read','closed','actioned','resolved'
         )) DEFAULT 'draft',
         tier INTEGER NOT NULL DEFAULT 2,
         sent_at DATETIME,
@@ -566,6 +566,80 @@ function initializeDatabase() {
       });
     });
   });
+}
+
+// ==========================================
+// SCHEMA MIGRATIONS
+// ==========================================
+
+/**
+ * migratePatientMessages — widens the patient_messages CHECK constraints to
+ * include 'appointment_request' (message_type) and 'pending'/'actioned'/'resolved'
+ * (status). Uses the SQLite rename-recreate-copy pattern since ALTER TABLE
+ * cannot modify CHECK constraints.
+ *
+ * Safe to call on an already-migrated DB: the PRAGMA table_info check skips
+ * the migration if the live schema already allows appointment_request inserts.
+ */
+async function migratePatientMessages() {
+  // Quick probe: try to insert a dry-run row with the new type/status.
+  // If it fails with SQLITE_CONSTRAINT we need to migrate; otherwise skip.
+  // Probe by inspecting the sqlite_master schema text — no row insert needed.
+  // We check whether the CREATE TABLE statement for patient_messages already
+  // includes 'appointment_request' in its message_type CHECK.
+  const schemaRow = await dbGet(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='patient_messages'"
+  );
+  if (!schemaRow) return; // table doesn't exist yet — initializeDatabase will create it
+  if (schemaRow.sql && schemaRow.sql.includes('appointment_request')) {
+    // Schema already widened — no migration needed
+    return;
+  }
+
+  console.log('[DB migration] Widening patient_messages constraints (appointment_request + pending/actioned/resolved)...');
+  await dbRun('PRAGMA foreign_keys = OFF');
+  try {
+    await dbRun('BEGIN TRANSACTION');
+    // 1. Rename old table
+    await dbRun('ALTER TABLE patient_messages RENAME TO patient_messages_old');
+    // 2. Create new table with widened constraints, preserving all live columns
+    await dbRun(`CREATE TABLE patient_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL,
+      encounter_id INTEGER,
+      message_type TEXT NOT NULL CHECK(message_type IN (
+        'general','refill_notification','lab_result','triage','appointment_request'
+      )) DEFAULT 'general',
+      subject TEXT,
+      content TEXT NOT NULL,
+      plain_language_content TEXT,
+      status TEXT NOT NULL CHECK(status IN (
+        'draft','submitted','pending','physician_review','approved','sent','read','closed','actioned','resolved'
+      )) DEFAULT 'draft',
+      tier INTEGER NOT NULL DEFAULT 2,
+      sent_at DATETIME,
+      reviewed_by TEXT,
+      reviewed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )`);
+    // 3. Copy all existing rows (all live columns are preserved in new table)
+    await dbRun(`INSERT INTO patient_messages
+      (id, patient_id, encounter_id, message_type, subject, content,
+       plain_language_content, status, tier, sent_at, reviewed_by, reviewed_at, created_at)
+      SELECT id, patient_id, encounter_id, message_type, subject, content,
+             plain_language_content, status, tier, sent_at, reviewed_by, reviewed_at, created_at
+      FROM patient_messages_old`);
+    // 4. Drop old table
+    await dbRun('DROP TABLE patient_messages_old');
+    await dbRun('COMMIT');
+    console.log('[DB migration] patient_messages migration complete.');
+  } catch (err) {
+    await dbRun('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    await dbRun('PRAGMA foreign_keys = ON');
+  }
 }
 
 // ==========================================
@@ -1692,6 +1766,7 @@ function close() {
 // ==========================================
 
 const ready = initializeDatabase()
+  .then(() => migratePatientMessages())
   .then(() => loadDemoData())
   .then(() => loadClinicalRules())
   .catch(err => console.error('Database initialization error:', err));
