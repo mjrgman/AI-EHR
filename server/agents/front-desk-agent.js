@@ -150,6 +150,7 @@ class FrontDeskAgent extends BaseAgent {
 
     const slots = [];
     const current = new Date(dateRangeStart);
+    const nowMs = Date.now();
 
     // Generate available slots
     while (current <= dateRangeEnd && slots.length < 10) {
@@ -163,6 +164,8 @@ class FrontDeskAgent extends BaseAgent {
             // Check if slot is available (not booked)
             const slotTime = new Date(current);
             slotTime.setHours(hour, minute, 0, 0);
+            // Never offer a time that has already passed.
+            if (slotTime.getTime() <= nowMs) continue;
             const slotEndTime = new Date(slotTime.getTime() + duration * 60000);
 
             if (this._isSlotAvailable(slotTime, slotEndTime, booked)) {
@@ -220,7 +223,7 @@ class FrontDeskAgent extends BaseAgent {
     const chiefComplaint = requestInfo.chief_complaint || requestInfo.chiefComplaint || null;
 
     // Find the slot
-    const slot = await this._findSlotById(slotId);
+    const slot = await this._findSlotById(slotId, appointmentType);
     if (!slot) {
       return {
         status: 'error',
@@ -827,25 +830,54 @@ Front Desk Team`;
   }
 
   /**
-   * Helper: Find slot by ID. Async because _findAvailableSlots is async.
+   * Helper: Find slot by ID.
    *
-   * The slotId format is `slot_<unix_ms>` — we parse the timestamp out and
-   * use the start-of-day for that slot as the search window. Without this,
-   * the 10-slot cap in _findAvailableSlots excludes any slot more than a
-   * day or two out from "now" (a pre-existing bug in mock mode).
+   * The slotId format is `slot_<unix_ms>`. Previously this re-generated the whole
+   * slot grid and tried to string-match the id back — fragile: any difference in
+   * the booked set, the 10-slot cap, or the date window between the find-slots
+   * call and the booking call caused a valid, freshly-offered slot to be reported
+   * "not found", making booking impossible. We now RECONSTRUCT the slot directly
+   * from its timestamp and validate it against provider hours + current bookings,
+   * so a slot that find-slots offered can always be booked.
    */
-  async _findSlotById(slotId) {
+  async _findSlotById(slotId, appointmentType = 'follow_up') {
     if (typeof slotId !== 'string') return null;
     const match = /^slot_(\d+)$/.exec(slotId);
     if (!match) return null;
     const slotMs = parseInt(match[1], 10);
     if (!Number.isFinite(slotMs)) return null;
 
-    const startOfDay = new Date(slotMs);
-    startOfDay.setHours(0, 0, 0, 0);
+    const slotTime = new Date(slotMs);
 
-    const slotsNeeded = await this._findAvailableSlots({}, { dateRangeStart: startOfDay });
-    return slotsNeeded.slots.find(s => s.slotId === slotId);
+    // Reject slots in the past — you cannot book a time that has already passed.
+    if (slotTime.getTime() <= Date.now()) return null;
+
+    // Must fall on a day/hour the provider is in the office.
+    const dayName = slotTime.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    const hours = this.providerHours[dayName];
+    if (!hours) return null;
+    const hour = slotTime.getHours();
+    if (hour < hours.start || hour >= hours.end) return null;
+
+    const duration = this.appointmentTypes[appointmentType]?.duration || 20;
+    const slotEndTime = new Date(slotTime.getTime() + duration * 60000);
+
+    // Must not overlap an existing booking for that day.
+    const startOfDay = new Date(slotMs); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(slotMs); endOfDay.setHours(23, 59, 59, 999);
+    const booked = await this._getBookedAppointments(startOfDay, endOfDay);
+    if (!this._isSlotAvailable(slotTime, slotEndTime, booked)) return null;
+
+    return {
+      slotId,
+      dateTime: slotTime.toISOString(),
+      dateTimeFormatted: slotTime.toLocaleString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      }),
+      duration,
+      appointmentType,
+      available: true,
+    };
   }
 
   // _calculateAge replaced by _age() inherited from BaseAgent (L1)

@@ -7,9 +7,9 @@ const db = require('./database');
 
 const STATES = {
   'scheduled':          { next: ['checked-in'], role: 'reception', timeField: null },
-  'checked-in':         { next: ['roomed'], role: 'ma', timeField: 'check_in_time' },
+  'checked-in':         { next: ['roomed'], role: 'reception', timeField: 'check_in_time' },
   'roomed':             { next: ['vitals-recorded'], role: 'ma', timeField: 'roomed_time' },
-  'vitals-recorded':    { next: ['provider-examining'], role: 'provider', timeField: 'vitals_time' },
+  'vitals-recorded':    { next: ['provider-examining'], role: 'ma', timeField: 'vitals_time' },
   'provider-examining': { next: ['orders-pending', 'documentation'], role: 'provider', timeField: 'provider_start_time' },
   'orders-pending':     { next: ['documentation'], role: 'provider', timeField: null },
   'documentation':      { next: ['signed'], role: 'provider', timeField: null },

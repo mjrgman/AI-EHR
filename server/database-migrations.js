@@ -47,6 +47,7 @@ async function runMigrations(db) {
     await addRxNormColumns(db);
     await createLabCorpTokensTable(db);
     await addLabCorpColumns(db);
+    await createNewPatientRequestsTable(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -960,8 +961,31 @@ async function addLabCorpColumns(db) {
 
 // ==========================================
 
+/**
+ * Intake queue for prospective patients who have no chart yet. Populated by the
+ * public patient-portal new-patient-request endpoint so front desk can follow up.
+ * Holds only the contact info the prospect volunteers — no clinical PHI.
+ */
+async function createNewPatientRequestsTable(db) {
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS new_patient_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      dob TEXT,
+      phone TEXT,
+      email TEXT,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('[MIGRATIONS] new_patient_requests table ready');
+}
+
 module.exports = {
   runMigrations,
+  createNewPatientRequestsTable,
   createUsersTable,
   createPatientConsentTable,
   createAgentAuditTrailTable,

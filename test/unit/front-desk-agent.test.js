@@ -15,6 +15,15 @@ const assert = require('node:assert/strict');
 
 const { FrontDeskAgent } = require('../../server/agents/front-desk-agent');
 
+// A Monday at least two weeks in the future (UTC midnight). Kept relative to now
+// so the slot fixtures never go stale as time passes.
+function nextFutureMonday() {
+  const d = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  d.setUTCHours(0, 0, 0, 0);
+  while (d.getUTCDay() !== 1) d.setUTCDate(d.getUTCDate() + 1);
+  return d;
+}
+
 // In-memory stub repository implementing the same surface as
 // server/repositories/scheduling-repository.js — no DB, no SQL.
 function makeStubRepository(initialBooked = []) {
@@ -80,10 +89,11 @@ describe('FrontDeskAgent: notification channels honesty', () => {
 });
 
 describe('FrontDeskAgent: slot-ID determinism (mock vs db parity)', () => {
-  // Use a fixed seed date so both agents traverse the same date grid.
-  // 2026-04-27 is a Monday — picked to land on a weekday the synthetic
-  // PROVIDER_HOURS table covers (Mon-Fri).
-  const SEED = new Date('2026-04-27T00:00:00Z');
+  // Use a seed date that is always a FUTURE Monday, so both agents traverse the
+  // same weekday grid AND the slots survive the "never offer a past time" filter.
+  // (A hardcoded date goes stale — once it's in the past, slot generation
+  // correctly yields nothing and the round-trip can't be exercised.)
+  const SEED = nextFutureMonday();
 
   test('mock-mode and db-mode produce identical slot IDs for the same input date', async () => {
     const mockAgent = new FrontDeskAgent();
@@ -126,7 +136,7 @@ describe('FrontDeskAgent: scheduling pre-conditions', () => {
   test('db-mode schedule fails clearly when patient_id is missing', async () => {
     const agent = new FrontDeskAgent({ repository: makeStubRepository([]) });
     // Find a slot first so we have a valid slotId
-    const before = await agent._findAvailableSlots({}, { dateRangeStart: new Date('2026-04-27T00:00:00Z') });
+    const before = await agent._findAvailableSlots({}, { dateRangeStart: nextFutureMonday() });
     const slotId = before.slots[0].slotId;
 
     const result = await agent._scheduleAppointment(

@@ -698,7 +698,12 @@ async function buildPatientContext(patientId, encounterId) {
     db.getPatientMedications(patientId),
     db.getPatientAllergies(patientId),
     db.getPatientLabs(patientId),
-    db.getPatientVitals(patientId)
+    // Vitals MUST be scoped to this encounter. Using the patient's globally-latest
+    // vitals let another encounter's — or an orphaned test — reading drive CDS for
+    // an encounter that has no vitals of its own (phantom fever/HTN alerts).
+    encounterId
+      ? db.dbAll('SELECT * FROM vitals WHERE encounter_id = ? ORDER BY recorded_date DESC LIMIT 1', [encounterId])
+      : db.getPatientVitals(patientId)
   ]);
 
   let encounter = null;

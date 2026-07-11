@@ -8,6 +8,8 @@ const aiClient = require('./ai-client');
 const workflow = require('./workflow-engine');
 const cds = require('./cds-engine');
 const providerLearning = require('./provider-learning');
+const prescriptionSafety = require('./pharma/prescription-safety');
+const patientEducation = require('./patient-education');
 const audit = require('./audit-logger');
 const logger = require('./utils/logger');
 const { validate, schemas } = require('./utils/validate');
@@ -254,7 +256,7 @@ app.use('/api', auth.requireAuth);
 // RBAC: resource-level access control per route group
 app.use('/api/patients', rbac.requireResourceAccess('patients'));
 app.use('/api/encounters', rbac.requireResourceAccess('encounters'));
-app.use('/api/prescriptions', rbac.requireResourceAccess('medications'));
+app.use('/api/prescriptions', rbac.requireResourceAccess('prescriptions'));
 app.use('/api/medications', rbac.requireResourceAccess('medications'));
 app.use('/api/audit', rbac.requireRole('admin', 'physician'));
 app.use('/api/billing', rbac.requireResourceAccess('billing'));
@@ -359,6 +361,25 @@ app.post('/api/patients', validate(schemas.createPatient), async (req, res) => {
       insurance_id: sanitizeString(req.body.insurance_id, 50)
     };
 
+    // Duplicate-chart guard: a small office should not silently accumulate
+    // identical charts. Block a same-name + same-DOB registration unless the
+    // caller explicitly confirms it is a different person (allow_duplicate:true).
+    if (!req.body.allow_duplicate && patientData.first_name && patientData.last_name && patientData.dob) {
+      const all = await db.getAllPatients();
+      const dup = all.find((p) =>
+        (p.first_name || '').toLowerCase() === patientData.first_name.toLowerCase() &&
+        (p.last_name || '').toLowerCase() === patientData.last_name.toLowerCase() &&
+        p.dob === patientData.dob
+      );
+      if (dup) {
+        return res.status(409).json({
+          error: 'A patient with the same name and date of birth already exists.',
+          existing_patient: { id: dup.id, mrn: dup.mrn, name: `${dup.first_name} ${dup.last_name}`.trim() },
+          hint: 'Open the existing chart, or resubmit with allow_duplicate:true if this is genuinely a different person.',
+        });
+      }
+    }
+
     const result = await db.createPatient(patientData);
     res.status(201).json(result);
   } catch (error) {
@@ -419,10 +440,13 @@ app.post('/api/patients/:id/problems', rbac.requireResourceAccess('problems'), a
       return res.status(400).json({ error: err });
     }
 
+    // Accept `code` / `icd10` as aliases for icd10_code — silently dropping the
+    // diagnosis code (as happened when callers sent `code`) breaks CDS, coding,
+    // and patient-education downstream.
     const problemData = {
       patient_id: id,
       problem_name: sanitizeString(req.body.problem_name, 300),
-      icd10_code: sanitizeString(req.body.icd10_code, 10),
+      icd10_code: sanitizeString(req.body.icd10_code || req.body.code || req.body.icd10, 10),
       onset_date: req.body.onset_date || null,
       status: req.body.status || 'active',
       notes: sanitizeString(req.body.notes, 1000)
@@ -570,6 +594,25 @@ app.post('/api/encounters', async (req, res) => {
       console.error('Warning: Could not create workflow:', wfErr.message);
     }
 
+    // Link the encounter back to its originating appointment so schedule views
+    // reflect that the visit has started, and backfill the chief complaint the
+    // patient gave at booking if the encounter was created without one.
+    const apptId = req.body.appointment_id ? validateId(req.body.appointment_id) : null;
+    if (apptId) {
+      try {
+        const appt = await db.dbGet('SELECT chief_complaint, notes FROM appointments WHERE id = ?', [apptId]);
+        await db.dbRun('UPDATE appointments SET encounter_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [result.id, apptId]);
+        if (!encounterData.chief_complaint && appt && (appt.chief_complaint || appt.notes)) {
+          const backfill = sanitizeString(appt.chief_complaint || appt.notes, 500);
+          await db.updateEncounter(result.id, { chief_complaint: backfill });
+          result.chief_complaint = backfill;
+        }
+        result.appointment_id = apptId;
+      } catch (linkErr) {
+        console.error('Appointment-encounter link (non-fatal):', linkErr.message);
+      }
+    }
+
     res.status(201).json(result);
   } catch (error) {
     console.error('Error creating encounter:', error);
@@ -681,17 +724,44 @@ app.post('/api/ai/generate-note', async (req, res) => {
     if (!pid) {
       return res.status(400).json({ error: 'Valid patient_id is required' });
     }
+    const encounterId = req.body.encounter_id ? validateId(req.body.encounter_id) : null;
 
     const patient = await db.getPatientById(pid);
     if (!patient) {
       return res.status(404).json({ error: 'Patient not found' });
     }
 
-    const soapNote = await aiClient.generateSOAPNote(sanitizeString(transcript, 20000), patient, vitals || {});
+    // Use the caller-supplied vitals, else the vitals recorded FOR THIS ENCOUNTER.
+    // This MUST be encounter-scoped: falling back to the patient's globally-latest
+    // vitals would bleed another visit's — or an orphaned/erroneous test — reading
+    // into this encounter's legal note.
+    let noteVitals = vitals;
+    if ((!noteVitals || Object.keys(noteVitals).length === 0) && encounterId) {
+      const recorded = await db.dbAll(
+        'SELECT * FROM vitals WHERE encounter_id = ? ORDER BY recorded_date DESC LIMIT 1',
+        [encounterId]
+      );
+      noteVitals = recorded && recorded.length ? recorded[0] : {};
+    }
+    if (!noteVitals) noteVitals = {};
+
+    const soapNote = await aiClient.generateSOAPNote(sanitizeString(transcript, 20000), patient, noteVitals);
+
+    // Persist the note (and transcript) to the encounter so it is not lost.
+    let persisted = false;
+    if (encounterId) {
+      try {
+        await db.updateEncounter(encounterId, { soap_note: soapNote, transcript: sanitizeString(transcript, 20000) });
+        persisted = true;
+      } catch (persistErr) {
+        console.error('SOAP note persistence (non-fatal):', persistErr.message);
+      }
+    }
 
     res.json({
       mode: aiClient.getMode(),
       soap_note: soapNote,
+      persisted,
       claude_enabled: aiClient.isClaudeEnabled()
     });
   } catch (error) {
@@ -714,6 +784,37 @@ app.post('/api/prescriptions', async (req, res) => {
     const patientId = validateId(req.body.patient_id);
     if (!patientId) {
       return res.status(400).json({ error: 'Invalid patient_id' });
+    }
+
+    // Prescribe-time safety gate: cross-check the drug against the patient's
+    // documented allergies (by drug class) and renal function (latest eGFR).
+    // A same-class allergy conflict is a hard stop unless the prescriber supplies
+    // an explicit override_reason; softer cautions are returned but not blocking.
+    let safetyAlerts = [];
+    try {
+      const [allergies, labs, medications, problems] = await Promise.all([
+        db.getPatientAllergies(patientId),
+        db.getPatientLabs(patientId),
+        db.getPatientMedications(patientId),
+        db.getPatientProblems(patientId),
+      ]);
+      const safety = prescriptionSafety.checkPrescriptionSafety(
+        req.body.medication_name, allergies, labs, medications, problems
+      );
+      safetyAlerts = safety.alerts;
+      const overrideReason = sanitizeString(req.body.override_reason || '', 500);
+      if (safety.hardStop && !overrideReason) {
+        return res.status(409).json({
+          error: 'Prescription blocked by a patient-safety conflict. Review the alerts and, if clinically appropriate, resubmit with an override_reason.',
+          safety_alerts: safetyAlerts,
+          override_required: true,
+        });
+      }
+      if (safety.hardStop && overrideReason) {
+        safetyAlerts = safetyAlerts.map((a) => ({ ...a, overridden: true, override_reason: overrideReason }));
+      }
+    } catch (safetyErr) {
+      console.error('Prescription safety check (non-fatal):', safetyErr.message);
     }
 
     const rxData = {
@@ -771,7 +872,7 @@ app.post('/api/prescriptions', async (req, res) => {
       console.error('Provider learning error (non-fatal):', learnErr.message);
     }
 
-    res.status(201).json(result);
+    res.status(201).json(safetyAlerts.length ? { ...result, safety_alerts: safetyAlerts } : result);
   } catch (error) {
     console.error('Error creating prescription:', error);
     res.status(500).json({ error: 'Failed to create prescription' });
@@ -1135,17 +1236,47 @@ app.post('/api/vitals', async (req, res) => {
 
     const encounterId = req.body.encounter_id ? validateId(req.body.encounter_id) : null;
 
+    // Normalize common field-name variants into the canonical schema so a mistyped
+    // key (e.g. bp_systolic, weight_lb) is never SILENTLY dropped — dropping BP here
+    // previously suppressed the hypertension CDS alert with a 200 response. Any
+    // unrecognized vital-looking key is surfaced back to the caller as a warning.
+    const VITAL_ALIASES = {
+      bp_systolic: 'systolic_bp', sbp: 'systolic_bp', systolic: 'systolic_bp', blood_pressure_systolic: 'systolic_bp',
+      bp_diastolic: 'diastolic_bp', dbp: 'diastolic_bp', diastolic: 'diastolic_bp', blood_pressure_diastolic: 'diastolic_bp',
+      hr: 'heart_rate', pulse: 'heart_rate',
+      rr: 'respiratory_rate', resp_rate: 'respiratory_rate',
+      temp: 'temperature', temp_f: 'temperature',
+      weight_lb: 'weight', weight_lbs: 'weight', wt: 'weight',
+      height_in: 'height', height_inches: 'height', ht: 'height',
+      o2: 'spo2', o2_sat: 'spo2', oxygen_saturation: 'spo2', spo2_pct: 'spo2',
+    };
+    const CANONICAL_VITALS = new Set([
+      'systolic_bp', 'diastolic_bp', 'heart_rate', 'respiratory_rate',
+      'temperature', 'weight', 'height', 'spo2',
+    ]);
+    const KNOWN_META = new Set(['patient_id', 'encounter_id', 'recorded_by', 'notes', 'bmi']);
+    const normalized = {};
+    const droppedKeys = [];
+    for (const [key, value] of Object.entries(req.body)) {
+      const canonical = VITAL_ALIASES[key] || key;
+      if (CANONICAL_VITALS.has(canonical)) {
+        if (normalized[canonical] == null) normalized[canonical] = value;
+      } else if (!KNOWN_META.has(canonical)) {
+        droppedKeys.push(key);
+      }
+    }
+
     const vitalsData = {
       patient_id: patientId,
       encounter_id: encounterId,
-      systolic_bp: req.body.systolic_bp != null ? parseInt(req.body.systolic_bp, 10) : null,
-      diastolic_bp: req.body.diastolic_bp != null ? parseInt(req.body.diastolic_bp, 10) : null,
-      heart_rate: req.body.heart_rate != null ? parseInt(req.body.heart_rate, 10) : null,
-      respiratory_rate: req.body.respiratory_rate != null ? parseInt(req.body.respiratory_rate, 10) : null,
-      temperature: req.body.temperature != null ? parseFloat(req.body.temperature) : null,
-      weight: req.body.weight != null ? parseFloat(req.body.weight) : null,
-      height: req.body.height != null ? parseFloat(req.body.height) : null,
-      spo2: req.body.spo2 != null ? parseInt(req.body.spo2, 10) : null,
+      systolic_bp: normalized.systolic_bp != null ? parseInt(normalized.systolic_bp, 10) : null,
+      diastolic_bp: normalized.diastolic_bp != null ? parseInt(normalized.diastolic_bp, 10) : null,
+      heart_rate: normalized.heart_rate != null ? parseInt(normalized.heart_rate, 10) : null,
+      respiratory_rate: normalized.respiratory_rate != null ? parseInt(normalized.respiratory_rate, 10) : null,
+      temperature: normalized.temperature != null ? parseFloat(normalized.temperature) : null,
+      weight: normalized.weight != null ? parseFloat(normalized.weight) : null,
+      height: normalized.height != null ? parseFloat(normalized.height) : null,
+      spo2: normalized.spo2 != null ? parseInt(normalized.spo2, 10) : null,
       recorded_by: sanitizeString(req.body.recorded_by || process.env.PROVIDER_NAME || 'MA', 200)
     };
     const result = await db.addVitals(vitalsData);
@@ -1161,7 +1292,11 @@ app.post('/api/vitals', async (req, res) => {
       }
     }
 
-    res.status(201).json({ ...result, cds_suggestions: cdsSuggestions });
+    const response = { ...result, cds_suggestions: cdsSuggestions };
+    if (droppedKeys.length) {
+      response.warnings = [`Ignored unrecognized field(s): ${droppedKeys.join(', ')}. Accepted vitals: systolic_bp, diastolic_bp, heart_rate, respiratory_rate, temperature, weight, height, spo2 (common aliases like bp_systolic/weight_lb are auto-mapped).`];
+    }
+    res.status(201).json(response);
   } catch (error) {
     console.error('Error adding vitals:', error);
     res.status(500).json({ error: 'Failed to add vitals' });
@@ -1275,6 +1410,14 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
     const err = requireFields(req.body, ['target_state']);
     if (err) return res.status(400).json({ error: err });
 
+    // Precondition: the workflow must not claim vitals are recorded when none exist.
+    if (req.body.target_state === 'vitals-recorded') {
+      const vrow = await db.dbGet('SELECT COUNT(*) AS c FROM vitals WHERE encounter_id = ?', [encounterId]);
+      if (!vrow || vrow.c === 0) {
+        return res.status(409).json({ error: 'Cannot transition to vitals-recorded: no vitals have been recorded for this encounter yet.' });
+      }
+    }
+
     const userRole = req.user?.role || req.session?.userRole || null;
     const result = await workflow.transitionState(encounterId, req.body.target_state, {
       assigned_ma: req.body.assigned_ma,
@@ -1304,6 +1447,14 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
   } catch (error) {
     if (error.message.includes('Invalid transition')) {
       return res.status(400).json({ error: error.message });
+    }
+    // Role-authorization failures from the workflow engine are actionable — surface
+    // the real reason (which role is required) as a 403 instead of a blanket 500.
+    if (error.message.includes('cannot transition') || error.message.includes('Required role')) {
+      return res.status(403).json({ error: error.message });
+    }
+    if (error.message.includes('No workflow found')) {
+      return res.status(404).json({ error: error.message });
     }
     console.error('Error transitioning workflow:', error);
     res.status(500).json({ error: 'Failed to transition workflow' });
@@ -1664,6 +1815,26 @@ app.get('/api/encounters/:id/orders', requireAnyResourceAccess('lab_orders', 'im
 });
 
 // Get CPT code suggestions for an encounter
+// Plain-language patient education for the encounter, generated from the
+// patient's problem list. Always returns at least a generic handout so no visit
+// ends without something usable to give the patient.
+app.get('/api/encounters/:id/patient-education', async (req, res) => {
+  try {
+    const encounterId = validateId(req.params.id);
+    if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    const encounter = await db.getEncounterById(encounterId);
+    if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+
+    const problems = await db.getPatientProblems(encounter.patient_id);
+    const education = patientEducation.buildEducation(problems, encounter.chief_complaint || '');
+    res.json({ encounter_id: encounterId, patient_id: encounter.patient_id, ...education });
+  } catch (error) {
+    console.error('Error building patient education:', error);
+    res.status(500).json({ error: 'Failed to build patient education' });
+  }
+});
+
 app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
@@ -2083,6 +2254,17 @@ app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_pr
 
     const encounter = await db.getEncounterById(encounterId);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+
+    // Compliance gate: an encounter must be signed by the provider before it is
+    // billed/checked-out. (Tests call billing.finalizeCheckout() directly and are
+    // unaffected; this guards the HTTP path used by real clients.)
+    const wfState = await db.getWorkflowState(encounterId);
+    if (wfState && !['signed', 'checked-out'].includes(wfState.current_state)) {
+      return res.status(409).json({
+        error: `Encounter must be signed by the provider before checkout. Current workflow state: '${wfState.current_state}'. Transition the workflow to 'signed' first.`,
+        current_state: wfState.current_state,
+      });
+    }
 
     const charge = await billing.finalizeCheckout(
       encounterId,

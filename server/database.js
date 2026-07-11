@@ -1371,7 +1371,16 @@ const db_helpers = {
   getWorkflowState: (encounterId) => dbGet('SELECT * FROM workflow_state WHERE encounter_id = ?', [encounterId]),
 
   updateWorkflowState: (encounterId, updates) => {
-    const ALLOWED_WORKFLOW_COLUMNS = ['current_state', 'previous_state', 'transitioned_by', 'transition_reason', 'updated_at'];
+    // Must include every column the workflow engine actually sets on a transition —
+    // otherwise timestamp/assignment writes are silently filtered out (check_in_time
+    // et al. stayed null despite successful transitions). These match the real
+    // workflow_state schema columns.
+    const ALLOWED_WORKFLOW_COLUMNS = [
+      'current_state', 'assigned_ma', 'assigned_provider',
+      'check_in_time', 'roomed_time', 'vitals_time',
+      'provider_start_time', 'provider_end_time', 'signed_time', 'checkout_time',
+      'updated_at',
+    ];
     const fields = [];
     const params = [];
     for (const [key, value] of Object.entries(updates)) {

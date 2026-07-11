@@ -180,6 +180,13 @@ const ROUTE_MAP = {
   'transdermal': 'transdermal', 'patch': 'transdermal'
 };
 
+// Word-boundary keyword match. Plain substring matching caused false hits like
+// "comprehensive" containing "iv" -> route wrongly set to IV. \b ensures the
+// keyword stands alone.
+function containsKeyword(haystack, keyword) {
+  return new RegExp(`\\b${escapeRegex(keyword)}\\b`, 'i').test(haystack || '');
+}
+
 // Common medications with typical doses for intelligent suggestions
 const COMMON_MEDICATIONS = {
   'metformin': { doses: ['500mg', '850mg', '1000mg'], route: 'PO', freq: 'BID', indication: 'Type 2 Diabetes' },
@@ -269,7 +276,7 @@ function extractMedications(transcript) {
       let route = knownMed?.route || 'PO';
 
       for (const [keyword, routeCode] of Object.entries(ROUTE_MAP)) {
-        if (contextAfter.includes(keyword)) {
+        if (containsKeyword(contextAfter, keyword)) {
           route = routeCode;
           break;
         }
@@ -291,7 +298,11 @@ function extractMedications(transcript) {
     }
   }
 
-  const medPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?|IU))\b/gi;
+  // Case-SENSITIVE first-letter anchor: with the /i flag, [A-Z] also matched
+  // lowercase letters, so "reducing Metformin to 500mg" captured a bogus drug
+  // named "Metformin to". Requiring a real capitalized token fixes that; known
+  // lowercase drug mentions are still caught by the alias extractor above.
+  const medPattern = /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units?|IU|iu))\b/g;
 
   let match;
   while ((match = medPattern.exec(text)) !== null) {
@@ -304,7 +315,7 @@ function extractMedications(transcript) {
     const afterDose = text.substring(match.index + match[0].length, match.index + match[0].length + 80).toLowerCase();
     let route = 'PO';
     for (const [keyword, routeCode] of Object.entries(ROUTE_MAP)) {
-      if (afterDose.includes(keyword)) { route = routeCode; break; }
+      if (containsKeyword(afterDose, keyword)) { route = routeCode; break; }
     }
 
     const contextAfter = lowerText.substring(match.index, match.index + 140);
@@ -367,7 +378,7 @@ const DIAGNOSIS_MAP = [
   { patterns: [/headache/i, /tension\s*headache/i], name: 'Headache', code: 'R51.9' },
   { patterns: [/urinary\s*tract\s*infection/i, /UTI/i], name: 'Urinary Tract Infection', code: 'N39.0' },
   { patterns: [/pneumonia/i], name: 'Pneumonia', code: 'J18.9' },
-  { patterns: [/upper\s*respiratory/i, /URI/i, /common\s*cold/i], name: 'Upper Respiratory Infection', code: 'J06.9' },
+  { patterns: [/upper\s*respiratory/i, /\bURI\b/i, /common\s*cold/i], name: 'Upper Respiratory Infection', code: 'J06.9' },
   { patterns: [/sinusitis/i, /acute\s*sinus\s*infection/i], name: 'Acute Sinusitis', code: 'J01.90' },
   { patterns: [/benign\s*prostatic/i, /BPH/i, /enlarged\s*prostate/i], name: 'Benign Prostatic Hyperplasia', code: 'N40.0' },
   { patterns: [/iron\s*deficiency/i], name: 'Iron Deficiency Anemia', code: 'D50.9' },
@@ -959,7 +970,7 @@ Vitals:
 ${vitalsLines.length > 0 ? vitalsLines.join('\n') : '  Not recorded'}
 
 Physical Examination:
-${peLines.length > 0 ? peLines.join('\n') : '  General: Appears well, in no acute distress\n  HEENT: Normocephalic, atraumatic\n  Cardiovascular: Regular rate and rhythm, no murmurs\n  Respiratory: Clear to auscultation bilaterally\n  Abdomen: Soft, non-tender, non-distended\n  Extremities: No edema'}
+${peLines.length > 0 ? peLines.join('\n') : '  Not documented for this encounter — physician to complete exam findings.'}
 
 ASSESSMENT:
 ${assessmentLines.length > 0 ? assessmentLines.join('\n') : 'See clinical notes'}

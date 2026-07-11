@@ -54,7 +54,7 @@ function assessMDM(context) {
   // High: new problem requiring workup, multiple chronic unstable conditions
   // Moderate: 1 chronic condition with exacerbation, or 1 new undiagnosed problem
   // Low: 1-2 self-limited/minor problems, or 1 stable chronic condition
-  const activeProblems = problems.filter(p => p.status === 'active' || !p.status);
+  const activeProblems = problems.filter(p => !['resolved', 'inactive'].includes((p.status || '').toLowerCase()));
   const chronicCount = activeProblems.filter(p =>
     CHRONIC_CONDITION_PREFIXES.some(pfx => (p.icd10_code || '').startsWith(pfx))
   ).length;
@@ -170,17 +170,21 @@ function assessMDM(context) {
 async function captureCharge(encounterId, patientId, providerName, overrides = {}) {
   const context = await buildBillingContext(encounterId, patientId);
   const emSuggestion = assessMDM(context);
+  const existing = await db.getChargeByEncounter(encounterId);
 
   // Collect ICD-10 codes from active problem list for billing linkage
   const icd10Codes = overrides.icd10_codes ||
     (context.problems || [])
-      .filter(p => p.status === 'active' || !p.status)
+      .filter(p => !['resolved', 'inactive'].includes((p.status || '').toLowerCase()))
       .map(p => p.icd10_code)
       .filter(Boolean)
       .slice(0, 12); // CMS allows up to 12 diagnosis codes per claim
 
-  // Build CPT code list — E/M code + any additional procedure codes
-  const emCode = overrides.em_level || emSuggestion.code;
+  // Build CPT code list — E/M code + any additional procedure codes.
+  // Prefer an explicit override, then any E/M level already chosen on the charge
+  // (so checkout does not silently revert a provider's manual selection), then
+  // the computed suggestion.
+  const emCode = overrides.em_level || existing?.em_level || emSuggestion.code;
   const additionalCpts = overrides.cpt_codes || [];
   const cptCodes = [
     { code: emCode, description: `Office/Outpatient Visit — ${emSuggestion.mdmLevel} complexity`, units: 1 },
@@ -188,7 +192,6 @@ async function captureCharge(encounterId, patientId, providerName, overrides = {
   ];
 
   // Upsert charge record
-  const existing = await db.getChargeByEncounter(encounterId);
   if (!existing) {
     await db.createCharge({ encounter_id: encounterId, patient_id: patientId, provider_name: providerName });
   }

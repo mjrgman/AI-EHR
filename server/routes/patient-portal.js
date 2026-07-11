@@ -67,7 +67,17 @@ router.post('/verify', async (req, res) => {
 
     const patient = await verifyPatient(first_name, last_name, dob, mrn);
     if (!patient) {
-      return res.status(401).json({ error: 'Could not verify your identity. Please check your information and try again.' });
+      return res.status(401).json({
+        error: 'Could not verify your identity. Please check your information and try again.',
+        new_patient: {
+          message: "New to the practice, or don't have a portal account yet? We can still help you get seen.",
+          next_steps: [
+            'Double-check that your name and date of birth match what the office has on file.',
+            'If you are a new patient, submit a new-patient request and our front desk will call you to get you scheduled.',
+          ],
+          new_patient_request_endpoint: 'POST /api/patient-portal/new-patient-request',
+        },
+      });
     }
 
     const session = await createSession(patient.id, req);
@@ -94,6 +104,34 @@ router.post('/logout', async (req, res) => {
     return res.json({ message: 'Patient portal session ended' });
   } catch (error) {
     return res.status(500).json({ error: error.message });
+  }
+});
+
+// Public new-patient intake request — for prospective patients who have no chart
+// yet. Deliberately does NOT create a chart or grant portal access; it only queues
+// a callback for front desk. Registered BEFORE requirePortalSession so an
+// unauthenticated prospect can actually reach it (closing the new-patient dead end).
+router.post('/new-patient-request', async (req, res) => {
+  try {
+    const { first_name, last_name, dob, phone, email, reason } = req.body || {};
+    if (!first_name || !last_name || !(phone || email)) {
+      return res.status(400).json({ error: 'first_name, last_name, and at least one of phone or email are required.' });
+    }
+    const created = await repository.createNewPatientRequest({
+      first_name: String(first_name).slice(0, 100),
+      last_name: String(last_name).slice(0, 100),
+      dob: dob || null,
+      phone: phone ? String(phone).slice(0, 20) : null,
+      email: email ? String(email).slice(0, 200) : null,
+      reason: reason ? String(reason).slice(0, 1000) : null,
+    });
+    return res.status(201).json({
+      request_id: created.id,
+      status: 'submitted',
+      message: 'Thank you. Our front desk will call you within one business day to verify your information and schedule your first visit. If this is a medical emergency, call 911.',
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Could not submit your request. Please call the office directly.' });
   }
 });
 
@@ -162,14 +200,14 @@ function getFrontDeskAgent() {
 
 router.post('/appointments/find-slots', async (req, res) => {
   try {
-    const { appointmentType, dateRangeStart, dateRangeEnd } = req.body || {};
+    const { appointmentType, appointment_type, dateRangeStart, dateRangeEnd } = req.body || {};
     const agent = getFrontDeskAgent();
     const slotsResult = await agent.process(
       {
         patient: { id: req.portalPatient.id },
         requestInfo: {
           action: 'find_slots',
-          appointmentType: appointmentType || 'follow_up',
+          appointmentType: appointmentType || appointment_type || 'follow_up',
           dateRangeStart: dateRangeStart ? new Date(dateRangeStart) : undefined,
           dateRangeEnd: dateRangeEnd ? new Date(dateRangeEnd) : undefined,
         },
@@ -188,12 +226,12 @@ router.post('/appointments/find-slots', async (req, res) => {
 
 router.post('/appointments/request', async (req, res) => {
   try {
-    const { slotId, appointmentType, reason, chief_complaint } = req.body || {};
+    const { slotId, reason, chief_complaint } = req.body || {};
+    // Accept camelCase or snake_case, and default to the same type find-slots
+    // defaults to, so a patient who just echoes a slotId isn't blocked.
+    const appointmentType = req.body.appointmentType || req.body.appointment_type || 'follow_up';
     if (!slotId) {
       return res.status(400).json({ error: 'slotId is required' });
-    }
-    if (!appointmentType) {
-      return res.status(400).json({ error: 'appointmentType is required' });
     }
 
     const agent = getFrontDeskAgent();
@@ -287,9 +325,17 @@ router.post('/message', async (req, res) => {
 
 router.post('/refill-request', async (req, res) => {
   try {
-    const { medication_id, medication_name, notes } = req.body || {};
+    const { medication_id, notes } = req.body || {};
+    let { medication_name } = req.body || {};
+    // Accept medication_id (the identifier the medications list actually returns)
+    // and resolve it to the drug name, so patients aren't forced to retype names.
+    if (!medication_name && medication_id != null) {
+      const meds = await repository.getActiveMedications(req.portalPatient.id);
+      const found = meds.find((m) => String(m.id) === String(medication_id));
+      if (found) medication_name = found.medication_name;
+    }
     if (!medication_name) {
-      return res.status(400).json({ error: 'medication_name is required' });
+      return res.status(400).json({ error: 'Provide medication_id (from your medications list) or medication_name.' });
     }
 
     const created = await repository.createMessage(req.portalPatient.id, {
@@ -347,12 +393,38 @@ router.post('/symptom-triage', async (req, res) => {
       tier: 2,
     });
 
+    // Give the patient explicit next steps, not just a routing label — an "urgent"
+    // result that only returns a status is a dead end for someone who feels unwell.
+    const guidance = urgency === 'stat'
+      ? {
+          headline: 'Your symptoms may need prompt attention.',
+          instructions: [
+            'If this is a medical emergency — chest pain, trouble breathing, one-sided weakness, severe bleeding — call 911 now.',
+            'Otherwise, please call the office right away; our triage nurse will speak with you today.',
+          ],
+        }
+      : urgency === 'urgent'
+        ? {
+            headline: 'We want to check on you today.',
+            instructions: [
+              'Please call the office today so our triage nurse can follow up with you.',
+              'If your symptoms suddenly get worse, call 911.',
+            ],
+          }
+        : {
+            headline: 'Your report has been sent to your care team.',
+            instructions: [
+              'Our team will review it and follow up, usually within one to two business days.',
+              'Please call the office if your symptoms get worse in the meantime.',
+            ],
+          };
     return res.status(201).json({
       triage_id: created.id,
       severity: severityNum,
       routed_to: routeTo,
       urgency,
-      status: 'submitted'
+      status: 'submitted',
+      guidance,
     });
   } catch (error) {
     return res.status(500).json({ error: 'Symptom submission failed' });

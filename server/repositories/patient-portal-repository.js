@@ -132,9 +132,20 @@ async function checkInAppointment(patientId, appointmentId) {
   return { appointment: { ...appointment, status: 'checked-in' }, updated: true, invalidStatus: false };
 }
 
+async function createNewPatientRequest(fields) {
+  const { first_name, last_name, dob = null, phone = null, email = null, reason = null } = fields;
+  const result = await db.dbRun(
+    `INSERT INTO new_patient_requests (first_name, last_name, dob, phone, email, reason, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'new')`,
+    [first_name, last_name, dob, phone, email, reason]
+  );
+  return { id: result.lastID };
+}
+
 module.exports = {
   checkInAppointment,
   createMessage,
+  createNewPatientRequest,
   getActiveMedications,
   getLabResults,
   getMessages,

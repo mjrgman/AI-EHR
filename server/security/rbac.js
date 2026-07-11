@@ -209,7 +209,7 @@ const ROLES = {
       agent_governance: false,
     },
     canWrite: {
-      patients: false,  // Can't write patient data
+      patients: true,  // Front desk performs new-patient registration / demographics intake
       encounters: true,  // Can schedule encounters
       problems: false,
       medications: false,
