@@ -231,7 +231,29 @@ class MAAgent extends BaseAgent {
   }
 
   async processEscalationResponse(context, directivePayload) {
-    const { directive } = directivePayload;
+    const { directive } = directivePayload || {};
+
+    if (!directive) {
+      return {
+        status: 'directive_missing_or_invalid',
+        message: 'Escalation response did not include an executable directive',
+        from_physician_agent: true,
+        actions_taken: ['No execution performed'],
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    if (!directive.instructions) {
+      return {
+        status: 'directive_missing_or_invalid',
+        message: 'Escalation response included a directive but no instructions',
+        from_physician_agent: true,
+        directive_id: directive.directive_id,
+        instructions: '',
+        actions_taken: ['No executable instructions found'],
+        timestamp: new Date().toISOString()
+      };
+    }
 
     return {
       status: 'directive_received_and_executed',

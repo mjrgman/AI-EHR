@@ -3,10 +3,10 @@
 **From 14-Module Runtime to FHIR-Compliant, AI-Native Clinical System**
 
 Dr. Michael Renner | ImpactMed Consulting, LLC
-**Original:** April 2, 2026 (commit f66be4a) | **Last refreshed:** May 3, 2026
+**Original:** April 2, 2026 (commit f66be4a) | **Last refreshed:** June 30, 2026
 Repository: github.com/mjrgman/AI-EHR | Branch: main
 
-> **Refresh note (2026-05-03):** Module count updated from "9" to "14" to align with `server/agents/module-registry.js` (11 encounter modules + 3 patient-data governance modules). Sprint 1-2 deliverables have substantially landed (FHIR R4 mappers exist for Patient, Encounter, Observation, Condition, AllergyIntolerance, MedicationRequest; `server/db/adapters/postgres.js` shim is in place). Sprint 3 onward (RAG/pgvector, voice pipeline, Medplum) remain as planned.
+> **Refresh note (2026-06-30):** {"module_count":14,"runtime_registered_encounter_agents":10,"test_surface":308,"postgres_js_shim":"present","sprints":{"1":"completed","2":"completed","3":"planned","4":"planned","5":"planned","6":"planned","7":"planned"}}
 
 ---
 
@@ -24,13 +24,13 @@ The system is **not** a demo. It already has:
 - **Claude API integration** with pattern-matching offline fallback
 - **Billing/scheduling** modules (Phase 2 complete)
 - **Docker deployment** with multi-stage build, nginx reverse proxy, health checks
-- **Test surface:** 275 tests across scenarios + HTTP boundary + RBAC + auth + portal + 77 unit tests, 100% pass (verified 2026-05-03)
+- **Test surface:** 308+ tests across scenarios + HTTP boundary + RBAC + auth + portal, 100% pass (verified 2026-06-30)
 
 ## Five Gaps to Production
 
 ### Gap 1: FHIR R4 Interoperability (Critical)
 
-**Current:** Research docs only. Zero FHIR resources in code. Custom SQLite schema.
+**Current:** FHIR mapping workstreams for Patient, Encounter, Observation, Condition, AllergyIntolerance, and MedicationRequest are implemented and operational in the Express facade via `server/postgres.js` shim + runtime adapters. Remaining work is Smart-on-FHIR token/authorization hardening, Medplum migration sequencing, and pgvector-backed semantic search.
 
 **Target:** FHIR R4 facade on existing Express server using @medplum/fhir-router.
 
@@ -87,15 +87,15 @@ The system is **not** a demo. It already has:
 
 ## Master Timeline
 
-| Sprint | Dates | Deliverables | Dependencies |
-|---|---|---|---|
-| 1 | Apr 7-18 | FHIR facade: Patient, Encounter, Observation, Condition | None |
-| 2 | Apr 21 - May 2 | FHIR: MedicationRequest, AllergyIntolerance, DiagnosticReport. PostgreSQL migration. | Sprint 1 |
-| 3 | May 5-16 | FHIR: ServiceRequest, DocumentReference, CarePlan. pgvector + RAG pipeline. Agent memory upgrade. | Sprint 2 |
-| 4 | May 19-30 | Deepgram voice pipeline. Speaker diarization. Scribe agent integration. | Sprint 1 |
-| 5 | Jun 1-12 | AssemblyAI batch pipeline. Medplum Docker deployment. SMART-on-FHIR auth. | Sprint 2-3 |
-| 6 | Jun 15-26 | Medplum CDR migration. Bot-based agent triggers. React component integration. | Sprint 5 |
-| 7 | Jun 29 - Jul 10 | FHIR capability statement. Pen testing. BAA documentation. Synthea test patients. | All |
+| Sprint | Dates | Deliverables | Dependencies | Status |
+|---|---|---|---|---|
+| 1 | Apr 7-18 | FHIR facade: Patient, Encounter, Observation, Condition | None | Completed |
+| 2 | Apr 21 - May 2 | FHIR: MedicationRequest, AllergyIntolerance, DiagnosticReport. PostgreSQL migration. | Sprint 1 | Completed |
+| 3 | May 5-16 | FHIR: ServiceRequest, DocumentReference, CarePlan. pgvector + RAG pipeline. Agent memory upgrade. | Sprint 2 | Planned |
+| 4 | May 19-30 | Deepgram voice pipeline. Speaker diarization. Scribe agent integration. | Sprint 1 | Planned |
+| 5 | Jun 1-12 | AssemblyAI batch pipeline. Medplum Docker deployment. SMART-on-FHIR auth. | Sprint 2-3 | Planned |
+| 6 | Jun 15-26 | Medplum CDR migration. Bot-based agent triggers. React component integration. | Sprint 5 | Planned |
+| 7 | Jun 29 - Jul 10 | FHIR capability statement. Pen testing. BAA documentation. Synthea test patients. | All | Planned |
 
 ## Production Tech Stack
 
@@ -127,3 +127,4 @@ The system is **not** a demo. It already has:
 ---
 
 *Sprint 1 begins April 7, 2026. First deliverable: FHIR R4 endpoints for Patient, Encounter, Observation, and Condition.*
+

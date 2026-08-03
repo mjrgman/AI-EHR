@@ -18,7 +18,7 @@ logged in as "Dr. Provider".
 
 **Voiceover**:
 
-> "This is Agentic EHR. It's a nine-module clinical workflow runtime that
+> "This is Agentic EHR. It's a 14-module clinical workflow runtime that
 > replaces legacy EHR templates with ambient voice capture, decision
 > support, and physician-gated automation. Nothing ever auto-executes.
 > Every dosing change, every prescription, every order is draft-only
@@ -174,7 +174,7 @@ safety-event log entry visible.
 
 **Voiceover**:
 
-> "Agentic EHR. Open source. Nine CATC modules. Tier 3 gates everywhere
+> "Agentic EHR. Open source. 14 CATC modules. Tier 3 gates everywhere
 > they matter. Repo link in the description."
 
 **Captured still**: README top of page.

@@ -2,10 +2,10 @@
 
 /**
  * FHIR R4 Router
- * Mounts at /fhir/R4 — read-only translation layer over the Agentic EHR
+ * Mounts at /fhir/R4 — read-mostly runtime with scoped write ingress via POST /Bundle
  *
- * All persistence stays in the existing SQLite schema.
- * This layer is translation, validation, and routing only.
+ * Read endpoints translate, validate, and route data from the existing EHR store.
+ * `POST /Bundle` is a scoped write entrypoint guarded by SMART-on-FHIR and RBAC checks.
  */
 
 const express = require('express');
@@ -515,3 +515,4 @@ router.use((req, res) => {
 });
 
 module.exports = router;
+

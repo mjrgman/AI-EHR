@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "description": "MJR-EHR Clinical Scenario Database — Real patient presentations for end-to-end testing",
+  "description": "MJR-EHR Clinical Scenario Database — synthetic-only fixture data for end-to-end testing; no real patient data or PHI.",
   "scenarios": [
     {
       "id": "DM-UNCONTROLLED-001",

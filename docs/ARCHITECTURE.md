@@ -215,7 +215,7 @@ row with the caller's identity, and the global audit-logger writes an
 | AI (optional) | Anthropic Claude via `ai-client.js` |
 | Lab integration | LabCorp API (Phase 2) |
 | Container | Dockerfile + docker-compose |
-| Tests | Custom harness, 250+ scenarios |
+| Tests | 308+ scenarios |
 
 ---
 

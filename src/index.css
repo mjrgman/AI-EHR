@@ -3,15 +3,14 @@
 @tailwind utilities;
 
 @layer base {
-  /* ── Measured Canon palette as CSS variables (page agents may reference) ── */
   :root {
-    --mc-navy: #1a3a52;       /* authority: nav, headings, primary text/buttons */
-    --mc-ivory: #f5f1e8;      /* warm app canvas */
-    --mc-offwhite: #fefdfb;   /* card/interior surfaces */
-    --mc-slate: #4a5f7f;      /* secondary text, labels, metadata, rules */
-    --mc-gold: #b8860b;       /* RARE accent: wordmark, active-nav underline */
-    --mc-danger: #a1322a;     /* critical: allergy alerts, alarms, no-show */
-    --mc-success: #3f7a52;    /* signed, normal, compliant */
+    --mc-navy: #0f172a;       /* sleek slate */
+    --mc-ivory: #020617;      /* ultra dark background */
+    --mc-offwhite: rgba(15, 23, 42, 0.4);   /* glass card surface */
+    --mc-slate: #94a3b8;      /* secondary text */
+    --mc-gold: #06b6d4;       /* cyan glowing accent */
+    --mc-danger: #ef4444;     /* critical red */
+    --mc-success: #10b981;    /* emerald green */
   }
 
   html {
@@ -19,329 +18,248 @@
     scroll-behavior: smooth;
   }
 
-  /* Inter for body/data; warm ivory ground + navy ink. Subtle atmospheric
-     ivory→offWhite gradient with a faint paper-grain noise at low opacity. */
   body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    @apply text-navy-600 antialiased;
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    @apply text-slate-200 antialiased;
     background-color: var(--mc-ivory);
-    background-image:
-      radial-gradient(at 85% 0%, rgba(254,253,251,0.9) 0px, transparent 55%),
-      linear-gradient(180deg, #faf7f0 0%, var(--mc-ivory) 55%, #f1ece0 100%),
-      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+    background-image: 
+      radial-gradient(circle at 15% 50%, rgba(15, 23, 42, 0.8), rgba(2, 6, 23, 1) 40%, rgba(0, 0, 0, 1) 100%),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
     background-attachment: fixed;
     min-height: 100vh;
   }
 
-  /* Source Serif 4 carries editorial authority on the primary heading levels.
-     Page agents can opt any element in with .font-display. */
   h1, h2, h3 {
-    font-family: 'Source Serif 4', Georgia, Cambria, 'Times New Roman', serif;
-    @apply text-navy-700;
+    font-family: 'Outfit', sans-serif;
+    @apply text-white tracking-tight;
   }
 
-  /* Gold thread on text selection */
   ::selection {
-    background-color: rgba(184, 134, 11, 0.22);
-    color: var(--mc-navy);
+    background-color: rgba(6, 182, 212, 0.3);
+    color: #fff;
   }
 
-  /* Brand focus-visible ring — gold, accessible, on every focusable element */
   :focus-visible {
     outline: 2px solid var(--mc-gold);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: 4px;
   }
 }
 
 @layer components {
+  /* Buttons */
   .touch-btn {
-    @apply min-h-[48px] min-w-[48px] px-4 py-3 rounded-xl font-semibold
-           transition-all duration-150 active:scale-95 select-none
-           focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply min-h-[48px] min-w-[48px] px-5 py-3 rounded-2xl font-semibold text-sm
+           transition-all duration-300 active:scale-95 select-none
+           focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:ring-offset-2 focus:ring-offset-slate-950
+           backdrop-blur-md shadow-lg border border-white/5;
   }
   .touch-btn-primary {
-    @apply touch-btn bg-navy-600 text-white hover:bg-navy-700 focus:ring-navy-500;
+    @apply touch-btn bg-gradient-to-r from-cyan-600/90 to-blue-600/90 text-white 
+           hover:from-cyan-500 hover:to-blue-500 hover:shadow-cyan-500/25;
   }
   .touch-btn-success {
-    @apply touch-btn bg-success-600 text-white hover:bg-success-700 focus:ring-success-600;
+    @apply touch-btn bg-gradient-to-r from-emerald-600/90 to-teal-600/90 text-white 
+           hover:from-emerald-500 hover:to-teal-500 hover:shadow-emerald-500/25;
   }
   .touch-btn-danger {
-    @apply touch-btn bg-red-50 text-danger-700 border border-danger-200 hover:bg-red-100 focus:ring-danger-500;
+    @apply touch-btn bg-gradient-to-r from-red-600/90 to-rose-600/90 text-white 
+           hover:from-red-500 hover:to-rose-500 hover:shadow-red-500/25;
   }
   .touch-btn-secondary {
-    @apply touch-btn bg-offWhite-100 text-slate-700 border border-slate-300 hover:bg-ivory-200 focus:ring-slate-400;
+    @apply touch-btn bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white hover:border-white/20;
   }
+
+  /* Cards - Glassmorphism */
   .card {
-    @apply bg-offWhite-100 rounded-2xl shadow-mc-lg border border-slate-100 overflow-hidden;
+    @apply bg-slate-900/40 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 overflow-hidden ring-1 ring-white/5;
   }
   .card-header {
-    @apply px-5 py-4 border-b border-slate-100 font-semibold text-xs uppercase tracking-[0.12em] text-slate-600;
+    @apply px-6 py-5 border-b border-white/10 font-medium text-xs uppercase tracking-[0.2em] text-cyan-400/80 bg-white/5;
   }
   .card-body {
-    @apply p-5 text-navy-600;
+    @apply p-6 text-slate-300;
   }
+
+  /* Badges */
   .badge {
-    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium;
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium tracking-wide backdrop-blur-md border;
   }
   .badge-urgent {
-    @apply badge bg-red-100 text-red-800 border border-red-200;
+    @apply badge bg-red-500/10 text-red-400 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.2)];
   }
   .badge-routine {
-    @apply badge bg-navy-50 text-navy-700 border border-navy-100;
+    @apply badge bg-cyan-500/10 text-cyan-400 border-cyan-500/20 shadow-[0_0_10px_rgba(6,182,212,0.2)];
   }
   .badge-success {
-    @apply badge bg-success-50 text-success-700 border border-success-100;
+    @apply badge bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)];
   }
   .badge-warning {
-    @apply badge bg-gold-50 text-gold-700 border border-gold-200;
+    @apply badge bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.2)];
   }
   .badge-info {
-    @apply badge bg-ivory-200 text-slate-600 border border-slate-100;
+    @apply badge bg-white/5 text-slate-300 border-white/10;
   }
+
+  /* Inputs */
   .input-clinical {
-    @apply w-full border border-slate-200 rounded-xl px-3 py-2.5 text-base
-           bg-white transition-all duration-150
-           focus:ring-2 focus:ring-navy-500 focus:border-navy-500
-           placeholder:text-slate-400;
+    @apply w-full border border-white/10 rounded-2xl px-4 py-3 text-sm
+           bg-black/40 backdrop-blur-md text-white transition-all duration-300
+           focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 focus:bg-black/60
+           placeholder:text-slate-600 shadow-inner;
   }
   .textarea-clinical {
-    @apply w-full border border-slate-200 rounded-xl p-3 text-base
-           bg-white transition-all duration-150 resize-y
-           focus:ring-2 focus:ring-navy-500 focus:border-navy-500
-           placeholder:text-slate-400;
+    @apply w-full border border-white/10 rounded-2xl p-4 text-sm
+           bg-black/40 backdrop-blur-md text-white transition-all duration-300 resize-y
+           focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 focus:bg-black/60
+           placeholder:text-slate-600 shadow-inner;
   }
   .label-clinical {
-    @apply block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5;
+    @apply block text-xs font-medium text-slate-400 uppercase tracking-widest mb-2 ml-1;
   }
   .section-header {
-    @apply text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 mb-2 px-1;
+    @apply text-xs font-medium uppercase tracking-[0.2em] text-cyan-500/80 mb-3 px-1;
   }
 
-  /* ════════════════════════════════════════════════════════════════════
-     MEASURED CANON BRAND UTILITIES — page agents reuse these VERBATIM.
-     Presentation only; cohesive surfaces, type, and the staggered reveal.
-     ════════════════════════════════════════════════════════════════════ */
-
-  /* .mc-card — offWhite interior surface, soft layered shadow, subtle border.
-     A faint top-edge inset sheen adds crafted depth without harsh borders. */
+  /* MC Replacements for Premium Glass */
   .mc-card {
-    @apply bg-offWhite-100 rounded-2xl border border-slate-100 overflow-hidden transition-all duration-200;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.65),
-      0 1px 2px rgba(26, 58, 82, 0.04),
-      0 3px 8px rgba(26, 58, 82, 0.06),
-      0 12px 32px rgba(26, 58, 82, 0.10);
+    @apply bg-slate-900/40 backdrop-blur-xl rounded-3xl border border-white/10 overflow-hidden transition-all duration-300 ring-1 ring-white/5 shadow-2xl;
   }
-  /* .mc-card-hover — premium lift on hover for interactive cards: the card
-     rises, the shadow deepens and spreads, the border warms toward slate. */
   .mc-card-hover {
-    @apply cursor-pointer hover:-translate-y-0.5 hover:border-slate-200;
+    @apply cursor-pointer hover:-translate-y-1 hover:border-cyan-500/30 hover:bg-slate-800/50;
   }
   .mc-card-hover:hover {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.7),
-      0 4px 10px rgba(26, 58, 82, 0.08),
-      0 20px 44px rgba(26, 58, 82, 0.16);
+    box-shadow: 0 20px 40px -10px rgba(6, 182, 212, 0.15), 0 0 20px rgba(6, 182, 212, 0.05);
   }
-  /* .mc-page — centered reading measure with comfortable page padding */
+  
   .mc-page {
-    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8 py-6;
+    @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8;
   }
-  /* .mc-page-title — Source Serif 4 display, navy, the primary page heading */
+  
   .mc-page-title {
-    @apply font-display text-2xl sm:text-3xl font-semibold text-navy-700 tracking-tight;
+    @apply font-display text-3xl sm:text-4xl font-bold text-white tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400;
   }
-  /* .mc-section-label — slate, uppercase, tracked eyebrow above a section.
-     Signature detail: a short gold leading hairline tick crowns the label. */
+  
   .mc-section-label {
-    @apply inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 mb-2;
+    @apply inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.25em] text-cyan-500 mb-3;
   }
   .mc-section-label::before {
     content: "";
-    @apply inline-block h-px w-5 rounded-full;
-    background: linear-gradient(90deg, var(--mc-gold), rgba(184, 134, 11, 0));
+    @apply inline-block h-px w-8 rounded-full;
+    background: linear-gradient(90deg, #06b6d4, transparent);
   }
 
-  /* .mc-row — refined list-row hover: subtle ivory wash, inset gold lead edge
-     on hover, smooth lift-free transition (good for dense clinical lists). */
   .mc-row {
-    @apply relative rounded-xl px-3 py-2.5 transition-all duration-150
-           hover:bg-ivory-200/70;
+    @apply relative rounded-2xl px-4 py-3 transition-all duration-300
+           hover:bg-white/5 border border-transparent hover:border-white/5;
   }
   .mc-row::before {
     content: "";
-    @apply absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-gold-400
-           opacity-0 transition-opacity duration-150;
+    @apply absolute inset-y-2 left-0 w-1 rounded-full bg-cyan-500
+           opacity-0 transition-all duration-300 blur-[2px];
   }
   .mc-row:hover::before {
     @apply opacity-100;
   }
 
-  /* mc-btn-fill — depth system for FILLED buttons. Layered tinted elevation +
-     a faint top inset sheen so the color reads dimensional and confident, not
-     flat/washed. Press gives a real depth collapse. Tint set per color below. */
   .mc-btn-fill {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-      0 1px 2px rgba(26, 58, 82, 0.10),
-      0 4px 12px var(--mc-btn-glow, rgba(26, 58, 82, 0.18));
-    transition: box-shadow 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+    @apply touch-btn-primary;
   }
-  .mc-btn-fill:hover {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 2px 4px rgba(26, 58, 82, 0.12),
-      0 8px 22px var(--mc-btn-glow-hover, rgba(26, 58, 82, 0.26));
-  }
-  .mc-btn-fill:active {
-    box-shadow:
-      inset 0 2px 4px rgba(0, 0, 0, 0.16),
-      0 1px 2px rgba(26, 58, 82, 0.10);
-  }
-  /* Disabled FILLED buttons must read as unmistakably inert: the confident
-     colored elevation/sheen is stripped entirely and the fill is desaturated,
-     so a disabled success/sign button never reads as a washed-but-active one.
-     (Pairs with the Tailwind disabled: utilities on TouchButton.) */
-  .mc-btn-fill:disabled,
-  .mc-btn-fill[disabled] {
-    box-shadow: none;
-    filter: saturate(0.45);
-    transform: none;
-  }
-  .mc-btn-navy    { --mc-btn-glow: rgba(26, 58, 82, 0.28);  --mc-btn-glow-hover: rgba(26, 58, 82, 0.38); }
-  .mc-btn-success { --mc-btn-glow: rgba(63, 122, 82, 0.30); --mc-btn-glow-hover: rgba(42, 83, 55, 0.42); }
-  .mc-btn-gold    { --mc-btn-glow: rgba(184, 134, 11, 0.28); --mc-btn-glow-hover: rgba(156, 113, 9, 0.40); }
-  /* .mc-stat-card — KPI tile: offWhite surface, layered shadow, generous
-     padding. Prefer the StatTile component for the full crafted treatment. */
+  
   .mc-stat-card {
-    @apply bg-offWhite-100 rounded-2xl shadow-mc-lg border border-slate-100 p-4 flex flex-col gap-1 transition-all duration-200;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.55),
-      0 2px 6px rgba(26, 58, 82, 0.05),
-      0 8px 24px rgba(26, 58, 82, 0.09);
+    @apply bg-slate-900/40 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/10 p-6 flex flex-col gap-2 transition-all duration-300 ring-1 ring-white/5;
   }
-  /* .mc-pill — compact rounded label (status/metadata); pair with a color class */
+  .mc-stat-card:hover {
+    @apply border-cyan-500/30 bg-slate-800/50 transform -translate-y-1;
+    box-shadow: 0 20px 40px -10px rgba(6, 182, 212, 0.15);
+  }
+
   .mc-pill {
-    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-ivory-200 text-slate-600 border border-slate-100;
+    @apply badge-info;
   }
-  /* .mc-reveal — single element fade+slideUp on load (uses tailwind 'reveal' anim) */
-  .mc-reveal {
-    @apply animate-reveal;
-  }
-  /* .mc-reveal-stagger — apply to a PARENT; its direct children reveal in a
-     single orchestrated staggered cascade via nth-child animation-delay */
+
+  .mc-reveal { @apply animate-reveal; }
+  
   .mc-reveal-stagger > * {
-    animation: reveal 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 }
 
-/* Scrollbar styling for clinical panels */
-.clinical-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.clinical-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.clinical-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
-}
-.clinical-scroll::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Refined Measured Canon scrollbar — warm slate thumb on transparent track */
+/* Scrollbars */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.2);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(74, 95, 127, 0.35); /* slate @ low opacity */
-  border-radius: 6px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(74, 95, 127, 0.55);
-  background-clip: padding-box;
+  background: rgba(148, 163, 184, 0.4);
 }
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(74, 95, 127, 0.4) transparent; /* Firefox */
+  scrollbar-color: rgba(148, 163, 184, 0.2) rgba(0, 0, 0, 0.2);
 }
 
-/* Staggered reveal cascade — direct children of .mc-reveal-stagger */
-.mc-reveal-stagger > *:nth-child(1) { animation-delay: 0.04s; }
+/* Animations */
+.mc-reveal-stagger > *:nth-child(1) { animation-delay: 0.05s; }
 .mc-reveal-stagger > *:nth-child(2) { animation-delay: 0.10s; }
-.mc-reveal-stagger > *:nth-child(3) { animation-delay: 0.16s; }
-.mc-reveal-stagger > *:nth-child(4) { animation-delay: 0.22s; }
-.mc-reveal-stagger > *:nth-child(5) { animation-delay: 0.28s; }
-.mc-reveal-stagger > *:nth-child(6) { animation-delay: 0.34s; }
-.mc-reveal-stagger > *:nth-child(7) { animation-delay: 0.40s; }
-.mc-reveal-stagger > *:nth-child(8) { animation-delay: 0.46s; }
-.mc-reveal-stagger > *:nth-child(n+9) { animation-delay: 0.52s; }
+.mc-reveal-stagger > *:nth-child(3) { animation-delay: 0.15s; }
+.mc-reveal-stagger > *:nth-child(4) { animation-delay: 0.20s; }
+.mc-reveal-stagger > *:nth-child(5) { animation-delay: 0.25s; }
+.mc-reveal-stagger > *:nth-child(6) { animation-delay: 0.30s; }
+.mc-reveal-stagger > *:nth-child(7) { animation-delay: 0.35s; }
+.mc-reveal-stagger > *:nth-child(8) { animation-delay: 0.40s; }
+.mc-reveal-stagger > *:nth-child(n+9) { animation-delay: 0.45s; }
 
-/* Reveal keyframe (mirrors tailwind 'reveal'; available to raw CSS too) */
 @keyframes reveal {
-  0% { opacity: 0; transform: translateY(12px); }
-  100% { opacity: 1; transform: translateY(0); }
+  0% { opacity: 0; transform: translateY(20px) scale(0.98); filter: blur(4px); }
+  100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
 }
 
-/* Respect reduced-motion: neutralize non-essential motion (WCAG 2.3.3).
-   The loading spinner is intentionally left spinning — it is functional
-   feedback, not decorative motion. */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .mc-reveal,
-  .mc-reveal-stagger > *,
-  .toast-enter,
-  .toast-exit,
-  .animate-pulse-record,
-  .skeleton {
+  .mc-reveal, .mc-reveal-stagger > *, .toast-enter, .toast-exit, .animate-pulse-record, .skeleton {
     animation: none !important;
   }
 }
 
-/* Pulse animation for active recording */
 @keyframes pulse-record {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
 }
 .animate-pulse-record {
-  animation: pulse-record 1.5s ease-in-out infinite;
+  animation: pulse-record 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-/* Print styles */
 @media print {
   .no-print { display: none !important; }
-  body { background: white; background-image: none; }
-  .card, .mc-card { box-shadow: none; border: 1px solid #e5e7eb; }
+  body { background: white; color: black; }
+  .card, .mc-card { border: 1px solid #e2e8f0; background: white; box-shadow: none; filter: none; }
 }
 
-/* Skeleton loading */
 .skeleton {
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
   background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s infinite;
-  border-radius: 0.5rem;
+  animation: skeleton-shimmer 2s infinite linear;
+  border-radius: 0.75rem;
 }
 @keyframes skeleton-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
 
-/* Toast animations */
 @keyframes toast-in {
-  0% { transform: translateY(-12px); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
+  0% { transform: translateY(-20px) scale(0.9); opacity: 0; filter: blur(4px); }
+  100% { transform: translateY(0) scale(1); opacity: 1; filter: blur(0); }
 }
 @keyframes toast-out {
-  0% { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(-12px); opacity: 0; }
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-20px) scale(0.9); opacity: 0; filter: blur(4px); }
 }
-.toast-enter { animation: toast-in 0.3s ease-out forwards; }
-.toast-exit { animation: toast-out 0.3s ease-in forwards; }
+.toast-enter { animation: toast-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.toast-exit { animation: toast-out 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

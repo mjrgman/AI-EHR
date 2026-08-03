@@ -431,9 +431,6 @@ Additional documentation is included in the repo:
 | `DEPLOYMENT.md` | Full deployment guide (local, Docker, cloud, LabCorp sandbox) |
 | `INTER_AGENT_COMMUNICATION.md` | Agent messaging protocol |
 | `QUICKSTART_MESSAGING.md` | Quick start for agent messaging |
-| `IMPLEMENTATION_SUMMARY.md` | Implementation details and decisions |
-| `BUILD_SUMMARY.md` | Build process and configuration |
-| `AGENT_BUILD_SUMMARY.md` | Agent system build details |
 | `AGENTS_MA_PHYSICIAN_BUILD.md` | MA and Physician agent specifics |
 | `server/integrations/labcorp/README.md` | LabCorp integration setup and quirks |
 | `server/security/README.md` | Security module documentation |

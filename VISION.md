@@ -189,25 +189,32 @@ Cross-cutting rule: patient-facing and patient-data-touching workflows must rema
 
 ---
 
-### Agent 6: Coding/Quality Agent
+### Agent 6: Coding Agent
 
-**Role:** E&M coding, ICD-10 validation, MIPS/HEDIS quality tracking, and billing compliance.
+**Role:** E&M coding, ICD-10 validation, and billing-oriented documentation support.
 
 **Scope of Authority:**
-- Calculate E&M level from the completed note (2021 MDM-based guidelines)
-- Validate ICD-10 code specificity and accuracy
-- Flag HCC-relevant codes for risk adjustment
-- Track MIPS quality measures in real time during the encounter
-- Identify care gaps (screenings due, chronic disease monitoring overdue)
-- Score documentation completeness
-- Alert the Physician Agent to missing elements before note signing
-- Generate coding summary for billing staff
+- Calculate E&M level from the completed note (2021 MDM-based guidelines).
+- Validate ICD-10 code specificity and accuracy.
+- Flag HCC-relevant codes for risk adjustment.
+- Alert the Physician Agent to missing elements before note signing.
+- Generate coding summary for billing staff.
 
 **Runs after:** Scribe Agent and Physician Agent complete the note.
 
----
+### Agent 7: Quality Agent
 
-### Agent 7: Domain Logic Agent (Functional Medicine / HRT / Peptide)
+**Role:** Quality tracking, care-gap detection, and clinical quality telemetry.
+
+**Scope of Authority:**
+- Track MIPS/HEDIS quality measures in real time during encounter flow.
+- Identify care gaps (screenings due, chronic-disease monitoring).
+- Score documentation completeness for quality completion readiness.
+- Notify the Physician Agent to address quality gaps before visit close.
+
+**Runs after:** Scribe and Physician complete the note.
+
+### Agent 8: Domain Logic Agent (Functional Medicine / HRT / Peptide)
 
 **Role:** Specialty-medicine reasoning layer. Evaluates hormone replacement, peptide therapy, and functional-medicine patterns against clinician-authored rules that fall outside mainstream primary-care guidelines.
 
@@ -373,8 +380,9 @@ Phone Triage Agent ──→ MA Agent ──→ Physician Agent
 Patient Contact              Scribe Agent (during visit)
                                           │
                                           ▼
-                                 Coding/Quality Agent
-```
+                                 Coding Agent
+                                 Quality Agent
+``` 
 
 **Message types between agents:**
 - `TRIAGE_RESULT` — Phone Triage → MA Agent (patient call triaged)
@@ -502,16 +510,13 @@ This is not a stateless system. Every agent has persistent memory.
 - Base agent class with status tracking, timing, event emission
 - Orchestrator with dependency-aware parallel execution
 - Shared patient context schema
-- Encounter runtime operational (Scribe, CDS, Domain Logic, Orders, Coding, Quality) as the foundation of the broader 14-module system. Annual Wellness Visit is built (`AWVAgent`) but not yet registered in the orchestrator; AWV component checks currently run as an inline fallback in the Quality agent.
+- Encounter runtime operational (Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic, Orders, Coding, and Quality) is the 10-agent runtime baseline. Annual Wellness Visit is built (`AWVAgent`) but not yet registered in the orchestrator.
 
-**To be built:**
-- Phone Triage Agent (voice AI integration)
-- Front Desk Agent (scheduling engine, pre-visit briefing generator)
-- MA Agent (protocol engine, refill automation, escalation logic)
-- Physician Agent (learning engine, style adaptation, order management)
-- Inter-agent message bus
-- Persistent agent memory (knowledge graph or vector store)
-- FHIR interoperability layer (for external record ingestion)
+## Build / wiring status snapshot
+
+- **Built + wired (encounter runtime today):** `phone_triage`, `front_desk`, `ma`, `physician`, `scribe`, `cds`, `domain_logic`, `orders`, `coding`, `quality`.
+- **Built, not yet wired to core encounter orchestration:** `AWVAgent`, `patient_link`, `patient_app`, and `medivault` (MediVault bus handoffs remain in `MEDIVAULT_BOUNDARY.md`).
+- **Not yet built in current runtime:** production-grade ambient voice pipeline (real-time ASR + diarization), persistent long-memory/knowledge-graph storage, and broader external-record interoperability (outside the current in-repo `fhir` read/write mapping layer).
 - Production voice pipeline (real-time ASR + speaker diarization)
 
 ---

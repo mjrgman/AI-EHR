@@ -66,5 +66,7 @@ npm run dev
 - **Pass 2** — build `/settings` page (stub OK), covers prompt §File Safety and Settings + Acceptance Criteria #6.
 - **Pass 3** — build `/file-safety` page (stub OK).
 - **Pass 4** — expand left-nav (currently mobile-only, 3 items; prompt expects 13).
-- **Compliance follow-up** — reword `test/scenarios/clinical-scenarios.json` line 3 from *"Real patient presentations"* to *"Realistic clinical presentations"* (synthetic status confirmed by maintainer 2026-04-28; wording fix lives in `test/` so requires the maintainer-review path).
+- **Compliance follow-up** — `test/scenarios/clinical-scenarios.json` line 3 is now explicitly synthetic wording and policy-aligned, with periodic fixture wording checks included in future pass candidates.
 - **Cosmetic** — relocate `src/components/PatientVoice.jsx` into `patient/` or `encounter/` subfolder.
+
+

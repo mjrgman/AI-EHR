@@ -41,37 +41,43 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen items-center justify-center bg-ivory-200" role="alert">
-          <div className="mx-4 max-w-md rounded-2xl border border-slate-100 bg-offWhite-100 p-8 text-center shadow-mc-xl">
-            <h1 className="mb-3 font-display text-2xl font-semibold text-navy-700">Something went wrong</h1>
-            <p className="mb-6 text-sm leading-6 text-slate-600">
-              The application hit an unexpected error. Any work that was already auto-saved is preserved, but
-              unsaved changes on this screen may be lost. Reloading restarts the app safely.
+        <div className="flex h-screen items-center justify-center bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black" role="alert">
+          <div className="mx-4 max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 text-center shadow-2xl backdrop-blur-xl ring-1 ring-white/5">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500/20 text-red-400 ring-1 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+              <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h1 className="mb-3 font-display text-2xl font-semibold text-white tracking-tight">System Exception</h1>
+            <p className="mb-6 text-sm leading-relaxed text-slate-400">
+              The clinical agent hit an unexpected exception. Any work that was already auto-saved is preserved, but unsaved changes on this screen may be lost. Reloading restarts the module safely.
             </p>
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
               <button
                 onClick={() => {
                   this.setState({ hasError: false, message: '' });
                   window.location.reload();
                 }}
-                className="rounded-lg bg-navy-600 px-6 py-2 text-sm font-semibold text-white transition-colors hover:bg-navy-700"
+                className="rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 transition-all hover:scale-105 hover:shadow-cyan-500/40 active:scale-95"
               >
-                Reload application
+                Reload module
               </button>
               <button
                 onClick={() => window.location.assign('/')}
-                className="rounded-lg border border-slate-200 bg-offWhite-100 px-6 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-ivory-200"
+                className="rounded-xl border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-semibold text-slate-300 transition-all hover:bg-white/10 hover:text-white active:scale-95"
               >
                 Return to dashboard
               </button>
             </div>
             {this.state.message ? (
-              <details className="mt-5 text-left">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-500">Technical detail</summary>
-                <p className="mt-2 break-words rounded-lg bg-ivory-200 p-3 font-mono text-[11px] text-slate-600">{this.state.message}</p>
+              <details className="mt-6 text-left group">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500 hover:text-slate-400 transition-colors focus:outline-none">Technical detail</summary>
+                <p className="mt-3 break-words rounded-xl border border-white/5 bg-black/40 p-4 font-mono text-[11px] text-slate-400 leading-relaxed overflow-x-auto shadow-inner">{this.state.message}</p>
               </details>
             ) : null}
-            <p className="mt-5 text-[11px] text-slate-400">Synthetic EHR Demo · No PHI · Not for clinical use</p>
+            <div className="mt-6 pt-5 border-t border-white/10">
+              <p className="text-[11px] font-medium tracking-widest text-cyan-500/40 uppercase">Synthetic EHR Demo · No PHI</p>
+            </div>
           </div>
         </div>
       );

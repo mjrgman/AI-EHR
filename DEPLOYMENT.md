@@ -1,5 +1,7 @@
 # Agentic EHR Deployment Guide
 
+**Last Updated:** 2026-06-30
+
 Complete deployment guide for Agentic EHR, covering local development, single-server Docker deployment, and cloud HIPAA BAA deployment options.
 
 ## Table of Contents
@@ -21,8 +23,8 @@ Complete deployment guide for Agentic EHR, covering local development, single-se
 
 ### Prerequisites
 
-- **Node.js**: v22.0.0 or later
-- **npm**: v10.0.0 or later
+- **Node.js**: 18+ (recommended 22 LTS)
+- **npm**: 9+
 - **SQLite3**: v3.40.0 or later (usually included with Node)
 
 ### Setup
@@ -1304,6 +1306,6 @@ sqlite3 /data/agentic-ehr.db ".mode csv" ".output audit-trail-2024.csv" \
 
 ---
 
-**Last Updated**: 2024-03-22
+**Last Updated**: 2026-06-30
 **Version**: 1.0
 **Author**: ImpactMed Consulting

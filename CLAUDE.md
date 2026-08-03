@@ -11,8 +11,8 @@
 - If this file conflicts with Code Dispatch `AGENTS.md`, `CODEX_BRAIN.md`, or current local evidence, current local evidence wins.
 
 
-Last updated: 2026-05-19 (currency check; four-layer guardrails re-verified)
-Root: `C:\Users\micha\files\Clinical\EHR\`
+Last updated: 2026-06-03 (currency check; four-layer guardrails re-verified)
+Root: `C:\Users\micha\files\A_active_projects\Clinical\EHR\`
 Scope: this working directory and all subdirectories.
 
 ## Purpose
@@ -35,7 +35,7 @@ Previously a recurring issue where `_eval/SECRETS_FINDINGS.md` would regenerate 
 - Layer 1 (redaction rule): `skills/unified-eval-edit/SKILL.md §7` is the canonical spec. Skill present in library.
 - Layer 2 (gitignore): `.gitignore` contains `_eval/`, `.env`, `.env.*`. Verified by `Grep` on this file.
 - Layer 3 (PreToolUse hook): `~/.claude/hooks/secret-scrubber.py` exists and is wired in `~/.claude/settings.json` under `hooks.PreToolUse` as a python command. Verified by `Grep`.
-- Layer 4 (OpenBrain directive): "EHR-SECRETS-CYCLE" directive — re-verify on next `get_directives()` call from a session with the openbrain-memory MCP loaded; this currency check did not re-query OpenBrain.
+- Layer 4 (OpenBrain directive): "EHR-SECRETS-CYCLE" directive — **unverified since 2026-06-30** in this runtime (no OpenBrain-capable session available here); refresh this file after running `get_directives()` in the next OpenBrain-capable session.
 
 Historical context and full resolution log: See `AUDIT_ITERATION_PLAN.md` in this repo for the current iteration plan and resolution notes.
 

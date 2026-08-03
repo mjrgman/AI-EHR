@@ -4,15 +4,15 @@
 **Pass**: 1 (inspection only — no patches applied)
 **Project root**: `C:\Users\micha\files\Clinical\EHR`
 **Operating prompt**: `00_CLAUDE_CODE_EHR_AUTOBETTER_PROMPT.md`
-**Pass-1 status**: AWAITING APPROVAL before any code change.
+**Pass-1 status:** **Pass-1 COMPLETE (2026-04-28)** — confirmed in [`CHANGELOG_EHR_FRONTEND.md`](./CHANGELOG_EHR_FRONTEND.md).
 
 ---
 
 ## Headline finding
 
 This is **not a placeholder demo**. It is `mjr-ehr-interactive` v1.0.0 — the
-nine-module agentic EHR documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md):
-**76 server files, 51 frontend files, 250+ test scenarios** (per the spec),
+14-module agentic EHR documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md):
+**76 server files, 51 frontend files, 308+ test scenarios** (per the current test baseline),
 mock-mode safety defaults across AI / LabCorp / scheduler, fail-closed
 guardrails wired through `BaseAgent` and the orchestrator's `dependsOn`
 graph.
@@ -146,7 +146,7 @@ Tailwind CSS via `tailwind.config.js` + PostCSS + autoprefixer; entry `src/index
 | 3 | Sidebar nav (mobile-only via `lg:hidden`) has only 3 items: Dashboard, Schedule, Audit Log. Prompt §Left Navigation lists 13 expected. **Desktop has no visible nav at all** above the `lg` breakpoint. | Medium | Safe (UI) |
 | 4 | No `/settings` route, no Settings page. Prompt-required. | Medium | Front-end safe; small backend wiring may follow |
 | 5 | No `/file-safety` route, no File Safety page. Prompt-required. | Medium | Mostly front-end safe |
-| 6 | `clinical-scenarios.json` line 3 self-describes as *"Real patient presentations for end-to-end testing."* The data shape (478-555-XXXX phone using fictional 555 exchange, `@email.com` placeholder domain, generic insurance IDs like `BCBS-7742901`) reads as synthetic-but-realistic — but the wording is ambiguous. | Compliance flag | Confirmation needed; does not block pass-1 |
+| 6 | `clinical-scenarios.json` line 3 self-describes as *"Synthetic clinical presentations for end-to-end testing."* The data shape (478-555-XXXX phone using fictional 555 exchange, `@email.com` placeholder domain, generic insurance IDs like `BCBS-7742901`) is synthetic and aligned with demo requirements. | Compliance cleared | No action required |
 | 7 | `dist/` build artifacts exist with chunk names aligned to `src/pages/`, but freshness vs. current `src/` cannot be verified without rebuild. | Low | Resolve via `npm run build` after first patch |
 
 ## 10. Duplicates or stale files
@@ -198,7 +198,7 @@ All current canonical files are appropriate. No re-canonicalization needed.
 - *Pass 3*: Build `/file-safety` page (stub OK) — same prompt section.
 - *Pass 4*: Expand left navigation to additional prompt-listed items as the corresponding routes/pages mature. Many items (Messages, Tasks, Orders, Results, Medications, Documents, Billing Preview, Quality Gaps) exist conceptually in the agent layer but have no front-end view yet — each is its own controlled pass.
 - *Pass N*: Move `src/components/PatientVoice.jsx` into the appropriate subfolder (`patient/` or `encounter/`) — cosmetic, non-urgent.
-- *Compliance follow-up*: confirm `clinical-scenarios.json` synthetic status and reword the description from "Real patient presentations" to "Realistic clinical presentations" (or equivalent) if synthetic.
+*Compliance follow-up*: periodic fixture reviews continue, and `clinical-scenarios.json` is now explicitly marked as synthetic data.
 
 ## 14. Tests / smoke checks available
 
@@ -221,7 +221,7 @@ All current canonical files are appropriate. No re-canonicalization needed.
 
 Soft flags requiring acknowledgement before pass-1 patch:
 
-- (a) Clinical scenarios wording per §9 issue 6 — does not block the AppShell banner patch but should be resolved before any test/scenario work.
+- (a) Clinical scenarios wording per §9 issue 6 � resolved (synthetic wording confirmed in `test/scenarios/clinical-scenarios.json`) and non-blocking for AppShell patch.
 - (b) Confirmation that frontend-layout edits are within scope (they are, per `contributor-backlog.md` — confirming explicitly).
 
 ---
@@ -233,3 +233,6 @@ Per the AutoBetter prompt's "controlled pass" discipline (Part 2 §Cycle steps 7
 > **Approve pass-1 patch?** (Add demo-safety banner to `src/components/layout/AppShell.jsx`, then `npm run build`, smoke-check, document in `docs/CHANGELOG_EHR_FRONTEND.md`, and stop.)
 
 Reply **`approve`** to proceed, **`change <X>`** to redirect, or **`hold`** to pause.
+
+
+

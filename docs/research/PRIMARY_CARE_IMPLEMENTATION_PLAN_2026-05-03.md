@@ -16,7 +16,7 @@
 | `server/billing-engine.js` | MDM 3-element, RVU table (2024), chronic prefix lists | Update RVUs to 2026, add care-management code generation |
 | `server/cds-engine.js` | Rule-based CDS | Add USPSTF-driven preventive prompts |
 | `server/agents/orchestrator.js` | dependsOn ordering | Wire new agents in |
-| `server/agents/module-registry.js` | 13 modules | Add `awv` module, optionally `care_management` module |
+| `server/agents/module-registry.js` | 14 modules | Add `awv` module, optionally `care_management` module |
 | FHIR mappers (`server/fhir/mappers/`) | 9 resource types | Add Procedure + Immunization mappers (HEDIS ECDS dependency) |
 | Database (`server/database.js`) | Existing tables | Add 7 new tables (see §2) |
 
@@ -479,7 +479,7 @@ Every phase is reversible:
 
 Target coverage on new code: **>80% line coverage** (anything safety-critical >90%).
 
-Existing test count: 275 (verified 2026-05-03). Estimated new tests: ~80-100 additional. Final count target: ~360-380 tests, all passing.
+Existing test count: 308 (verified 2026-06-30). Estimated new tests: ~50-70 additional (to target ~360+ for full 2026 roadmap); baseline today is 308+ tests. 308 is current baseline for pass gates.
 
 ---
 
@@ -497,10 +497,11 @@ Per "don't dump HTML, surface decisions as Y/N" rule. Each item below is a YES/N
 
 **5. Implementation pace — full sequence in this conversation, OR do Phase 1+4 now and split? (Recommendation: split — Phase 1 + 4 + 5 NOW; the rest in a follow-up session)** — Phases 1 (HCC V28), 4 (G2211), 5 (USPSTF) total ~7-10 hours and form a coherent "billing + preventive prompt" deliverable. Phases 2 (care mgmt), 3 (AWV agent), 6 (HEDIS ECDS), 7 (MIPS/APCM) form a coherent "panel management" deliverable for a second session.
 
-**6. Should I run `npm test` after each phase? (Recommendation: Y)** — keeps the 275-test baseline green; surfaces regressions early. You already have unit-test infrastructure that runs in <2 sec.
+**6. Should I run `npm test` after each phase? (Recommendation: Y)** — keeps the 308-test baseline green; surfaces regressions early. You already have unit-test infrastructure that runs in <2 sec.
 
 **7. Should I update `BLIND_EVALUATION_REPORT.md` after each implementation phase? (Recommendation: N until end)** — single comprehensive update at the end avoids churn. The eval is already published; daily drift updates noise the document.
 
 ---
 
 Reply with `1Y 2Y 3Y 4Y 5Y 6Y 7Y` (or any mix). I'll execute in the agreed order.
+

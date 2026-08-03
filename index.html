@@ -1,22 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
-  <!-- Allow pinch-zoom: never disable user scaling on a clinical surface (WCAG 1.4.4 Resize Text). -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>MJR-EHR Intelligent Clinical Agent</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x1F3E5;</text></svg>" />
-  <!-- Measured Canon type system: Inter (clinical legibility) + Source Serif 4 (editorial authority) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" />
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      background: radial-gradient(circle at top left, #0f172a 0%, #020617 100%);
+      background-attachment: fixed;
+    }
+  </style>
 </head>
-<body class="bg-ivory-200 text-navy-600 font-sans antialiased">
+<body class="bg-slate-950 text-slate-200 font-sans antialiased selection:bg-cyan-500/30 selection:text-cyan-50">
   <div id="root"></div>
   <noscript>
-    <div style="max-width:42rem;margin:4rem auto;padding:1.5rem;font-family:Inter,system-ui,sans-serif;color:#1a3a52;text-align:center">
+    <div style="max-width:42rem;margin:4rem auto;padding:1.5rem;font-family:Outfit,Inter,system-ui,sans-serif;color:#e2e8f0;text-align:center">
       <h1 style="font-size:1.25rem;margin:0 0 .5rem">JavaScript is required</h1>
-      <p style="margin:0;color:#4a5f7f">This synthetic EHR demo needs JavaScript enabled to load. No PHI · Not for clinical use.</p>
+      <p style="margin:0;color:#94a3b8">This synthetic EHR demo needs JavaScript enabled to load. No PHI · Not for clinical use.</p>
     </div>
   </noscript>
   <script type="module" src="/src/main.jsx"></script>

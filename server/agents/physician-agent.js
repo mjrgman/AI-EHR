@@ -16,6 +16,7 @@ class PhysicianAgent extends BaseAgent {
       ...options
     });
 
+    this.settings = options.settings || {};
     this.preferences = this._initializePreferences(options.providerName || 'Dr. Provider');
     this.protocols = options.protocols || this._buildDefaultProtocols();
     this.escalationResponses = this._buildEscalationResponses();
@@ -60,8 +61,9 @@ class PhysicianAgent extends BaseAgent {
     const { escalation } = escalationPayload;
 
     const autoResponse = this._findAutoResponseForEscalation(escalation.type);
+    const allowTemplateAutoResponses = this.settings?.allowTemplateAutoResponses === true;
 
-    if (autoResponse) {
+    if (allowTemplateAutoResponses && autoResponse) {
       const directive = this._generateDirective(escalation, autoResponse, context);
 
       // Audit trail for auto-response (A-C4)

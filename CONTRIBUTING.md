@@ -57,7 +57,7 @@ When in doubt, pick the higher tier.
 git clone https://github.com/mjrgman/AI-EHR.git
 cd AI-EHR
 npm install
-npm test          # run the 250+ test suite
+npm test          # run the 308+ test suite
 npm run dev       # frontend + backend in dev mode
 ```
 

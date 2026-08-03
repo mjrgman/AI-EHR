@@ -33,6 +33,7 @@ const { mountHedisRoutes } = require('./routes/hedis-routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '';
 const SERVER_START_TIME = Date.now();
 
 // ==========================================
@@ -2769,14 +2770,16 @@ async function startServer() {
 
   await initializeServerState();
 
-  serverInstance = app.listen(PORT, () => {
+  const listenArgs = HOST ? [PORT, HOST] : [PORT];
+  serverInstance = app.listen(...listenArgs, () => {
     logger.info('Server started', {
       port: PORT,
+      host: HOST || 'default',
       ai_mode: aiClient.getMode(),
       claude_enabled: aiClient.isClaudeEnabled(),
       node_env: process.env.NODE_ENV || 'development',
     });
-    console.log('[MJR-EHR] Server running on http://localhost:' + PORT);
+    console.log('[MJR-EHR] Server running on http://' + (HOST || 'localhost') + ':' + PORT);
   });
 
   serverInstance.on('close', () => {
