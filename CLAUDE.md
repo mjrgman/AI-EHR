@@ -24,7 +24,13 @@ EHR (Electronic Health Records) workspace for development, testing, and evaluati
 Previously a recurring issue where `_eval/SECRETS_FINDINGS.md` would regenerate each cycle and re-expose credentials. Resolution locked in four layers:
 
 1. **Redaction rule**: `C:\Users\micha\files\skills\unified-eval-edit\SKILL.md §7 REDACTION RULE` is the canonical spec. All eval passes must apply this before emitting any `_eval/` output.
-2. **Gitignore**: `Clinical\EHR\.gitignore` contains `_eval/` — never commit evaluation artifacts.
+2. **Gitignore**: `Clinical\EHR\.gitignore` excludes `_eval/`, `_dispatch_archive/`, `00_*.md` and `HAL_ITERATION_*.md` from THIS repository, because its remote `mjrgman/AI-EHR` is **PUBLIC** (confirmed by Michael 2026-08-04; every other repo in the workspace is private).
+
+   Those trees hold internal security-review and remediation records. Michael's 2026-08-03 correction settled the patient-data question — this project is demo data and contains no PHI, consistent with the 2026-07-18 owner decision in canonical-facts. Publishing a security audit to a public repository is a separate question, and the answer was no.
+
+   **The documents are backed up, just not published.** Commit `c07f46a` added all 32 and is preserved on the local-only branch `local-archive/eval-docs`, which is captured by the nightly offsite `git bundle` (`--all` covers every branch). Do not push that branch. If this repository is ever made private, the exclusions can be lifted and `local-archive/eval-docs` merged forward.
+
+   Layer 1 (redaction) remains the control that actually prevents credential exposure; Layer 2 is defence in depth. Every recovered file was scanned before commit: the only two secret-shaped matches were quoted grep *patterns* inside reports concluding "No new hardcoded secrets in source code", and 5 redaction markers were present.
 3. **PreToolUse hook**: `~/.claude/settings.json` routes all tool calls through `~/.claude/hooks/secret-scrubber.py`, which redacts known secret patterns before write.
 4. **OpenBrain directive**: "EHR-SECRETS-CYCLE" saved as a high-priority rule — Claude auto-enforces.
 
@@ -41,8 +47,8 @@ Historical context and full resolution log: See `AUDIT_ITERATION_PLAN.md` in thi
 
 ## Rules
 
-- **Never commit `_eval/`** — it's gitignored for a reason.
-- **Test data only** for development work. Synthetic, anonymized, or explicit-consent samples only.
+- **`_eval/` and `_dispatch_archive/` are NOT committed to this repository**, because its remote is public. They live on the local-only branch `local-archive/eval-docs` and in the nightly offsite bundle. Never push that branch. Decided 2026-08-04; supersedes the 2026-08-03 change that committed them here.
+- **Test data only** for development work. This project is demo data and contains no PHI. Synthetic, anonymized, or explicit-consent samples only.
 
 ## Related
 
