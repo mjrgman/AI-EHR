@@ -3,6 +3,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const repository = require('../repositories/patient-portal-repository');
+const schedulingRepository = require('../repositories/scheduling-repository');
 const { processVoiceIntent, verifyPatient } = require('../integrations/patient-voice');
 const { FrontDeskAgent } = require('../agents/front-desk-agent');
 const {
@@ -15,6 +16,7 @@ const {
 
 let toPlainLanguage;
 try {
+  // eslint-disable-next-line global-require -- optional agent; falls back to identity
   const patientLink = require('../agents/patientlink-agent');
   toPlainLanguage = patientLink.toPlainLanguage;
 } catch {
@@ -359,7 +361,6 @@ function getFrontDeskAgent() {
   // for portal requests so that patient appointments persist and appear in the
   // upcoming-appointments list. (B2 fix — mock mode left appointments in memory
   // and they were invisible to getUpcomingAppointments queries.)
-  const schedulingRepository = require('../repositories/scheduling-repository');
   return new FrontDeskAgent({ repository: schedulingRepository });
 }
 

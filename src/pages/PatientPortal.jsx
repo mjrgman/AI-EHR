@@ -612,7 +612,7 @@ function VisitPrepView({ checklist }) {
   );
 }
 
-function MediVaultView({ patientId, onExport, exporting, exportError }) {
+function MediVaultView({ onExport, exporting, exportError }) {
   return (
     <div className="relative overflow-hidden rounded-3xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc-lg">
       <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />

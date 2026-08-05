@@ -69,6 +69,7 @@ class FrontDeskAgent extends BaseAgent {
     if (options.repository !== undefined) {
       this.repository = options.repository;
     } else if (process.env.SCHEDULER_MODE === 'db') {
+      // eslint-disable-next-line global-require -- only loaded in db mode
       this.repository = require('../repositories/scheduling-repository');
     } else {
       this.repository = null;

@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import api, { safeLog } from '../api/client';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
-import Badge from '../components/common/Badge';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Modal from '../components/common/Modal';
 import { useToast } from '../components/common/Toast';
@@ -65,7 +64,7 @@ function formatDate(date) {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { currentRole, providerName } = useAuth();
+  const { providerName } = useAuth();
 
   const [patients, setPatients] = useState([]);
   const [dashboard, setDashboard] = useState(null);

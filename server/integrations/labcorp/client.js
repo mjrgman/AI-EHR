@@ -30,6 +30,7 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const parser = require('./parser');
+const oauth = require('./oauth');
 
 const LABCORP_MODE = process.env.LABCORP_MODE || 'mock';
 const LABCORP_TIMEOUT_MS = parseInt(process.env.LABCORP_TIMEOUT_MS || '30000', 10);
@@ -330,7 +331,6 @@ class LabCorpClient {
       throw new Error(`LabCorp ${label}: baseUrl required for API mode`);
     }
 
-    const oauth = require('./oauth');
     let tokens = await oauth.getTokens(this.db, this.userId);
     if (!tokens) {
       throw new Error(`LabCorp ${label}: not authorized — no tokens stored for user ${this.userId}. Run the OAuth2 flow first.`);

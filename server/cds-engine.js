@@ -8,6 +8,7 @@ const db = require('./database');
 // Pharmaceutical knowledge base (graceful fallback if unavailable)
 let drugSafetyService = null;
 try {
+  // eslint-disable-next-line global-require -- optional dependency, guarded by try/catch
   drugSafetyService = require('./pharma/drug-safety-service');
 } catch {
   console.warn('[CDS] Drug safety service unavailable — using local rules only');
@@ -668,22 +669,24 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
 
     try {
       switch (action.type) {
-        case 'create_lab_order':
+        case 'create_lab_order': {
           payload.ordered_by = payload.ordered_by || providerName;
           payload.order_date = payload.order_date || today;
           const labResult = await db.createLabOrder(payload);
           results.push({ type: 'lab_order', id: labResult.id, description: action.description });
           break;
+        }
 
-        case 'create_prescription':
+        case 'create_prescription': {
           payload.prescriber = payload.prescriber || providerName;
           payload.prescribed_date = payload.prescribed_date || today;
           payload.status = payload.status || 'signed';
           const rxResult = await db.createPrescription(payload);
           results.push({ type: 'prescription', id: rxResult.id, description: action.description });
           break;
+        }
 
-        case 'create_imaging_order':
+        case 'create_imaging_order': {
           payload.ordered_by = payload.ordered_by || providerName;
           payload.order_date = payload.order_date || today;
           payload.body_part = payload.body_part || 'Unspecified';
@@ -691,8 +694,9 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
           const imgResult = await db.createImagingOrder(payload);
           results.push({ type: 'imaging_order', id: imgResult.id, description: action.description });
           break;
+        }
 
-        case 'create_referral':
+        case 'create_referral': {
           payload.referred_by = payload.referred_by || providerName;
           payload.referred_date = payload.referred_date || today;
           payload.specialty = payload.specialty || 'Unspecified';
@@ -700,6 +704,7 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
           const refResult = await db.createReferral(payload);
           results.push({ type: 'referral', id: refResult.id, description: action.description });
           break;
+        }
 
         case 'medication_adjustment':
         case 'dose_adjustment':

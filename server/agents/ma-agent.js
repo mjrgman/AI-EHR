@@ -351,11 +351,12 @@ class MAAgent extends BaseAgent {
             }
             if (!conditionMet) return { passes: false, failed_condition: 'compliant', reason: 'Patient compliance not confirmed or data unavailable' };
             break;
-          case 'a1c_stable':
+          case 'a1c_stable': {
             const a1c = labs?.find(l => l.test_name === 'Hemoglobin A1C');
             conditionMet = a1c && a1c.result_value < 9;
             if (!conditionMet) return { passes: false, failed_condition: 'a1c_stable', reason: 'A1C not at goal' };
             break;
+          }
           default:
             conditionMet = true;
         }

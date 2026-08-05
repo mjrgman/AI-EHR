@@ -42,7 +42,6 @@ function formatDOB(dob) {
 
 // PatientRoster component — the core table used on this page
 function PatientRoster({ patients, onNewVisit, startingVisit, onNavigate }) {
-  const navigate = useNavigate();
   return (
     <div className="divide-y divide-slate-100">
       {patients.map((patient) => {

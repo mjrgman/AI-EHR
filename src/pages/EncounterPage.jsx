@@ -1100,7 +1100,7 @@ export default function EncounterPage() {
           <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg bg-danger-50 px-3 py-2 ring-1 ring-danger-200" role="alert" aria-live="assertive">
             <AlertTriangle size={15} className="mt-0.5 shrink-0 text-danger-600" />
             <p className="text-xs text-danger-700">
-              CDS screening unavailable — results could not be retrieved. Verify drug interactions, warnings, and care gaps manually; do not read the list below as "no findings."
+              CDS screening unavailable — results could not be retrieved. Verify drug interactions, warnings, and care gaps manually; do not read the list below as &ldquo;no findings.&rdquo;
             </p>
           </div>
         )}

@@ -102,7 +102,7 @@ export default function SchedulePage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, toast]);
 
   useEffect(() => {
     loadSchedule();

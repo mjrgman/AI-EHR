@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, createContext, useContext } from 'react';
 import { CheckCircle2, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 const ToastContext = createContext(null);
@@ -78,12 +78,16 @@ export function ToastProvider({ children }) {
     return id;
   }, []);
 
-  const toast = {
+  // Memoized so the context value keeps a stable identity across provider
+  // re-renders (which happen on every toast add/remove). Consumers can then
+  // list `toast` in effect/callback dependency arrays — as react-hooks
+  // requires — without the effect re-firing each time a toast appears.
+  const toast = useMemo(() => ({
     success: (msg, opts) => addToast('success', msg, opts),
     error: (msg, opts) => addToast('error', msg, opts),
     warning: (msg, opts) => addToast('warning', msg, opts),
     info: (msg, opts) => addToast('info', msg, opts),
-  };
+  }), [addToast]);
 
   return (
     <ToastContext.Provider value={toast}>

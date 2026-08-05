@@ -2705,10 +2705,12 @@ async function initializeServerState() {
     }
 
     try {
+      // eslint-disable-next-line global-require -- startup wiring, failure is non-fatal
       const { MessageBus } = require('./agents/message-bus');
       const messageBus = new MessageBus(db);
       messageBus.wireCATCDataFlows();
 
+      // eslint-disable-next-line global-require -- startup wiring, failure is non-fatal
       const eventBus = require('./integrations/event-bus');
       const EVENT_MAP = {
         'NOTE_SIGNED': 'note.signed',

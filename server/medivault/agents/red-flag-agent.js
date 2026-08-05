@@ -23,6 +23,7 @@ const { dbGet, dbAll } = require('../../database');
 // Attempt to load drug safety service (optional dependency)
 let drugSafetyService = null;
 try {
+  // eslint-disable-next-line global-require -- optional dependency, guarded by try/catch
   drugSafetyService = require('../../pharma/drug-safety-service');
 } catch {
   // Drug safety service not available — medication interaction checks will be skipped

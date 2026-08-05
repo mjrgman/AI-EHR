@@ -124,7 +124,7 @@ export default function MAPage() {
         toast.error('Failed to load encounter');
       })
       .finally(() => setLoading(false));
-  }, [encounterId]);
+  }, [encounterId, toast]);
 
   // --- Previous vitals for trend comparison ---
   // patient.vitals from the bundle is either a single object (latest) or an array

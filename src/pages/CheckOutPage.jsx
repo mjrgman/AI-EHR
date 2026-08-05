@@ -68,15 +68,18 @@ export default function CheckOutPage() {
   const { patient } = usePatient(encounter?.patient_id);
   const { workflow, timeline } = useWorkflow(eid);
 
-  // Load E/M suggestion from billing engine when encounter is ready
+  // Load E/M suggestion from billing engine when encounter is ready. Keyed on
+  // the encounter *id* rather than the encounter object so a refetch that
+  // returns an equivalent record does not re-request the charge preview.
+  const loadedEncounterId = encounter?.id;
   useEffect(() => {
-    if (!eid || !encounter) return;
+    if (!eid || !loadedEncounterId) return;
     setChargeLoading(true);
     api.getCharge(eid)
       .then(data => setCharge(data))
       .catch(() => {/* charge preview non-fatal */})
       .finally(() => setChargeLoading(false));
-  }, [eid, encounter?.id]);
+  }, [eid, loadedEncounterId]);
 
   const orderCounts = useMemo(() => {
     if (!orders) return { prescriptions: 0, labs: 0, imaging: 0, referrals: 0, total: 0 };

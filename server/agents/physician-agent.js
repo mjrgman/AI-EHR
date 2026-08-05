@@ -274,7 +274,7 @@ ${signature}
           protocol_name: protocol.name
         }, context);
         return { status: 'protocol_added', protocol_id: protocol.id };
-      case 'update':
+      case 'update': {
         const index = this.protocols.findIndex(p => p.id === protocol.id);
         if (index >= 0) {
           this.protocols[index] = { ...this.protocols[index], ...protocol };
@@ -286,6 +286,7 @@ ${signature}
           return { status: 'protocol_updated', protocol_id: protocol.id };
         }
         return { status: 'error', message: 'Protocol not found' };
+      }
       default:
         return { status: 'error', message: `Unknown action: ${action}` };
     }

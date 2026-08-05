@@ -241,6 +241,7 @@ async function login(req, res) {
     let refreshToken = null;
     let refreshExpiresAt = null;
     try {
+      // eslint-disable-next-line global-require -- optional module; refresh tokens are opt-in
       const refreshMod = require('./refresh-tokens');
       const rt = await refreshMod.create(user.id);
       refreshToken = rt.refreshToken;

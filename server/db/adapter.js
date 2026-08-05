@@ -29,6 +29,7 @@ function getAdapter() {
       'Set DATABASE_PATH for SQLite or contribute the postgres adapter.'
     );
   }
+  // eslint-disable-next-line global-require -- adapter chosen at runtime from DATABASE_URL
   return require('./adapters/sqlite');
 }
 

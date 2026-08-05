@@ -90,10 +90,6 @@ export default function VisitSummaryPage() {
   const cdsAccepted = (encounter.cds_suggestions || []).filter((s) => s.status === 'accepted');
   const cdsRejected = (encounter.cds_suggestions || []).filter((s) => s.status === 'rejected');
 
-  const rxOrders = orders.filter((o) => o.order_type === 'prescription' || o.type === 'prescription');
-  const labOrders = orders.filter((o) => o.order_type === 'lab' || o.type === 'lab');
-  const imagingOrders = orders.filter((o) => o.order_type === 'imaging' || o.type === 'imaging');
-
   return (
     <div className="mc-page mc-reveal-stagger space-y-4 pb-8">
       {/* Header */}

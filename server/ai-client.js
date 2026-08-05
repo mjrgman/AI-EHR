@@ -1051,6 +1051,7 @@ async function lookupMedication(drugName) {
 
   // Try RxNorm for canonical identification
   try {
+    // eslint-disable-next-line global-require -- optional module, absence is non-fatal
     const rxnorm = require('./pharma/rxnorm-service');
     const enriched = await rxnorm.resolveAndEnrich(drugName);
     if (enriched) {
