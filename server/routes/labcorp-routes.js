@@ -36,6 +36,7 @@ const express = require('express');
 const oauth = require('../integrations/labcorp/oauth');
 const { LabCorpClient } = require('../integrations/labcorp/client');
 const rbac = require('../security/rbac');
+const { logSafe } = require('../security/log-safe');
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — OAuth flows complete in seconds
 
@@ -224,8 +225,8 @@ function mountLabCorpRoutes(app, { db } = {}) {
     const role = req.user && req.user.role;
     if (!rbac.canWrite(role, 'lab_orders')) {
       console.warn(
-        `[RBAC] LabCorp submit denied: user ${userId} (role: ${role || 'none'}) ` +
-        `attempted submit-to-labcorp on order ${req.params.id}`
+        `[RBAC] LabCorp submit denied: user ${logSafe(userId)} (role: ${logSafe(role || 'none')}) ` +
+        `attempted submit-to-labcorp on order ${logSafe(req.params.id)}`
       );
       return res.status(403).json({
         error: 'Permission denied: cannot submit lab orders to LabCorp',

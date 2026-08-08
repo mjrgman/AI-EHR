@@ -6,6 +6,7 @@ const repository = require('../repositories/patient-portal-repository');
 const schedulingRepository = require('../repositories/scheduling-repository');
 const { processVoiceIntent, verifyPatient } = require('../integrations/patient-voice');
 const { FrontDeskAgent } = require('../agents/front-desk-agent');
+const { logSafe } = require('../security/log-safe');
 const {
   attachSessionCookie,
   clearSessionCookie,
@@ -167,7 +168,7 @@ function recordFailedVerify(ip) {
   data.attempts++;
   if (data.attempts >= VERIFY_MAX_ATTEMPTS) {
     data.lockedUntil = now + VERIFY_LOCKOUT_MS;
-    console.warn(`[PORTAL] Verify locked out for client ${ip} after ${data.attempts} failed attempts`);
+    console.warn(`[PORTAL] Verify locked out for client ${logSafe(ip)} after ${data.attempts} failed attempts`);
     return { locked: true };
   }
   return { locked: false };

@@ -29,6 +29,8 @@
  * Role-Permission Matrix
  * Defines what each role can access, modify, and sign
  */
+const { logSafe } = require('./log-safe');
+
 const ROLES = {
   physician: {
     label: 'Physician',
@@ -618,7 +620,7 @@ function requireRole(...allowedRoles) {
     req.userId = userId;
 
     if (!allowedRoles.includes(userRole)) {
-      console.warn(`[RBAC] Access denied: user ${userId} (role: ${userRole}) attempted unauthorized access to ${req.path}`);
+      console.warn(`[RBAC] Access denied: user ${logSafe(userId)} (role: ${logSafe(userRole)}) attempted unauthorized access to ${logSafe(req.path)}`);
       return res.status(403).json({
         error: 'Insufficient permissions',
         requiredRoles: allowedRoles,
@@ -640,8 +642,8 @@ function requirePermission(action, resourceType) {
 
     if (!authorize(userRole, resourceType, action)) {
       console.warn(
-        `[RBAC] Permission denied: user ${userId} (role: ${userRole}) ` +
-        `attempted ${action} on ${resourceType}`
+        `[RBAC] Permission denied: user ${logSafe(userId)} (role: ${logSafe(userRole)}) ` +
+        `attempted ${logSafe(action)} on ${logSafe(resourceType)}`
       );
       return res.status(403).json({
         error: `Permission denied: cannot ${action} ${resourceType}`,
@@ -693,8 +695,8 @@ function requireResourceAccess(resourceType) {
     
     if (!authorize(userRole, resourceType, action)) {
       console.warn(
-        `[RBAC] Resource access denied: user ${userId} (role: ${userRole}) ` +
-        `attempted ${action} on ${resourceType}`
+        `[RBAC] Resource access denied: user ${logSafe(userId)} (role: ${logSafe(userRole)}) ` +
+        `attempted ${logSafe(action)} on ${logSafe(resourceType)}`
       );
       return res.status(403).json({
         error: `Cannot ${action} ${resourceType}`,
