@@ -69,6 +69,55 @@ function scopeKey(resourceType, method) {
   return `${resourceType}.${method.toUpperCase()}`;
 }
 
+function hasPatientScope(scopes) {
+  return scopes.some(scope => scope.startsWith('patient/') && /\.(read|write)$/.test(scope));
+}
+
+function denyCompartment(res, diagnostics) {
+  return res.status(403).json({
+    resourceType: 'OperationOutcome',
+    issue: [{ severity: 'error', code: 'forbidden', diagnostics }],
+  });
+}
+
+/**
+ * Enforce the patient compartment for explicit SMART patient/* scopes.
+ * Internal app-login tokens have no scope claim and remain governed by RBAC.
+ */
+async function patientCompartmentCheck(req, res, next) {
+  const explicitScopes = req.user?.scope
+    ? (typeof req.user.scope === 'string' ? req.user.scope.split(' ').filter(Boolean) : req.user.scope)
+    : [];
+  if (!hasPatientScope(explicitScopes)) return next();
+
+  const boundPatientId = Number(req.user?.patient);
+  if (!Number.isInteger(boundPatientId) || boundPatientId <= 0) {
+    return denyCompartment(res, 'Patient-scoped SMART token is missing a valid launch patient context.');
+  }
+
+  const resourceType = extractResourceType(req.path);
+  if (resourceType === 'Practitioner' || resourceType === 'metadata' || resourceType === '$stats') return next();
+
+  let requestedPatientId = null;
+  if (resourceType === 'Patient') {
+    const idSegment = req.path.replace(/^\//, '').split('/')[1];
+    if (idSegment) requestedPatientId = Number(idSegment);
+    else req.query._id = String(boundPatientId); // constrain collection/identifier searches
+  } else if (resourceType === 'Encounter' && /^\/Encounter\/\d+$/.test(req.path)) {
+    const encounter = await db.getEncounterById(Number(req.path.split('/')[2]));
+    requestedPatientId = Number(encounter?.patient_id);
+  } else {
+    requestedPatientId = Number(req.query?.patient);
+  }
+
+  if (requestedPatientId !== null && requestedPatientId !== boundPatientId) {
+    return denyCompartment(res, 'Requested resource is outside the SMART token patient compartment.');
+  }
+
+  req.fhirPatientId = boundPatientId;
+  return next();
+}
+
 /**
  * Log a scope denial to audit_log (fire-and-forget; errors are swallowed).
  */
@@ -145,4 +194,11 @@ function smartScopeCheck(req, res, next) {
   });
 }
 
-module.exports = { smartScopeCheck, extractResourceType, scopeKey, effectiveScopes };
+module.exports = {
+  smartScopeCheck,
+  patientCompartmentCheck,
+  extractResourceType,
+  scopeKey,
+  effectiveScopes,
+  hasPatientScope,
+};

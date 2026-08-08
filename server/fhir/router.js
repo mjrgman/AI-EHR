@@ -43,7 +43,7 @@ const { buildCapabilityStatement } = require('./capability-statement');
 const { ingestBundle } = require('./inbound/bundle-ingest');
 
 // SMART scope enforcement
-const { smartScopeCheck } = require('./smart/scope-check');
+const { smartScopeCheck, patientCompartmentCheck } = require('./smart/scope-check');
 
 // RBAC — role-based resource access + PHI filtering (sec-fhir-rbac-idor-01)
 const rbac = require('../security/rbac');
@@ -151,6 +151,7 @@ router.use((req, res, next) => {
 
 router.use(fhirMetricsMiddleware);
 router.use(smartScopeCheck);
+router.use(patientCompartmentCheck);
 router.use(fhirRbacGuard);
 
 // ──────────────────────────────────────────

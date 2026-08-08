@@ -109,6 +109,7 @@ async function initSmartTables() {
         client_id   TEXT NOT NULL,
         user_id     INTEGER NOT NULL,
         scopes      TEXT NOT NULL DEFAULT '',
+        patient_id  INTEGER,
         expires_at  DATETIME NOT NULL,
         revoked     BOOLEAN NOT NULL DEFAULT 0
       )
@@ -116,10 +117,14 @@ async function initSmartTables() {
   } catch (err) {
     console.error('[SMART] Failed to create smart_refresh_tokens table:', err.message);
   }
+  try {
+    await db.dbRun('ALTER TABLE smart_refresh_tokens ADD COLUMN patient_id INTEGER');
+  } catch (_) { /* column already present */ }
 }
 
-// Fire table init on module load (non-blocking)
-initSmartTables();
+// Fire table init on module load and retain the promise so request handlers can
+// wait out in-place schema upgrades before issuing patient-bound tokens.
+const smartTablesReady = initSmartTables();
 
 // ──────────────────────────────────────────
 // HELPERS
@@ -241,13 +246,13 @@ function verifyPkce(verifier, challenge, method) {
 /**
  * Issue a refresh token, store it in the DB, and return the raw token string.
  */
-async function issueRefreshToken(clientId, userId, scopes) {
+async function issueRefreshToken(clientId, userId, scopes, patientId = null) {
   const token = generateRandomHex(REFRESH_TOKEN_BYTES);
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
   await db.dbRun(`
-    INSERT INTO smart_refresh_tokens (token, client_id, user_id, scopes, expires_at, revoked)
-    VALUES (?, ?, ?, ?, ?, 0)
-  `, [token, clientId, userId, scopes, expiresAt]);
+    INSERT INTO smart_refresh_tokens (token, client_id, user_id, scopes, patient_id, expires_at, revoked)
+    VALUES (?, ?, ?, ?, ?, ?, 0)
+  `, [token, clientId, userId, scopes, patientId, expiresAt]);
   return { token, expiresAt };
 }
 
@@ -304,6 +309,7 @@ async function logTokenDenied(username, reason, _ip) {
  *   { access_token, token_type, expires_in, scope [, refresh_token] }
  */
 async function tokenHandler(req, res) {
+  await smartTablesReady;
   const body = req.body || {};
   const grantType = body.grant_type;
   const ip = req.ip;
@@ -484,6 +490,23 @@ async function handleAuthorizationCodeGrant(req, res, body, ip) {
 
   const scopeString = authCode.scopes;
   const grantedScopes = scopeString.split(' ').filter(Boolean);
+  let launchContext;
+  try {
+    launchContext = JSON.parse(authCode.launch_context || '{}');
+  } catch (_) {
+    return res.status(400).json({
+      error: 'invalid_grant',
+      error_description: 'Authorization code has malformed launch context',
+    });
+  }
+  const hasPatientScopes = grantedScopes.some(scope => scope.startsWith('patient/'));
+  const launchPatientId = Number(launchContext.patient);
+  if (hasPatientScopes && (!Number.isInteger(launchPatientId) || launchPatientId <= 0)) {
+    return res.status(400).json({
+      error: 'invalid_grant',
+      error_description: 'Patient scopes require a valid launch patient context',
+    });
+  }
 
   // Issue access token
   const expiresIn = 3600;
@@ -493,10 +516,11 @@ async function handleAuthorizationCodeGrant(req, res, body, ip) {
     role: user.role,
     fullName: user.full_name,
     scope: scopeString,
+    ...(launchPatientId ? { patient: launchPatientId } : {}),
   }, { expiresIn });
 
   // Issue refresh token
-  const refreshResult = await issueRefreshToken(client_id, user.id, scopeString);
+  const refreshResult = await issueRefreshToken(client_id, user.id, scopeString, launchPatientId || null);
 
   // Update last_login
   await db.dbRun('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
@@ -513,7 +537,6 @@ async function handleAuthorizationCodeGrant(req, res, body, ip) {
 
   // Attach launch context (patient, encounter, etc.) if stored with the code
   try {
-    const launchContext = JSON.parse(authCode.launch_context || '{}');
     if (launchContext.patient) response.patient = launchContext.patient;
     if (launchContext.encounter) response.encounter = launchContext.encounter;
     if (launchContext.intent) response.intent = launchContext.intent;
@@ -579,6 +602,14 @@ async function handleRefreshTokenGrant(req, res, body, ip) {
 
   const scopeString = storedToken.scopes;
   const grantedScopes = scopeString.split(' ').filter(Boolean);
+  const hasPatientScopes = grantedScopes.some(scope => scope.startsWith('patient/'));
+  const storedPatientId = Number(storedToken.patient_id);
+  if (hasPatientScopes && (!Number.isInteger(storedPatientId) || storedPatientId <= 0)) {
+    return res.status(400).json({
+      error: 'invalid_grant',
+      error_description: 'Patient-scoped refresh token is missing its patient compartment',
+    });
+  }
 
   // Issue new access token
   const expiresIn = 3600;
@@ -588,10 +619,11 @@ async function handleRefreshTokenGrant(req, res, body, ip) {
     role: user.role,
     fullName: user.full_name,
     scope: scopeString,
+    ...(storedPatientId ? { patient: storedPatientId } : {}),
   }, { expiresIn });
 
   // Issue new refresh token
-  const newRefresh = await issueRefreshToken(storedToken.client_id, user.id, scopeString);
+  const newRefresh = await issueRefreshToken(storedToken.client_id, user.id, scopeString, storedPatientId || null);
 
   await logTokenIssued(user, 'refresh_token', grantedScopes, ip);
 
@@ -601,6 +633,7 @@ async function handleRefreshTokenGrant(req, res, body, ip) {
     expires_in: expiresIn,
     scope: scopeString,
     refresh_token: newRefresh.token,
+    ...(storedPatientId ? { patient: storedPatientId } : {}),
   });
 }
 
@@ -624,6 +657,7 @@ async function introspectHandler(req, res) {
     username: decoded.username,
     role: decoded.role,
     scope: decoded.scope || '',
+    patient: decoded.patient || null,
     exp: decoded.exp,
     iat: decoded.iat,
   });

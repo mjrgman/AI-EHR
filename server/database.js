@@ -13,7 +13,12 @@ function encryptPatientData(data) {
   try {
     // eslint-disable-next-line global-require -- optional module; falls back to plaintext
     const phiEncryption = require('./security/phi-encryption');
-    if (!process.env.PHI_ENCRYPTION_KEY) return data; // Skip if no key
+    if (!process.env.PHI_ENCRYPTION_KEY) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('PHI_ENCRYPTION_KEY is required; refusing plaintext patient storage');
+      }
+      return data; // synthetic-only development compatibility
+    }
     const encrypted = { ...data };
     for (const field of PHI_FIELDS) {
       if (encrypted[field]) {
@@ -22,7 +27,8 @@ function encryptPatientData(data) {
     }
     return encrypted;
   } catch (err) {
-    console.warn('[DB] PHI encryption unavailable, storing plaintext:', err.message);
+    if (process.env.NODE_ENV === 'production') throw err;
+    console.warn('[DB] PHI encryption unavailable in synthetic development mode:', err.message);
     return data;
   }
 }
@@ -32,20 +38,27 @@ function decryptPatientData(data) {
   try {
     // eslint-disable-next-line global-require -- optional module; falls back to plaintext
     const phiEncryption = require('./security/phi-encryption');
-    if (!process.env.PHI_ENCRYPTION_KEY) return data; // Skip if no key
+    if (!process.env.PHI_ENCRYPTION_KEY) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('PHI_ENCRYPTION_KEY is required; refusing unprotected patient reads');
+      }
+      return data; // synthetic-only development compatibility
+    }
     const decrypted = { ...data };
     for (const field of PHI_FIELDS) {
       if (decrypted[field]) {
         try {
           decrypted[field] = phiEncryption.decrypt(decrypted[field]);
         } catch (e) {
+          if (process.env.NODE_ENV === 'production') throw e;
           // Field may already be plaintext — leave as-is
         }
       }
     }
     return decrypted;
   } catch (err) {
-    console.warn('[DB] PHI decryption unavailable, returning as-is:', err.message);
+    if (process.env.NODE_ENV === 'production') throw err;
+    console.warn('[DB] PHI decryption unavailable in synthetic development mode:', err.message);
     return data;
   }
 }

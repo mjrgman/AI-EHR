@@ -65,6 +65,16 @@ describe('audit-logger: matchRoute on parameterized paths', () => {
 });
 
 describe('audit-logger: PHI_ROUTES coverage', () => {
+  test('FHIR reads and MediVault exports are centrally classified', () => {
+    const patientRead = auditLogger.matchRoute('GET', '/fhir/R4/Patient/42');
+    const observationRead = auditLogger.matchRoute('GET', '/fhir/R4/Observation?patient=42');
+    const exportRead = auditLogger.matchRoute('GET', '/api/medivault/export/42');
+    assert.equal(patientRead?.config.resource_type, 'fhir.Patient');
+    assert.equal(observationRead?.config.resource_type, 'fhir.Observation');
+    assert.equal(exportRead?.config.action, 'EXPORT');
+    assert.equal(exportRead?.config.phi, true);
+  });
+
   test('every classified PHI route declares phiFields', () => {
     for (const [routeKey, config] of Object.entries(auditLogger.PHI_ROUTES)) {
       if (config.phi) {

@@ -27,6 +27,23 @@ const GCM_IV_BYTES = 12;
 let cachedKey = null;
 let cachedKeyMaterial = null;
 
+/** Refuse to start a production process without both independent secrets. */
+function assertProductionEncryptionConfig(env = process.env) {
+  if (env.NODE_ENV !== 'production') return true;
+  if (!env.PHI_ENCRYPTION_KEY || env.PHI_ENCRYPTION_KEY.length < 32) {
+    throw new Error('[PHI] FATAL: production requires PHI_ENCRYPTION_KEY with at least 32 characters.');
+  }
+  if (!env.PHI_PEPPER || env.PHI_PEPPER.length < 32) {
+    throw new Error('[PHI] FATAL: production requires an independent PHI_PEPPER with at least 32 characters.');
+  }
+  if (env.PHI_PEPPER === env.PHI_ENCRYPTION_KEY) {
+    throw new Error('[PHI] FATAL: PHI_PEPPER must be independent of PHI_ENCRYPTION_KEY.');
+  }
+  return true;
+}
+
+assertProductionEncryptionConfig();
+
 /**
  * Derive encryption key from key material using PBKDF2.
  * S-H3: Accepts optional keyMaterial parameter instead of always reading from env.
@@ -387,5 +404,6 @@ module.exports = {
   reencryptWithNewKey,
   PHI_FIELDS,
   deriveKey,
-  getPepper
+  getPepper,
+  assertProductionEncryptionConfig
 };

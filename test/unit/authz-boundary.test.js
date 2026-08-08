@@ -205,6 +205,31 @@ describe('authz-boundary: FHIR R4 RBAC + scope (currently vulnerable)', () => {
     assert.equal(r.status, 200, `physician must retain access; got ${r.status}`);
   });
 
+  test('SMART patient scope cannot read outside its launch patient compartment', async () => {
+    const token = auth.signToken({
+      sub: 20,
+      username: 'smart-doc',
+      role: 'physician',
+      scope: 'patient/Condition.read',
+      patient: 5,
+    });
+    const permitted = await request(port, 'GET', '/fhir/R4/Condition?patient=5', { token });
+    const denied = await request(port, 'GET', '/fhir/R4/Condition?patient=6', { token });
+    assert.equal(permitted.status, 200);
+    assert.equal(denied.status, 403);
+  });
+
+  test('SMART patient scope without a launch patient fails closed', async () => {
+    const token = auth.signToken({
+      sub: 20,
+      username: 'smart-doc',
+      role: 'physician',
+      scope: 'patient/Condition.read',
+    });
+    const r = await request(port, 'GET', '/fhir/R4/Condition?patient=5', { token });
+    assert.equal(r.status, 403);
+  });
+
   // --- Login token carries no scope claim → scope-check must FAIL CLOSED ---
   // SECURE TARGET: a login token (no `scope` claim) hitting an out-of-role
   // resource is denied. TODAY scope-check.js:70 returns next() → passthrough.

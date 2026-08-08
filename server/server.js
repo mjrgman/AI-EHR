@@ -3,6 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
+// Import before database initialization so production cannot open the patient
+// store unless both encryption secrets pass the fail-closed startup gate.
+require('./security/phi-encryption');
 const db = require('./database');
 const aiClient = require('./ai-client');
 const workflow = require('./workflow-engine');
@@ -301,7 +304,7 @@ mountLabCorpRoutes(app, { db });
 // MediVault export routes are mounted above the global /api auth wall so they
 // can accept either a clinician JWT or a matching patient-portal session.
 //   GET /api/medivault/export/:patientId  → FHIR R4 Bundle (collection)
-// audit-logger PHI_ROUTES still captures each export as a vault_export READ.
+// audit-logger PHI_ROUTES also captures each export as a central vault_export event.
 
 // Care Management engine routes (Phase 2 of primary-care deepening).
 // mountCareManagementRoutes registers:

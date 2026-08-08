@@ -195,7 +195,19 @@ const PHI_ROUTES = {
   // row the route itself writes. Two logs, two purposes: audit_log answers
   // "who hit this endpoint when", vault_access_log answers "how many times
   // has this specific patient's data been exported".
-  'GET /api/medivault/export/:patientId':         { resource_type: 'vault_export', action: 'READ', phi: true, phiFields: ['fhir_bundle'], extractPatientId: (req) => req.params.patientId },
+  'GET /api/medivault/export/:patientId':         { resource_type: 'vault_export', action: 'EXPORT', phi: true, phiFields: ['fhir_bundle'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- FHIR R4 reads (central audit surface) ---
+  'GET /fhir/R4/Patient':               { resource_type: 'fhir.Patient', action: 'READ', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Patient/:id':           { resource_type: 'fhir.Patient', action: 'READ', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Encounter':             { resource_type: 'fhir.Encounter', action: 'READ', phi: true, phiFields: ['encounter'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Encounter/:id':         { resource_type: 'fhir.Encounter', action: 'READ', phi: true, phiFields: ['encounter'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Condition':             { resource_type: 'fhir.Condition', action: 'READ', phi: true, phiFields: ['conditions'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Observation':           { resource_type: 'fhir.Observation', action: 'READ', phi: true, phiFields: ['observations'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/AllergyIntolerance':    { resource_type: 'fhir.AllergyIntolerance', action: 'READ', phi: true, phiFields: ['allergies'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/MedicationRequest':     { resource_type: 'fhir.MedicationRequest', action: 'READ', phi: true, phiFields: ['medications'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Appointment':           { resource_type: 'fhir.Appointment', action: 'READ', phi: true, phiFields: ['appointments'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Practitioner/:id':      { resource_type: 'fhir.Practitioner', action: 'READ', phi: false },
 
   // --- System ---
   'GET /api/health':                              { resource_type: 'system', action: 'READ', phi: false },
@@ -236,6 +248,17 @@ function matchRoute(method, path) {
 function methodToAction(method) {
   const map = { GET: 'READ', POST: 'CREATE', PATCH: 'UPDATE', PUT: 'UPDATE', DELETE: 'DELETE' };
   return map[method] || method;
+}
+
+function patientIdFromPathOrQuery(req) {
+  if (req.fhirPatientId) return req.fhirPatientId;
+  if (req.query?.patient) return req.query.patient;
+  if (req.query?._id) return req.query._id;
+  const path = (req.originalUrl || req.url || '').split('?')[0];
+  const patientMatch = path.match(/\/fhir\/R4\/Patient\/(\d+)$/);
+  if (patientMatch) return patientMatch[1];
+  const exportMatch = path.match(/\/api\/medivault\/export\/(\d+)$/);
+  return exportMatch ? exportMatch[1] : null;
 }
 
 function resolveAuditIdentity(req) {
@@ -362,8 +385,9 @@ function auditMiddleware(options = {}) {
     // can't pair them with the full PHI_ROUTES keys.
     const requestPath = (req.originalUrl || req.url || '').split('?')[0];
 
-    // Skip non-API routes (static files, SPA catch-all)
-    if (!requestPath.startsWith('/api/')) return next();
+    // Skip non-clinical routes (static files, SPA catch-all). FHIR reads and
+    // API routes share this one central audit pipeline.
+    if (!requestPath.startsWith('/api/') && !requestPath.startsWith('/fhir/R4/')) return next();
 
     // Skip excluded paths
     if (excludePaths.includes(requestPath)) return next();

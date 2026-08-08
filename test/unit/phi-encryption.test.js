@@ -120,6 +120,24 @@ describe('phi-encryption: key rotation', () => {
 });
 
 describe('phi-encryption: key validation', () => {
+  test('production configuration fails closed without key or independent pepper', () => {
+    const phi = require('../../server/security/phi-encryption');
+    assert.throws(
+      () => phi.assertProductionEncryptionConfig({ NODE_ENV: 'production' }),
+      /PHI_ENCRYPTION_KEY/
+    );
+    assert.throws(
+      () => phi.assertProductionEncryptionConfig({ NODE_ENV: 'production', PHI_ENCRYPTION_KEY: TEST_KEY_A }),
+      /PHI_PEPPER/
+    );
+    assert.throws(
+      () => phi.assertProductionEncryptionConfig({
+        NODE_ENV: 'production', PHI_ENCRYPTION_KEY: TEST_KEY_A, PHI_PEPPER: TEST_KEY_A,
+      }),
+      /independent/
+    );
+  });
+
   test('encrypt throws when PHI_ENCRYPTION_KEY is missing', () => {
     const phi = require('../../server/security/phi-encryption');
     delete process.env.PHI_ENCRYPTION_KEY;

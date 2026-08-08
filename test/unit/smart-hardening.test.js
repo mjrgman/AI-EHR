@@ -337,6 +337,26 @@ describe('smart-hardening: /smart/authorize PKCE + consent + launch validation',
     });
     assert.equal(rt.status, 400, `mismatched code_verifier must fail; got ${rt.status}`);
   });
+
+  test('authorization-code token binds patient scopes to the launch patient claim', async () => {
+    const { verifier, challenge } = makePkce();
+    const ra = await request(port, 'GET',
+      authorizeUrl({ code_challenge: challenge, consent: 'true', patient: '1' }),
+      { token: tokenFor('physician', 20) });
+    const code = new URL(ra.location).searchParams.get('code');
+    const rt = await request(port, 'POST', '/smart/token', {
+      body: {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT_URI,
+        client_id: REGISTERED_CLIENT.client_id,
+        code_verifier: verifier,
+      },
+    });
+    assert.equal(rt.status, 200);
+    assert.equal(rt.body.patient, 1);
+    assert.equal(auth.verifyToken(rt.body.access_token).patient, 1);
+  });
 });
 
 // ----------------------------------------------------------------------------
