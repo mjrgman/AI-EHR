@@ -2299,31 +2299,25 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(results[1].ok, true);
   });
 
-  await test('LabCorp: client API mode without db/userId throws clearly', async () => {
-    // Chunk 4 replaced the Phase-2b stub with real API behavior. Constructing
-    // an API-mode client without db/userId must still fail loud so callers
-    // get a diagnostic instead of a mystery 500. Full API behavior (auto-
-    // refresh, Bearer auth) is covered by the Chunk 4 tests in PHASE 19.
+  await test('LabCorp: constructing an API-mode client is refused', async () => {
+    // SYNTHETIC-ONLY BASELINE: api mode would carry orders and results for the
+    // demo's fictional patients to a real laboratory. The constructor refuses
+    // it outright, so this replaces the former "API mode without db/userId
+    // throws clearly" test -- there is no longer an API-mode client to build.
     const { LabCorpClient } = labcorpClientModule;
-    const client = new LabCorpClient({ mode: 'api' });
     let threw = false;
     try {
-      await client.submitOrder({ patientId: 1, tests: ['CBC'] });
+      new LabCorpClient({ mode: 'api' });
     } catch (err) {
       threw = true;
       assert(
-        /db.*userId/i.test(err.message) || /not authorized|baseUrl/i.test(err.message),
-        `API mode error should explain missing config, got: ${err.message}`
+        /is not supported/.test(err.message),
+        `expected a synthetic-only refusal, got: ${err.message}`
       );
     }
-    assert(threw, 'API mode submitOrder should throw without db/userId');
+    assert(threw, 'constructing an api-mode LabCorpClient must throw');
   });
 
-  await test('LabCorp: client getStatus reports current mode and credential state', () => {
-    const status = labcorpClientModule.getStatus();
-    assert(status.mode === 'mock', 'status should report mock mode');
-    assert(typeof status.hasCredentials === 'boolean');
-  });
 
   await test('LabCorp: client pollPendingOrders reports per-order error on unknown id', async () => {
     // An unknown ID in mock mode returns a graceful fixture-not-found warning,
@@ -2922,124 +2916,54 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     });
   }
 
-  await test('LabCorp API: submitOrder posts JSON with Bearer and returns externalOrderId', async () => {
+  await test('LabCorp API: every api-mode entry point is refused', async () => {
+    // These five tests previously exercised submitOrder/fetchResults against a
+    // fake LabCorp HTTP server with OAuth token refresh. That behavior is now
+    // unreachable: the constructor refuses mode='api' before any request can
+    // be built, so there is nothing left to drive over HTTP. What matters now
+    // is that the refusal is total -- no option combination gets past it.
     const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: _oauthTestUserId
-    });
-    const result = await client.submitOrder({
-      patientId: 42,
-      tests: ['Hemoglobin A1c']
-    });
-    assertEqual(result.ok, true);
-    assertEqual(result.externalOrderId, 'LC-API-12345');
-    assertEqual(result.status, 'submitted');
+    const optionSets = [
+      { mode: 'api' },
+      { mode: 'api', baseUrl: labcorpApiBase, tokenUrl: fakeTokenUrl, clientId: 'test-client', clientSecret: 'test-secret', db, userId: _oauthTestUserId },
+      { mode: 'api', baseUrl: labcorpApiBase, db, userId: 888888 },
+      { mode: 'API' },
+      { mode: 'sandbox' }
+    ];
+    for (const opts of optionSets) {
+      let threw = false;
+      try {
+        new LabCorpClient(opts);
+      } catch (err) {
+        threw = true;
+        assert(/is not supported/.test(err.message), `unexpected error: ${err.message}`);
+      }
+      assert(threw, `LabCorpClient must refuse mode='${opts.mode}'`);
+    }
   });
 
-  await test('LabCorp API: submitOrder throws without stored token', async () => {
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: 888888 // no stored token
-    });
+  await test('LabCorp API: requiring the client with LABCORP_MODE=api is refused', async () => {
+    // The constructor guard covers in-process construction; this covers the
+    // env path, which is what an operator would actually reach for.
+    const { execFileSync } = require('child_process');
+    const clientPath = require.resolve('../server/integrations/labcorp/client');
     let threw = false;
     try {
-      await client.submitOrder({ patientId: 1, tests: ['CBC'] });
-    } catch (e) {
+      execFileSync(process.execPath, ['-e', `require(${JSON.stringify(clientPath)})`], {
+        env: { ...process.env, LABCORP_MODE: 'api' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8'
+      });
+    } catch (err) {
       threw = true;
       assert(
-        e.message.toLowerCase().includes('no tokens') ||
-        e.message.toLowerCase().includes('not authorized') ||
-        e.message.toLowerCase().includes('authenticate'),
-        `error should surface missing credentials, got: ${e.message}`
+        /LABCORP_MODE='api' is not supported/.test(String(err.stderr || '')),
+        `expected the env guard to fire, got: ${String(err.stderr || err.message).slice(0, 200)}`
       );
     }
-    assert(threw, 'API submitOrder must throw without stored token');
+    assert(threw, 'requiring the labcorp client with LABCORP_MODE=api must throw');
   });
 
-  await test('LabCorp API: submitOrder auto-refreshes on 401 and retries', async () => {
-    const oauth = require('../server/integrations/labcorp/oauth');
-    // Store a stale token that the fake server will reject with 401
-    await oauth.storeTokens(db, _oauthTestUserId, {
-      access_token: 'stale-access-token',
-      refresh_token: 'valid-refresh', // the token server will accept this
-      token_type: 'Bearer',
-      expires_in: 3600,
-      scope: 'lab.read lab.write'
-    });
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: _oauthTestUserId
-    });
-    const result = await client.submitOrder({
-      patientId: 42,
-      tests: ['CBC']
-    });
-    assertEqual(result.ok, true, 'auto-refresh retry must succeed');
-    assertEqual(result.externalOrderId, 'LC-API-12345');
-    // After refresh, the stored access_token should be the new one
-    const fresh = await oauth.getTokens(db, _oauthTestUserId);
-    assertEqual(fresh.access_token, 'at-refreshed', 'stored token must be updated after auto-refresh');
-  });
-
-  await test('LabCorp API: fetchResults GETs XML and returns parsed result', async () => {
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: _oauthTestUserId
-    });
-    const result = await client.fetchResults('LC-API-12345');
-    assertEqual(result.ok, true, 'parser should report ok=true');
-    assertEqual(result.labOrderId, 'LC-API-12345');
-    assert(Array.isArray(result.results), 'results should be an array');
-    assert(result.results.length >= 1, 'should parse at least one result row');
-    const hba1c = result.results.find(r => /a1c/i.test(r.name || r.code || ''));
-    assert(hba1c, 'should find HbA1c row in parsed output');
-    assertEqual(String(hba1c.value), '8.2');
-    assertEqual(hba1c.abnormalFlag, 'H');
-  });
-
-  await test('LabCorp API: fetchResults throws without stored token', async () => {
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: 888888
-    });
-    let threw = false;
-    try {
-      await client.fetchResults('LC-API-99999');
-    } catch (e) {
-      threw = true;
-    }
-    assert(threw, 'API fetchResults must throw without stored token');
-  });
 
   await test('LabCorp API: mock-mode client still works unchanged', async () => {
     // Regression guard: API mode options must not break mock mode
@@ -3132,7 +3056,9 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     LABCORP_REDIRECT_URI: process.env.LABCORP_REDIRECT_URI,
     LABCORP_SANDBOX_URL: process.env.LABCORP_SANDBOX_URL,
   };
-  process.env.LABCORP_MODE = 'api';
+  // Synthetic-only baseline: the route pins mode='mock', and the client
+  // module refuses to load in any other mode. The fixture reflects that.
+  process.env.LABCORP_MODE = 'mock';
   process.env.LABCORP_AUTH_URL = 'https://fake.labcorp.test/oauth/authorize';
   process.env.LABCORP_TOKEN_URL = fakeTokenUrl;
   process.env.LABCORP_CLIENT_ID = 'test-client';
@@ -3150,8 +3076,24 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   await test('LabCorp routes: GET /api/integrations/labcorp/status returns mode + hasCredentials', async () => {
     const { status, body } = await labcorpRoutesRequest({ path: '/api/integrations/labcorp/status' });
     assertEqual(status, 200);
-    assertEqual(body.mode, 'api');
+    // The endpoint reports the mode this build can actually run in. Even with
+    // credentials present in the environment, it must never advertise 'api'.
+    assertEqual(body.mode, 'mock');
+    assertEqual(body.syntheticOnly, true);
     assertEqual(body.hasCredentials, true);
+  });
+
+  await test('LabCorp routes: status never advertises api mode even if env says so', async () => {
+    const prev = process.env.LABCORP_MODE;
+    process.env.LABCORP_MODE = 'api'; // simulate a stray runtime env write
+    try {
+      const { body } = await labcorpRoutesRequest({ path: '/api/integrations/labcorp/status' });
+      assertEqual(body.mode, 'mock', 'status must not echo a mutated LABCORP_MODE');
+      assertEqual(body.syntheticOnly, true);
+    } finally {
+      if (prev === undefined) delete process.env.LABCORP_MODE;
+      else process.env.LABCORP_MODE = prev;
+    }
   });
 
   // Fresh access_token for the submit test (previous test may have left a stale one)
@@ -3271,13 +3213,14 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     });
     assertEqual(status, 200, `submit should succeed, got ${status}: ${JSON.stringify(body)}`);
     assertEqual(body.ok, true);
-    assertEqual(body.externalOrderId, 'LC-API-12345');
+    assert(String(body.externalOrderId).startsWith('LC-MOCK-'),
+      `synthetic-only submit must return a mock id, got ${body.externalOrderId}`);
     // The lab_orders row should now carry the externalOrderId
     const row = await db.dbGet(
       'SELECT external_order_id, labcorp_status FROM lab_orders WHERE id = ?',
       [_labOrderIdForSubmit]
     );
-    assertEqual(row.external_order_id, 'LC-API-12345',
+    assert(String(row.external_order_id).startsWith('LC-MOCK-'),
       'external_order_id column must be updated after successful submit');
     assertEqual(row.labcorp_status, 'submitted');
   });
