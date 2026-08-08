@@ -99,3 +99,6 @@ _dispatch_archive/
 
 # PHI quarantine - NEVER commit (real patient data pending owner disposition)
 _phi_intake/
+
+# Coverage output (regenerate with `npm run coverage`)
+coverage/
