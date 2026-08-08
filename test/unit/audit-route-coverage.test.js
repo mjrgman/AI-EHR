@@ -162,6 +162,55 @@ test('the known-attribution-gap register stays honest', () => {
   }
 });
 
+test('the six previously-unresolved routes now attribute a patient', () => {
+  // These were registered as UNRESOLVED gaps: the patient was available and
+  // simply was not extracted, so a PHI access recorded with no subject.
+  const resolved = [
+    'POST /api/patients',
+    'POST /api/ai/generate-note',
+    'POST /api/cds/evaluate',
+    'GET /api/encounters/:id',
+    'PATCH /api/encounters/:id',
+    'GET /api/encounters/:id/orders',
+  ];
+  for (const route of resolved) {
+    assert.ok(PHI_ROUTES[route], `${route} must still be classified`);
+    assert.equal(typeof PHI_ROUTES[route].extractPatientId, 'function',
+      `${route} must now resolve a patient`);
+    assert.ok(!PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION[route],
+      `${route} must no longer be registered as a gap`);
+  }
+});
+
+test('no UNRESOLVED entries remain in the attribution gap register', () => {
+  // The remaining entries are collection endpoints with no single subject.
+  // An UNRESOLVED marker means the patient IS available and just is not read,
+  // which is a defect rather than a limit.
+  const unresolved = Object.entries(PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION)
+    .filter(([, reason]) => /UNRESOLVED/i.test(reason))
+    .map(([route]) => route);
+  assert.deepEqual(unresolved, [],
+    `these are fixable and should not sit in the register: ${unresolved.join(', ')}`);
+});
+
+test('patient attribution reads handler context first, then the body', () => {
+  const extract = PHI_ROUTES['POST /api/cds/evaluate'].extractPatientId;
+
+  // 1. handler-supplied context wins -- the only source available for a route
+  //    whose path carries an encounter id, or a create whose id post-dates the insert
+  assert.equal(extract({ auditPatientId: 99, body: { patient_id: 1 } }), 99);
+
+  // 2. body patient_id
+  assert.equal(extract({ body: { patient_id: 7 } }), 7);
+
+  // 3. nested patient object
+  assert.equal(extract({ body: { patient: { id: 12 } } }), 12);
+
+  // 4. nothing to go on -> null rather than a wrong id
+  assert.equal(extract({ body: {} }), null);
+  assert.equal(extract({}), null);
+});
+
 test('the audit read surface is itself audited', () => {
   // Reading the audit trail discloses who accessed which patient. Exempting it
   // would leave the one surface that reveals everyone else unlogged.

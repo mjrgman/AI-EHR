@@ -20,7 +20,7 @@ const PHI_ROUTES = {
   // --- Patient endpoints (all PHI) ---
   'GET /api/patients':                    { resource_type: 'patient', action: 'READ', phi: true, phiFields: ['dob','phone','email','address','insurance_id','insurance_carrier'] },
   'GET /api/patients/:id':                { resource_type: 'patient', action: 'READ', phi: true, phiFields: ['dob','phone','email','address','insurance_id','insurance_carrier','problems','medications','allergies','labs','vitals'], extractPatientId: (req) => req.params.id },
-  'POST /api/patients':                   { resource_type: 'patient', action: 'CREATE', phi: true, phiFields: ['dob','phone','email','address','insurance_id'] },
+  'POST /api/patients':                   { resource_type: 'patient', action: 'CREATE', phi: true, phiFields: ['dob','phone','email','address','insurance_id'], extractPatientId: patientIdFromContextOrBody },
   'POST /api/patients/extract-from-speech': { resource_type: 'patient', action: 'CREATE', phi: true, phiFields: ['transcript'] },
   'POST /api/patients/:id/problems':      { resource_type: 'problem', action: 'CREATE', phi: true, phiFields: ['problem_name','icd10_code'], extractPatientId: (req) => req.params.id },
   'GET /api/patients/:id/medications':    { resource_type: 'medication', action: 'READ', phi: true, phiFields: ['medication_name','dose'], extractPatientId: (req) => req.params.id },
@@ -33,10 +33,10 @@ const PHI_ROUTES = {
 
   // --- Encounter endpoints (PHI) ---
   'GET /api/encounters':                  { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'] },
-  'GET /api/encounters/:id':              { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'] },
+  'GET /api/encounters/:id':              { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'], extractPatientId: patientIdFromContextOrBody },
   'POST /api/encounters':                 { resource_type: 'encounter', action: 'CREATE', phi: true, phiFields: ['chief_complaint'], extractPatientId: (req) => req.body.patient_id },
-  'PATCH /api/encounters/:id':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['transcript','soap_note','chief_complaint'] },
-  'GET /api/encounters/:id/orders':       { resource_type: 'encounter_orders', action: 'READ', phi: true, phiFields: ['orders_summary'] },
+  'PATCH /api/encounters/:id':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['transcript','soap_note','chief_complaint'], extractPatientId: patientIdFromContextOrBody },
+  'GET /api/encounters/:id/orders':       { resource_type: 'encounter_orders', action: 'READ', phi: true, phiFields: ['orders_summary'], extractPatientId: patientIdFromContextOrBody },
 
   // --- Vitals (PHI) ---
   'POST /api/vitals':                     { resource_type: 'vitals', action: 'CREATE', phi: true, phiFields: ['systolic_bp','diastolic_bp','heart_rate','weight'], extractPatientId: (req) => req.body.patient_id },
@@ -61,11 +61,11 @@ const PHI_ROUTES = {
 
   // --- AI endpoints (PHI - processes clinical data) ---
   'POST /api/ai/extract-data':            { resource_type: 'ai_extraction', action: 'CREATE', phi: true, phiFields: ['transcript'] },
-  'POST /api/ai/generate-note':           { resource_type: 'ai_note', action: 'CREATE', phi: true, phiFields: ['transcript'] },
+  'POST /api/ai/generate-note':           { resource_type: 'ai_note', action: 'CREATE', phi: true, phiFields: ['transcript'], extractPatientId: patientIdFromContextOrBody },
   'GET /api/ai/status':                   { resource_type: 'system', action: 'READ', phi: false },
 
   // --- CDS endpoints (suggestions are clinical but not direct PHI) ---
-  'POST /api/cds/evaluate':               { resource_type: 'cds_evaluation', action: 'CREATE', phi: true, phiFields: ['clinical_context'] },
+  'POST /api/cds/evaluate':               { resource_type: 'cds_evaluation', action: 'CREATE', phi: true, phiFields: ['clinical_context'], extractPatientId: patientIdFromContextOrBody },
   'GET /api/cds/suggestions/:id':         { resource_type: 'cds_suggestion', action: 'READ', phi: false },
   'POST /api/cds/suggestions/:id/accept': { resource_type: 'cds_suggestion', action: 'UPDATE', phi: false },
   'POST /api/cds/suggestions/:id/reject': { resource_type: 'cds_suggestion', action: 'UPDATE', phi: false },
@@ -354,14 +354,8 @@ const PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION = {
   'GET /api/patients':                    'collection endpoint; returns many patients, no single subject',
   'GET /api/encounters':                  'collection endpoint; spans patients',
   'GET /api/dashboard':                   'aggregate counts across the practice',
-  'POST /api/patients':                   'UNRESOLVED: the new patient id exists only after the insert; attribution needs the response body',
   'POST /api/patients/extract-from-speech': 'transcript parsing; no patient is referenced',
   'POST /api/ai/extract-data':            'transcript parsing; no patient is referenced',
-  'POST /api/ai/generate-note':           'UNRESOLVED: patient arrives in the body and is not extracted',
-  'POST /api/cds/evaluate':               'UNRESOLVED: patient arrives in the body and is not extracted',
-  'GET /api/encounters/:id':              'UNRESOLVED: :id is an encounter id; resolving the patient needs a lookup',
-  'PATCH /api/encounters/:id':            'UNRESOLVED: as above',
-  'GET /api/encounters/:id/orders':       'UNRESOLVED: as above',
   'POST /api/patient-portal/verify':      'identity proofing runs before a portal session exists',
 };
 
@@ -402,7 +396,31 @@ function methodToAction(method) {
   return map[method] || method;
 }
 
+/**
+ * Patient id for routes where the subject is not in the path or query.
+ *
+ * Three sources, in order of trust:
+ *   1. `req.auditPatientId` — set by the handler once the patient is actually
+ *      known. This is the only way to attribute a route whose path carries an
+ *      ENCOUNTER id, or a create whose patient id does not exist until after
+ *      the insert. The handler already has the row; re-querying here would be
+ *      a second read of data it just fetched.
+ *   2. the request body — for routes that take an explicit patient_id.
+ *   3. the path/query extractor, as a fallback.
+ *
+ * The middleware calls this synchronously inside `res.on('finish')`, which is
+ * why option 1 exists: an async lookup at that point cannot be awaited safely.
+ */
+function patientIdFromContextOrBody(req) {
+  if (req.auditPatientId) return req.auditPatientId;
+  const body = req.body || {};
+  if (body.patient_id) return body.patient_id;
+  if (body.patient && body.patient.id) return body.patient.id;
+  return patientIdFromPathOrQuery(req);
+}
+
 function patientIdFromPathOrQuery(req) {
+  if (req.auditPatientId) return req.auditPatientId;
   if (req.fhirPatientId) return req.fhirPatientId;
   if (req.query?.patient) return req.query.patient;
   if (req.query?._id) return req.query._id;

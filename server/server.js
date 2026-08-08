@@ -402,6 +402,9 @@ app.post('/api/patients', validate(schemas.createPatient), async (req, res) => {
     };
 
     const result = await db.createPatient(patientData);
+    // Attribute the audit row to the patient just created. The id does not
+    // exist until this point, so the audit middleware cannot derive it.
+    req.auditPatientId = result?.id ?? null;
     res.status(201).json(result);
   } catch (error) {
     console.error('Error creating patient:', error);
@@ -573,6 +576,9 @@ app.get('/api/encounters/:id', async (req, res) => {
     const encounter = await db.getEncounterById(id);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
 
+    // :id identifies an encounter, not a patient. Hand the audit middleware the
+    // subject we already loaded rather than making it re-query.
+    req.auditPatientId = encounter.patient_id ?? null;
     res.json(filterEncounterForRole(req, encounter));
   } catch (error) {
     console.error('Error fetching encounter:', error);
@@ -641,6 +647,13 @@ app.patch('/api/encounters/:id', async (req, res) => {
     if (req.body.duration_minutes !== undefined) updates.duration_minutes = parseInt(req.body.duration_minutes, 10) || null;
 
     const result = await db.updateEncounter(id, updates);
+
+    // :id identifies an encounter. Prefer the patient_id the caller supplied;
+    // otherwise resolve it so the audit row is attributed to a patient rather
+    // than left blank.
+    req.auditPatientId = validateId(req.body.patient_id)
+      || (await db.getEncounterById(id))?.patient_id
+      || null;
 
     // If transcript was updated, run CDS evaluation
     let cdsSuggestions = [];
@@ -2049,6 +2062,9 @@ app.get('/api/encounters/:id/orders', requireAnyResourceAccess('lab_orders', 'im
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    // Attribute the audit row to the encounter's patient; :id is not one.
+    req.auditPatientId = (await db.getEncounterById(id))?.patient_id ?? null;
 
     const [labOrders, imagingOrders, referrals, prescriptions] = await Promise.all([
       db.dbAll('SELECT * FROM lab_orders WHERE encounter_id = ? ORDER BY order_date DESC', [id]),
