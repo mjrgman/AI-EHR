@@ -628,8 +628,8 @@ async function createAppointmentsTable(db) {
       )),
       chief_complaint TEXT,
       status TEXT NOT NULL CHECK(status IN (
-        'scheduled','confirmed','checked-in','no-show',
-        'cancelled','completed','rescheduled'
+        'requested','scheduled','confirmed','checked-in','no-show',
+        'cancelled','completed','rescheduled','declined'
       )) DEFAULT 'scheduled',
       encounter_id INTEGER,
       notes TEXT,
@@ -639,10 +639,92 @@ async function createAppointmentsTable(db) {
       FOREIGN KEY (encounter_id) REFERENCES encounters(id)
     )
   `);
+  await migrateAppointmentRequestedStatus(db);
   await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)`);
   await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id)`);
   await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_name, appointment_date)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status)`);
   console.log('[MIGRATIONS] appointments table ready');
+}
+
+/**
+ * Widen the appointments status CHECK constraint to admit 'requested' and
+ * 'declined'.
+ *
+ * A patient-initiated booking previously entered as 'scheduled' -- the same
+ * state as an appointment staff had actually accepted. The patient's portal
+ * then showed it among their upcoming appointments, so the system told them
+ * they had an appointment that nobody had agreed to. 'requested' is the
+ * honest entry state; 'declined' is the terminal state when staff refuse,
+ * which was previously indistinguishable from 'cancelled'.
+ *
+ * SQLite cannot ALTER a CHECK constraint, so this rebuilds the table. Follows
+ * the same pattern as migrateSuggestionTypes above: transaction, copy, swap,
+ * rollback on error. Existing rows are preserved unchanged -- no historical
+ * appointment is reinterpreted as a request.
+ */
+async function migrateAppointmentRequestedStatus(db) {
+  const row = await dbGetCompat(
+    db,
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='appointments'"
+  );
+  if (!row) return;
+  if (row.sql.includes("'requested'")) {
+    return; // already current
+  }
+
+  console.log('[MIGRATIONS] Expanding appointments status constraint (requested/declined)...');
+  await dbRun(db, 'PRAGMA foreign_keys=OFF');
+  await dbRun(db, 'BEGIN TRANSACTION');
+  try {
+    await dbRun(db, `
+      CREATE TABLE IF NOT EXISTS appointments_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        patient_id INTEGER NOT NULL,
+        provider_name TEXT NOT NULL,
+        appointment_date DATE NOT NULL,
+        appointment_time TEXT NOT NULL,
+        duration_minutes INTEGER DEFAULT 20,
+        appointment_type TEXT NOT NULL CHECK(appointment_type IN (
+          'new_patient','follow_up','sick_visit','wellness',
+          'procedure','telehealth','referral','urgent'
+        )),
+        chief_complaint TEXT,
+        status TEXT NOT NULL CHECK(status IN (
+          'requested','scheduled','confirmed','checked-in','no-show',
+          'cancelled','completed','rescheduled','declined'
+        )) DEFAULT 'scheduled',
+        encounter_id INTEGER,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (patient_id) REFERENCES patients(id),
+        FOREIGN KEY (encounter_id) REFERENCES encounters(id)
+      )
+    `);
+    // Column-explicit copy rather than SELECT * so a column-order difference
+    // between the live table and this definition cannot silently misalign data.
+    await dbRun(db, `
+      INSERT INTO appointments_new (
+        id, patient_id, provider_name, appointment_date, appointment_time,
+        duration_minutes, appointment_type, chief_complaint, status,
+        encounter_id, notes, created_at, updated_at
+      )
+      SELECT
+        id, patient_id, provider_name, appointment_date, appointment_time,
+        duration_minutes, appointment_type, chief_complaint, status,
+        encounter_id, notes, created_at, updated_at
+      FROM appointments
+    `);
+    await dbRun(db, `DROP TABLE appointments`);
+    await dbRun(db, `ALTER TABLE appointments_new RENAME TO appointments`);
+    await dbRun(db, 'COMMIT');
+    console.log('[MIGRATIONS] appointments status constraint expanded successfully');
+  } catch (err) {
+    await dbRun(db, 'ROLLBACK');
+    throw err;
+  }
+  await dbRun(db, 'PRAGMA foreign_keys=ON');
 }
 
 // ==========================================

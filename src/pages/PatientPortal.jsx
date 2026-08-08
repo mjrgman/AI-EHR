@@ -39,6 +39,10 @@ function formatTime(timeStr) {
 
 function StatusPill({ status }) {
   const palette = {
+    // 'requested' gets the attention tone, not the calm navy of a booked slot:
+    // it is an open ask, and it must not read as settled.
+    requested: 'bg-gold-50 text-gold-700 border border-gold-200',
+    declined: 'bg-danger-50 text-danger-700 border border-danger-200',
     scheduled: 'bg-navy-50 text-navy-700 border border-navy-100',
     confirmed: 'bg-navy-50 text-navy-700 border border-navy-100',
     checked_in: 'bg-success-50 text-success-700 border border-success-100',
@@ -51,7 +55,9 @@ function StatusPill({ status }) {
     normal: 'bg-success-50 text-success-700 border border-success-100',
   };
 
-  const label = String(status || 'unknown').replace(/[_-]/g, ' ');
+  // "requested" alone is ambiguous to a patient reading a pill in isolation.
+  const LABELS = { requested: 'Awaiting confirmation', declined: 'Not available' };
+  const label = LABELS[status] || String(status || 'unknown').replace(/[_-]/g, ' ');
   return (
     <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${palette[status] || 'bg-ivory-200 text-slate-600 border border-slate-100'}`}>
       {label}
@@ -162,15 +168,38 @@ function DashboardView({ appointments, medications, labs, patientName }) {
         <span className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-gradient-to-br from-gold-100/50 to-transparent opacity-70 blur-2xl" aria-hidden="true" />
         <p className="mc-section-label">Your health, in one place</p>
         <h3 className="font-display text-2xl font-semibold text-navy-700 sm:text-3xl">Welcome back, {patientName}</h3>
+        {/* A requested appointment is NOT booked. Labelling it "Next
+            appointment" would tell the patient staff had agreed to a time
+            nobody has agreed to, so the heading and the copy both change. */}
         {upcoming ? (
-          <div className="mt-5 inline-flex max-w-full flex-wrap items-center gap-3 rounded-2xl border border-navy-100 bg-navy-50 px-4 py-3">
-            <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-navy-100 text-navy-700 ring-1 ring-navy-200" aria-hidden="true">
+          <div className={`mt-5 inline-flex max-w-full flex-wrap items-center gap-3 rounded-2xl border px-4 py-3 ${
+            upcoming.awaiting_staff_confirmation
+              ? 'border-gold-200 bg-gold-50'
+              : 'border-navy-100 bg-navy-50'
+          }`}>
+            <span
+              className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ring-1 ${
+                upcoming.awaiting_staff_confirmation
+                  ? 'bg-gold-100 text-gold-700 ring-gold-200'
+                  : 'bg-navy-100 text-navy-700 ring-navy-200'
+              }`}
+              aria-hidden="true"
+            >
               <CalendarDays size={18} strokeWidth={2} />
             </span>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-navy-600">Next appointment</p>
+              <p className={`text-xs font-semibold uppercase tracking-[0.12em] ${
+                upcoming.awaiting_staff_confirmation ? 'text-gold-700' : 'text-navy-600'
+              }`}>
+                {upcoming.awaiting_staff_confirmation ? 'Requested — not yet confirmed' : 'Next appointment'}
+              </p>
               <p className="font-display text-lg font-semibold text-navy-700">{formatDate(upcoming.appointment_date)}</p>
               <p className="text-sm text-slate-600">{formatTime(upcoming.appointment_time)} with {upcoming.provider_name}</p>
+              {upcoming.awaiting_staff_confirmation ? (
+                <p className="mt-1 text-sm text-slate-600">
+                  Our office has not confirmed this time yet. Please do not travel for this visit until it is confirmed.
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -377,9 +406,18 @@ function AppointmentsView({ appointments, checkInAppointment, activeCheckInId, o
                   <h3 className="font-display text-xl font-semibold text-navy-700">{formatDate(appointment.appointment_date)}</h3>
                   <p className="mt-1 text-sm text-slate-600">{formatTime(appointment.appointment_time)} with {appointment.provider_name}</p>
                   <p className="mt-2 text-sm capitalize text-slate-600">{String(appointment.appointment_type || 'visit').replace(/_/g, ' ')}</p>
+                  {appointment.awaiting_staff_confirmation ? (
+                    <p className="mt-2 rounded-xl border border-gold-200 bg-gold-50 px-3 py-2 text-sm text-slate-700">
+                      <span className="font-semibold text-gold-700">Awaiting confirmation.</span>{' '}
+                      You have asked for this time. Our office has not confirmed it yet, and it is
+                      not on the schedule until they do.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-3">
                   <StatusPill status={appointment.status} />
+                  {/* Check-in is only meaningful once staff have accepted the
+                      time. A requested slot is not on the schedule to arrive for. */}
                   {['scheduled', 'confirmed'].includes(appointment.status) ? (
                     <button
                       onClick={() => checkInAppointment(appointment.id)}

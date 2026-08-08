@@ -464,9 +464,15 @@ function initializeDatabase() {
           'procedure','telehealth','referral','urgent'
         )),
         chief_complaint TEXT,
+        -- 'requested' is the entry state for a patient-initiated booking: the
+        -- patient has asked for a slot, staff have not accepted it. It is NOT
+        -- on the schedule. Storing such a request as 'scheduled' told the
+        -- patient their appointment existed when no one had agreed to it.
+        -- Staff move it to 'scheduled' (and then 'confirmed') from the
+        -- clinician schedule view.
         status TEXT NOT NULL CHECK(status IN (
-          'scheduled','confirmed','checked-in','no-show',
-          'cancelled','completed','rescheduled'
+          'requested','scheduled','confirmed','checked-in','no-show',
+          'cancelled','completed','rescheduled','declined'
         )) DEFAULT 'scheduled',
         encounter_id INTEGER,
         notes TEXT,

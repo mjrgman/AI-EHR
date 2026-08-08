@@ -346,9 +346,15 @@ router.post('/appointments/checkin', async (req, res) => {
 //
 // Both endpoints sit behind requirePortalSession (registered at line 99) so
 // req.portalPatient.id is always the authenticated patient — never trusted
-// from a body field. Status semantics mirror the refill flow: bookings enter
-// status='scheduled' (not auto-confirmed). Front-desk staff confirm via the
-// existing clinician schedule UI.
+// from a body field. Status semantics mirror the refill flow: a patient
+// booking enters status='requested' -- it is a REQUEST, not a booking, and is
+// not on the schedule until front-desk staff accept it from the clinician
+// schedule UI (moving it to 'scheduled', then 'confirmed', or 'declined').
+//
+// This previously entered as 'scheduled', which is the same state as an
+// appointment staff had actually accepted, so the portal listed it among the
+// patient's upcoming appointments. The patient was told they had an
+// appointment that nobody had agreed to.
 //
 // CSRF (sec-portal-csrf-07, resolved): these state-changing endpoints sit
 // behind requireCsrfToken (registered just after requirePortalSession), so a
@@ -414,6 +420,11 @@ router.post('/appointments/request', async (req, res) => {
           appointmentType,
           reason: reason || 'Patient-requested appointment',
           chief_complaint: chief_complaint || null,
+          // A patient asking for a slot is a REQUEST, not a booking. It enters
+          // as 'requested' and stays off the schedule until staff accept it.
+          // Previously this persisted as 'scheduled', so the portal told the
+          // patient they had an appointment nobody had agreed to.
+          initialStatus: 'requested',
         },
       },
       {},

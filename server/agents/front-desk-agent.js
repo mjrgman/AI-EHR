@@ -220,6 +220,12 @@ class FrontDeskAgent extends BaseAgent {
     const reason = requestInfo.reason || 'Follow-up';
     const chiefComplaint = requestInfo.chief_complaint || requestInfo.chiefComplaint || null;
 
+    // Staff booking from the clinician schedule lands on the calendar directly
+    // ('scheduled'). A patient booking from the portal is a REQUEST until staff
+    // accept it ('requested'). Callers opt in explicitly; the default preserves
+    // the existing staff behavior.
+    const initialStatus = requestInfo.initialStatus === 'requested' ? 'requested' : 'scheduled';
+
     // Find the slot
     const slot = await this._findSlotById(slotId);
     if (!slot) {
@@ -245,7 +251,7 @@ class FrontDeskAgent extends BaseAgent {
         duration_minutes: slot.duration,
         appointment_type: appointmentType,
         chief_complaint: chiefComplaint,
-        status: 'scheduled',
+        status: initialStatus,
         notes: reason,
       });
       persistedId = persisted.id;
@@ -263,7 +269,7 @@ class FrontDeskAgent extends BaseAgent {
       dateTime: slot.dateTime,
       dateTimeFormatted: slot.dateTimeFormatted,
       duration: slot.duration,
-      status: 'scheduled',
+      status: initialStatus,
       createdAt: new Date().toISOString(),
       confirmationSent: false,
       reminderSent: false
@@ -775,6 +781,30 @@ ${carryforward.map(c => `### ${c.condition}
    */
   _generateConfirmationMessage(appointment, context) {
     const patient = context.patient || {};
+
+    // A request is not a confirmation. Telling a patient their appointment is
+    // confirmed, and to arrive ten minutes early, when no one has accepted the
+    // time is how someone takes a morning off work for a visit that does not
+    // exist. Two distinct messages, keyed on the appointment's own status.
+    if (appointment.status === 'requested') {
+      return `Hello ${patient.first_name},
+
+We have received your appointment request. It is NOT confirmed yet.
+
+**Requested date & time:** ${appointment.dateTimeFormatted}
+**Appointment type:** ${appointment.appointmentType}
+**Reason:** ${appointment.reason}
+
+Our office will review this request and contact you to confirm or offer an
+alternative time. Please do not travel for this visit until you hear from us.
+
+If your concern is urgent, call our office. If this is a medical emergency,
+call 911 or go to your nearest emergency department.
+
+Thank you,
+Front Desk Team`;
+    }
+
     return `Hello ${patient.first_name},
 
 Your appointment has been confirmed!
