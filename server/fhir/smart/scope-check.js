@@ -85,6 +85,19 @@ function denyCompartment(res, diagnostics) {
  * Internal app-login tokens have no scope claim and remain governed by RBAC.
  */
 async function patientCompartmentCheck(req, res, next) {
+  // Express 4 does not route rejections from async middleware. Without this
+  // wrapper, a rejected db read below would be an unhandled rejection and the
+  // request would hang with no response rather than failing. Deny on error --
+  // an unreadable compartment must not resolve to "allowed".
+  try {
+    return await enforcePatientCompartment(req, res, next);
+  } catch (err) {
+    console.error('[SMART] patient compartment check failed:', err.message);
+    return denyCompartment(res, 'Patient compartment could not be verified.');
+  }
+}
+
+async function enforcePatientCompartment(req, res, next) {
   const explicitScopes = req.user?.scope
     ? (typeof req.user.scope === 'string' ? req.user.scope.split(' ').filter(Boolean) : req.user.scope)
     : [];

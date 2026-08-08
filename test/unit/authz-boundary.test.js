@@ -219,6 +219,28 @@ describe('authz-boundary: FHIR R4 RBAC + scope (currently vulnerable)', () => {
     assert.equal(denied.status, 403);
   });
 
+  test('SMART compartment check denies (not hangs) when the DB read rejects', async () => {
+    // patientCompartmentCheck is async Express-4 middleware. Express 4 does not
+    // route rejections from async handlers, so before the try/catch wrapper a
+    // rejecting getEncounterById left the promise unhandled and the request
+    // hung with no response at all. Assert we get a real 403 instead.
+    const original = dbStub.getEncounterById;
+    dbStub.getEncounterById = async () => { throw new Error('simulated sqlite failure'); };
+    try {
+      const token = auth.signToken({
+        sub: 20,
+        username: 'smart-doc',
+        role: 'physician',
+        scope: 'patient/Encounter.read',
+        patient: 5,
+      });
+      const r = await request(port, 'GET', '/fhir/R4/Encounter/9', { token });
+      assert.equal(r.status, 403, `an unverifiable compartment must deny, not hang or allow; got ${r.status}`);
+    } finally {
+      dbStub.getEncounterById = original;
+    }
+  });
+
   test('SMART patient scope without a launch patient fails closed', async () => {
     const token = auth.signToken({
       sub: 20,
