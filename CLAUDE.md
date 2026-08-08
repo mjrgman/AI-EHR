@@ -48,7 +48,7 @@ Historical context and full resolution log: See `AUDIT_ITERATION_PLAN.md` in thi
 ## Rules
 
 - **`_eval/` and `_dispatch_archive/` are NOT committed to this repository**, because its remote is public. They live on the local-only branch `local-archive/eval-docs` and in the nightly offsite bundle. Never push that branch. Decided 2026-08-04; supersedes the 2026-08-03 change that committed them here.
-- **Test data only** for development work. This project is demo data and contains no PHI. Synthetic, anonymized, or explicit-consent samples only.
+- **Never include PHI** (Protected Health Information). Test data only for development work. This project is demo data and contains no PHI. Synthetic, anonymized, or explicit-consent samples only.
 
 ## Related
 
