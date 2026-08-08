@@ -10,14 +10,33 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+/**
+ * Parse a Cookie header into a null-prototype object.
+ *
+ * The accumulator is `Object.create(null)`, not `{}`, and that is the whole
+ * point. A cookie name is attacker-controlled, so writing it as a property key
+ * on a normal object means `Cookie: __proto__=...` writes through to
+ * Object.prototype, and a lookup for a cookie named `constructor` or
+ * `toString` returns an inherited function rather than undefined.
+ *
+ * The second matters here concretely: the caller does
+ * `cookies[COOKIE_NAME] || req.headers['x-portal-session']`. Had COOKIE_NAME
+ * ever collided with an inherited member, that truthy function would have been
+ * treated as a session token. A null-prototype object has nothing to inherit.
+ *
+ * Flagged by CodeQL as js/remote-property-injection.
+ */
 function parseCookies(header) {
-  if (!header) return {};
+  if (!header) return Object.create(null);
   return header.split(';').reduce((cookies, rawPart) => {
     const [name, ...rest] = rawPart.trim().split('=');
     if (!name) return cookies;
+    // Belt and braces: even with a null prototype, refuse the two names whose
+    // presence in parsed input is never legitimate.
+    if (name === '__proto__' || name === 'constructor') return cookies;
     cookies[name] = decodeURIComponent(rest.join('='));
     return cookies;
-  }, {});
+  }, Object.create(null));
 }
 
 function serializeCookie(name, value, overrides = {}) {
