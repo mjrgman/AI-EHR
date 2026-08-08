@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/client';
+import api, { safeLog } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
@@ -16,6 +16,8 @@ import {
   LogIn,
   CheckCircle2,
   CalendarRange,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 const STATUS_LABELS = {
@@ -77,6 +79,8 @@ export default function SchedulePage() {
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [patientLoadError, setPatientLoadError] = useState(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
 
@@ -97,7 +101,10 @@ export default function SchedulePage() {
     try {
       const data = await api.getSchedule({ date: selectedDate });
       setAppointments(data.appointments || []);
+      setLoadError(null);
     } catch (err) {
+      safeLog.error('Schedule load failed:', err);
+      setLoadError(err?.message || 'The schedule could not be loaded.');
       toast.error('Failed to load schedule: ' + err.message);
     } finally {
       setLoading(false);
@@ -109,8 +116,34 @@ export default function SchedulePage() {
   }, [loadSchedule]);
 
   useEffect(() => {
-    api.getPatients().then((data) => setPatients(data.patients || data || [])).catch(() => {});
+    api.getPatients()
+      .then((data) => {
+        setPatients(data.patients || data || []);
+        setPatientLoadError(null);
+      })
+      .catch((err) => {
+        safeLog.error('Schedule patient list load failed:', err);
+        setPatientLoadError(err?.message || 'The patient list could not be loaded.');
+      });
   }, []);
+
+  const retryLoads = useCallback(async () => {
+    try {
+      const [scheduleData, patientData] = await Promise.all([
+        api.getSchedule({ date: selectedDate }),
+        api.getPatients(),
+      ]);
+      setAppointments(scheduleData.appointments || []);
+      setPatients(patientData.patients || patientData || []);
+      setLoadError(null);
+      setPatientLoadError(null);
+    } catch (err) {
+      safeLog.error('Schedule retry failed:', err);
+      setLoadError(err?.message || 'The schedule could not be loaded.');
+    }
+  }, [selectedDate]);
+
+  const displayedLoadError = loadError || patientLoadError;
 
   async function handleStatusChange(apptId, newStatus) {
     setUpdatingId(apptId);
@@ -361,6 +394,19 @@ export default function SchedulePage() {
       {/* Appointment list */}
       {loading ? (
         <LoadingSpinner message="Loading schedule..." />
+      ) : displayedLoadError ? (
+        <Card className="border-danger-200 bg-danger-50" role="alert">
+          <CardBody className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 shrink-0 text-danger-600" size={22} aria-hidden="true" />
+            <div>
+              <h2 className="font-display text-lg font-semibold text-danger-800">Schedule unavailable</h2>
+              <p className="mt-1 text-sm text-danger-700">{displayedLoadError} This is a load failure, not an empty schedule.</p>
+              <TouchButton className="mt-4" variant="danger" size="sm" icon={<RefreshCw size={15} />} onClick={retryLoads}>
+                Retry
+              </TouchButton>
+            </div>
+          </CardBody>
+        </Card>
       ) : appointments.length === 0 ? (
         <Card>
           <CardBody className="text-center py-14">

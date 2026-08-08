@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ClipboardCheck } from 'lucide-react';
+import { AlertTriangle, ClipboardCheck, RefreshCw } from 'lucide-react';
 import api, { safeLog } from '../../api/client';
 import WorkflowTracker from './WorkflowTracker';
 import { stateRoute } from '../../utils/stateRoute';
@@ -8,6 +8,7 @@ import { stateRoute } from '../../utils/stateRoute';
 export default function QueueDashboard() {
   const [workflows, setWorkflows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -17,10 +18,32 @@ export default function QueueDashboard() {
   }, []);
 
   async function load() {
-    try { setWorkflows(await api.getAllWorkflows()); } catch (e) { safeLog.error('Queue load failed:', e); } finally { setLoading(false); }
+    try {
+      setWorkflows(await api.getAllWorkflows());
+      setLoadError(null);
+    } catch (e) {
+      safeLog.error('Queue load failed:', e);
+      setLoadError(e?.message || 'The encounter queue could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (loading) return <div className="animate-pulse p-4 text-slate-500">Loading queue...</div>;
+  if (loadError) return (
+    <div role="alert" className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-danger-800">
+      <div className="flex items-start gap-3">
+        <AlertTriangle size={20} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <div>
+          <p className="font-semibold">Encounter queue unavailable</p>
+          <p className="mt-1 text-sm">{loadError} This is a load failure, not an empty queue.</p>
+          <button type="button" onClick={load} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-danger-600 px-3 py-2 text-sm font-semibold text-white hover:bg-danger-700">
+            <RefreshCw size={15} aria-hidden="true" /> Retry
+          </button>
+        </div>
+      </div>
+    </div>
+  );
   const active = workflows.filter(wf => wf.current_state !== 'checked-out');
   if (active.length === 0) return (
     <div className="flex flex-col items-center py-10 text-slate-400">

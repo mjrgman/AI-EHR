@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Mic, MicOff, X, Send, Stethoscope, ClipboardCheck, CheckCircle2, AlertTriangle, PhoneCall } from 'lucide-react';
+import { ArrowLeft, Sparkles, Mic, MicOff, X, Send, Stethoscope, ClipboardCheck, CheckCircle2, AlertTriangle, PhoneCall, RefreshCw } from 'lucide-react';
 import api, { safeLog } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
@@ -333,17 +333,17 @@ export default function DecisionQueuePage() {
   const [emergencyCount, setEmergencyCount] = useState(0);
   const [mode, setMode] = useState('mock');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [deciding, setDeciding] = useState(false);
   const [closing, setClosing] = useState(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       // Providers see the full queue; everyone with access sees MA close-outs.
       const tasks = [];
-      if (isProvider) tasks.push(api.getDecisions().catch(() => null));
+      if (isProvider) tasks.push(api.getDecisions());
       else tasks.push(Promise.resolve(null));
-      tasks.push(api.getMaCloseouts().catch(() => null));
+      tasks.push(api.getMaCloseouts());
 
       const [queue, closeoutData] = await Promise.all(tasks);
       if (queue) {
@@ -358,15 +358,21 @@ export default function DecisionQueuePage() {
         );
       }
       if (closeoutData) setCloseouts(closeoutData.items || []);
+      setLoadError(null);
     } catch (err) {
       safeLog.error('Decision queue error:', err);
+      setLoadError(err?.message || 'The decision queue could not be loaded.');
       toast.error('Failed to load the decision queue');
     } finally {
       setLoading(false);
     }
   }, [isProvider, toast]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const intervalId = setInterval(load, 10000);
+    return () => clearInterval(intervalId);
+  }, [load]);
 
   async function handleDecide(id, payload) {
     setDeciding(true);
@@ -397,6 +403,23 @@ export default function DecisionQueuePage() {
   }
 
   if (loading) return <LoadingSpinner message="Loading decision queue..." />;
+
+  if (loadError) return (
+    <div className="mc-page max-w-4xl">
+      <Card className="border-danger-200 bg-danger-50" role="alert">
+        <CardBody className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 shrink-0 text-danger-600" size={22} aria-hidden="true" />
+          <div>
+            <h1 className="font-display text-lg font-semibold text-danger-800">Decision queue unavailable</h1>
+            <p className="mt-1 text-sm text-danger-700">{loadError} This is a load failure, not an empty queue.</p>
+            <TouchButton className="mt-4" variant="danger" size="sm" icon={<RefreshCw size={15} />} onClick={load}>
+              Retry
+            </TouchButton>
+          </div>
+        </CardBody>
+      </Card>
+    </div>
+  );
 
   const pendingCount = items.filter(i => i.status === 'pending').length;
 
