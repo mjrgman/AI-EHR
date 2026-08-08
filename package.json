@@ -13,6 +13,8 @@
     "test": "node test/run-tests.js",
     "test:http-hardening": "node scripts/http-hardening-smoke.js",
     "test:unit": "node --test --test-concurrency=1 test/unit/*.test.js",
+    "coverage": "node scripts/check-coverage.js",
+    "coverage:report": "node scripts/check-coverage.js --report",
     "lint": "eslint server src --ext .js,.jsx,.mjs",
     "setup": "node scripts/setup.js",
     "create-user": "node scripts/create-user.js"
