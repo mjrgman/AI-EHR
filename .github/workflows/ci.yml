@@ -202,14 +202,29 @@ jobs:
       # Replaces the previous hand-rolled `grep` for password= literals, which
       # produced no findings because its own exclusion chain swallowed them and
       # ended in `|| echo`, so it could not fail the build.
-      - name: Secret scan (gitleaks, current tree + full history)
-        uses: gitleaks/gitleaks-action@v2
+      # The pinned binary is used directly rather than gitleaks/gitleaks-action.
+      # The action did not apply .gitleaks.toml (so it re-reported the six
+      # documented false positives), demanded a token to scan a PR at all, and
+      # tried to write PR comments it lacked permission for. Invoking the binary
+      # runs exactly the command verified locally, with the repository's own
+      # allowlist, and nothing else.
+      - name: Install gitleaks
         env:
-          # Required for pull_request events since gitleaks-action v2 — without
-          # it the action hard-fails rather than skipping, so the secret scan
-          # would be absent exactly where it matters most.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Secret scan — working tree
+        run: gitleaks dir . --no-banner --redact --config .gitleaks.toml --exit-code 1
+
+      - name: Secret scan — full history reachable from HEAD
+        # Scope is HEAD, not --all: _eval/ and _dispatch_archive/ legitimately
+        # live on a local-only branch that is never pushed.
+        run: gitleaks git . --no-banner --redact --config .gitleaks.toml --log-opts HEAD --exit-code 1
 
       - name: Dependency audit
         # Threshold stays at moderate. Do not raise it to obtain a green run --
