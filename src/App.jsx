@@ -41,15 +41,20 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex h-screen items-center justify-center bg-slate-950 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black" role="alert">
-          <div className="mx-4 max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 text-center shadow-2xl backdrop-blur-xl ring-1 ring-white/5">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-500/20 text-red-400 ring-1 ring-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+        <div className="flex h-screen items-center justify-center bg-ivory-200 px-4" role="alert">
+          {/* Slim gold hairline crowning the card — the single restrained brand accent */}
+          <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-offWhite-100 p-8 text-center shadow-mc-lg">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-gold-500/0 via-gold-500 to-gold-500/0"
+            />
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-danger-50 text-danger-600 ring-1 ring-danger-200">
               <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <h1 className="mb-3 font-display text-2xl font-semibold text-white tracking-tight">System Exception</h1>
-            <p className="mb-6 text-sm leading-relaxed text-slate-400">
+            <h1 className="mb-3 font-display text-2xl font-semibold text-navy-700 tracking-tight">System Exception</h1>
+            <p className="mb-6 text-sm leading-relaxed text-slate-600">
               The clinical agent hit an unexpected exception. Any work that was already auto-saved is preserved, but unsaved changes on this screen may be lost. Reloading restarts the module safely.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
@@ -58,25 +63,25 @@ class ErrorBoundary extends React.Component {
                   this.setState({ hasError: false, message: '' });
                   window.location.reload();
                 }}
-                className="rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/25 transition-all hover:scale-105 hover:shadow-cyan-500/40 active:scale-95"
+                className="mc-btn-fill mc-btn-navy rounded-xl bg-navy-600 px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-navy-700 active:scale-95"
               >
                 Reload module
               </button>
               <button
                 onClick={() => window.location.assign('/')}
-                className="rounded-xl border border-white/10 bg-white/5 px-6 py-2.5 text-sm font-semibold text-slate-300 transition-all hover:bg-white/10 hover:text-white active:scale-95"
+                className="rounded-xl border border-slate-300 bg-offWhite-100 px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-mc transition-all hover:bg-ivory-200 hover:border-slate-400 active:scale-95"
               >
                 Return to dashboard
               </button>
             </div>
             {this.state.message ? (
               <details className="mt-6 text-left group">
-                <summary className="cursor-pointer text-xs font-semibold text-slate-500 hover:text-slate-400 transition-colors focus:outline-none">Technical detail</summary>
-                <p className="mt-3 break-words rounded-xl border border-white/5 bg-black/40 p-4 font-mono text-[11px] text-slate-400 leading-relaxed overflow-x-auto shadow-inner">{this.state.message}</p>
+                <summary className="cursor-pointer text-xs font-semibold text-slate-500 hover:text-navy-700 transition-colors focus:outline-none">Technical detail</summary>
+                <p className="mt-3 break-words rounded-xl border border-slate-200 bg-ivory-100 p-4 font-mono text-[11px] text-slate-600 leading-relaxed overflow-x-auto">{this.state.message}</p>
               </details>
             ) : null}
-            <div className="mt-6 pt-5 border-t border-white/10">
-              <p className="text-[11px] font-medium tracking-widest text-cyan-500/40 uppercase">Synthetic EHR Demo · No PHI</p>
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <p className="text-[11px] font-medium tracking-widest text-slate-400 uppercase">Synthetic EHR Demo · No PHI</p>
             </div>
           </div>
         </div>
