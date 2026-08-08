@@ -216,10 +216,51 @@ function evaluateTrigger(trigger, ctx) {
 // SUGGESTION ASSEMBLY
 // ==========================================
 
+// Action types that carry a patient-specific dose or a treatment instruction.
+// An educational-only rule must not emit any of these.
+const DOSING_ACTION_TYPES = new Set(['dose_adjustment', 'prescribe', 'start_medication', 'titrate']);
+
+/**
+ * Enforce the educational-only contract for non-FDA-approved compounds.
+ *
+ * peptide-rules.js documents the rule "compounded / non-FDA peptides MUST carry
+ * educational_only: true", but nothing checked that such a rule stays
+ * educational. The flag propagated to the client as decoration while the engine
+ * would have happily emitted a proposed dose alongside it.
+ *
+ * BPC-157, compounded GH secretagogues and similar research compounds have no
+ * FDA-approved indication and no established human dosing, so there is no
+ * source a dose could legitimately come from. Rather than trust each rule
+ * author, strip dosing actions here and record that we did.
+ */
+function stripDosingFromEducationalRule(rule, actions) {
+  const original = Array.isArray(actions.actions) ? actions.actions : [];
+  const kept = original.filter((a) => !DOSING_ACTION_TYPES.has(a.type));
+  const removed = original.length - kept.length;
+
+  if (removed > 0) {
+    console.warn(
+      `[domain-logic] rule '${rule.id}' is educational_only but emitted ${removed} ` +
+      'dosing action(s); they were withheld. A non-FDA-approved compound has no ' +
+      'established dosing to recommend.'
+    );
+  }
+  return { kept, removed };
+}
+
 function ruleToSuggestion(rule) {
   const actions = rule.suggested_actions || {};
-  const requiresApproval = Array.isArray(actions.actions)
-    && actions.actions.some((a) => a.requiresDosingApproval === true);
+  const isEducationalOnly = rule.educational_only === true;
+
+  let effectiveActions = Array.isArray(actions.actions) ? actions.actions : [];
+  let withheldDosingActions = 0;
+  if (isEducationalOnly) {
+    const { kept, removed } = stripDosingFromEducationalRule(rule, actions);
+    effectiveActions = kept;
+    withheldDosingActions = removed;
+  }
+
+  const requiresApproval = effectiveActions.some((a) => a.requiresDosingApproval === true);
 
   return {
     suggestion_type: rule.rule_type,
@@ -228,12 +269,15 @@ function ruleToSuggestion(rule) {
     title: actions.title || rule.rule_name,
     description: actions.description || '',
     rationale: rule.evidence_source,
-    suggested_action: actions.actions || [],
+    suggested_action: effectiveActions,
     source: 'domain_logic_engine',
     rule_id: rule.id,
     evidence_source: rule.evidence_source,
     requiresDosingApproval: requiresApproval,
-    educational_only: rule.educational_only === true,
+    educational_only: isEducationalOnly,
+    // Non-zero means the rule tried to emit dosing and the engine withheld it.
+    // Surfaced so the UI can say so rather than silently showing less.
+    withheld_dosing_actions: withheldDosingActions,
     emitEvent: actions.emitEvent || null,
     blocksRuleTypes: actions.blocksRuleTypes || []
   };
@@ -336,5 +380,9 @@ module.exports = {
   findLabValue,        // exported for unit tests
   patientHasAnyProblem,
   patientOnMedication,
-  patientHasAnySymptom
+  patientHasAnySymptom,
+  // Exported so the educational-only quarantine can be asserted directly
+  // against a synthetic rogue rule, rather than only against the rules that
+  // happen to ship today.
+  _test_ruleToSuggestion: ruleToSuggestion
 };
