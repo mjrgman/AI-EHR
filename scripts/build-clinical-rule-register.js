@@ -41,6 +41,27 @@ function statedYear(text) {
   return years ? Math.max(...years.map(Number)) : null;
 }
 
+/**
+ * Escape a value for a markdown table cell.
+ *
+ * Order matters: the backslash is escaped BEFORE the pipe, because otherwise a
+ * backslash already present in the source would combine with the pipe escape
+ * and turn it back into a literal pipe, breaking the table row. CodeQL flags
+ * the single-pass form as js/incomplete-sanitization and is right about the
+ * ordering, even though this renders a local report over the repository's own
+ * files rather than crossing a security boundary.
+ *
+ * Newlines are collapsed too — a citation spanning lines would otherwise split
+ * one table row into two.
+ */
+function mdCell(value, max) {
+  return String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/[\r\n]+/g, ' ')
+    .slice(0, max);
+}
+
 const rows = [];
 
 function addRow(row) {
@@ -191,7 +212,7 @@ const aging = rows
   .filter((r) => r.year && (CURRENT_YEAR - r.year) > STALE_AFTER_YEARS)
   .sort((a, b) => a.year - b.year);
 for (const r of aging) {
-  const src = String(r.evidence_source).replace(/\|/g, '\\|').slice(0, 90);
+  const src = mdCell(r.evidence_source, 90);
   out.push(`| ${r.year} | ${r.surface} | ${r.name} | ${src} |`);
 }
 out.push('');
@@ -223,9 +244,7 @@ for (const [surface, list] of Object.entries(bySurface)) {
   out.push('| Rule | Cited source | Yr | Dosing | Gated | Edu-only |');
   out.push('|---|---|---:|:---:|:---:|:---:|');
   for (const r of list) {
-    const src = r.evidence_source
-      ? String(r.evidence_source).replace(/\|/g, '\\|').slice(0, 110)
-      : '**MISSING**';
+    const src = r.evidence_source ? mdCell(r.evidence_source, 110) : '**MISSING**';
     out.push([
       '',
       r.name || r.id,
