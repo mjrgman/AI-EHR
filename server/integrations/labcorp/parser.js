@@ -38,6 +38,19 @@
  *   - No PHI is ever logged — warnings include field names only.
  */
 
+// sec-xml-recursive-walk-10: hard limits for hostile/oversized XML.
+//   MAX_XML_BYTES   — reject inputs larger than this before decoding/parsing.
+//   MAX_WALK_DEPTH  — cap recursion depth in findAll() to prevent stack
+//                     exhaustion on a deeply-nested (or cyclically-shaped)
+//                     parsed tree.
+//   MAX_WALK_NODES  — cap total nodes visited so a wide-but-shallow tree
+//                     can't pin CPU/memory.
+// All limits fail soft: the walk stops and returns what it has rather than
+// throwing, consistent with the module-wide "parser never throws" contract.
+const MAX_XML_BYTES = 5 * 1024 * 1024; // 5 MiB — LabCorp result payloads are KB-scale
+const MAX_WALK_DEPTH = 64;
+const MAX_WALK_NODES = 100000;
+
 // Lazy-required to keep boot-time fast and to allow test environments without
 // these optional deps installed. We also export a small shim that returns a
 // helpful message if the dep is missing.
@@ -133,13 +146,13 @@ async function parsePdfResult(buffer) {
   }
 
   // Header fields — simple regex extraction
-  const orderIdMatch = rawText.match(/(?:Order\s*(?:ID|Number|#)|Specimen\s*#)\s*[:\s]+([A-Z0-9\-]{4,})/i);
+  const orderIdMatch = rawText.match(/(?:Order\s*(?:ID|Number|#)|Specimen\s*#)\s*[:\s]+([A-Z0-9-]{4,})/i);
   if (orderIdMatch) base.labOrderId = orderIdMatch[1].trim();
 
-  const orderedMatch = rawText.match(/(?:Date\s*Collected|Collection\s*Date|Ordered)\s*[:\s]+([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4}(?:\s+[0-9:]+(?:\s*[AP]M)?)?)/i);
+  const orderedMatch = rawText.match(/(?:Date\s*Collected|Collection\s*Date|Ordered)\s*[:\s]+([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4}(?:\s+[0-9:]+(?:\s*[AP]M)?)?)/i);
   if (orderedMatch) base.orderedAt = normalizeDate(orderedMatch[1]);
 
-  const resultedMatch = rawText.match(/(?:Date\s*Reported|Report\s*Date|Resulted)\s*[:\s]+([0-9]{1,2}[\/\-][0-9]{1,2}[\/\-][0-9]{2,4}(?:\s+[0-9:]+(?:\s*[AP]M)?)?)/i);
+  const resultedMatch = rawText.match(/(?:Date\s*Reported|Report\s*Date|Resulted)\s*[:\s]+([0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4}(?:\s+[0-9:]+(?:\s*[AP]M)?)?)/i);
   if (resultedMatch) base.resultedAt = normalizeDate(resultedMatch[1]);
 
   // Result rows — expected shape per LabCorp mock fixtures:
@@ -184,7 +197,7 @@ function tryParseResultLine(line) {
 
   // Whitespace form — look for "Name  value  unit  range  flag"
   // Require at least: word(s) followed by a number
-  const m = line.match(/^([A-Za-z][A-Za-z0-9 ()\-\/,]+?)\s+([<>]?[0-9]+(?:\.[0-9]+)?)\s+([A-Za-z\/%µμ0-9\^]+)?(?:\s+([0-9.\-<>]+(?:\s*-\s*[0-9.]+)?))?(?:\s+(H|L|HH|LL|N|A))?\s*$/);
+  const m = line.match(/^([A-Za-z][A-Za-z0-9 ()\-/,]+?)\s+([<>]?[0-9]+(?:\.[0-9]+)?)\s+([A-Za-z/%µμ0-9^]+)?(?:\s+([0-9.\-<>]+(?:\s*-\s*[0-9.]+)?))?(?:\s+(H|L|HH|LL|N|A))?\s*$/);
   if (m) {
     const [, code, valueStr, unit, refRange, flagRaw] = m;
     return buildResultRow(code, valueStr, unit, refRange, flagRaw);
@@ -243,6 +256,16 @@ function parseXmlResult(buffer) {
 
   if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
     base.warnings.push('empty_or_invalid_buffer');
+    return base;
+  }
+
+  // sec-xml-recursive-walk-10: cap the input size before we decode/parse a
+  // server-to-server response. An oversized payload is treated as a parse
+  // failure (fail-soft, never throw) rather than risking memory/CPU
+  // exhaustion in the XML parser and the subsequent recursive walk.
+  if (buffer.length > MAX_XML_BYTES) {
+    base.rawExcerpt = buffer.slice(0, 500).toString('utf8');
+    base.warnings.push(`xml_too_large:${buffer.length}>${MAX_XML_BYTES}`);
     return base;
   }
 
@@ -321,21 +344,43 @@ function parseXmlResult(buffer) {
 
 // Helper: walk an arbitrary parsed XML tree looking for all nodes with a given
 // key name. Used by the HL7 fallback path.
+//
+// sec-xml-recursive-walk-10: the walk is bounded on both depth (MAX_WALK_DEPTH)
+// and total nodes visited (MAX_WALK_NODES). Hostile XML can be decoded by
+// fast-xml-parser into a tree deep or wide enough to blow the call stack or
+// pin CPU; these caps make the walk fail soft — it stops early and returns the
+// matches found so far rather than throwing. The public signature
+// `findAll(node, key, out)` is preserved; depth/budget are tracked internally.
 function findAll(node, key, out = []) {
-  if (node == null || typeof node !== 'object') return out;
+  // Shared mutable budget so width + depth share one node ceiling across the
+  // whole traversal (not per-branch).
+  const budget = { nodes: 0 };
+  _findAllBounded(node, key, out, 0, budget);
+  return out;
+}
+
+function _findAllBounded(node, key, out, depth, budget) {
+  if (node == null || typeof node !== 'object') return;
+  if (depth > MAX_WALK_DEPTH) return;
+  if (budget.nodes >= MAX_WALK_NODES) return;
+  budget.nodes += 1;
+
   if (Array.isArray(node)) {
-    for (const child of node) findAll(child, key, out);
-    return out;
+    for (const child of node) {
+      if (budget.nodes >= MAX_WALK_NODES) return;
+      _findAllBounded(child, key, out, depth + 1, budget);
+    }
+    return;
   }
   for (const [k, v] of Object.entries(node)) {
+    if (budget.nodes >= MAX_WALK_NODES) return;
     if (k === key) {
       if (Array.isArray(v)) out.push(...v);
       else out.push(v);
     } else {
-      findAll(v, key, out);
+      _findAllBounded(v, key, out, depth + 1, budget);
     }
   }
-  return out;
 }
 
 // ==========================================
@@ -359,7 +404,7 @@ function normalizeDate(raw) {
   // Pass through ISO 8601
   if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str;
   // MM/DD/YYYY or MM-DD-YYYY
-  const m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  const m = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
   if (m) {
     const [, mo, day, yr] = m;
     const year = yr.length === 2 ? `20${yr}` : yr;
@@ -376,6 +421,9 @@ module.exports = {
     tryParseResultLine,
     normalizeDate,
     normalizeValue,
-    findAll
+    findAll,
+    MAX_XML_BYTES,
+    MAX_WALK_DEPTH,
+    MAX_WALK_NODES
   }
 };

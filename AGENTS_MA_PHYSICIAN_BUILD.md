@@ -237,7 +237,7 @@ Z79.01 (Anticoagulation):
 }
 ```
 
-Receives a directive from Physician Agent and executes it (logs, creates orders, etc.).
+Receives a directive from Physician Agent and executes it (logs, creates orders, etc.). If the payload does not yet include an executable directive (for example, a pending physician-review case), the MA agent returns a non-fatal `directive_missing_or_invalid` status so callers can surface the case for follow-up.
 
 #### 6. `schedule_request`
 **Payload:**
@@ -373,9 +373,9 @@ The Physician Agent learns and adapts to the provider's:
 }
 ```
 
-**Response:**
-- ✅ **auto_response_generated** — Matched to a protocol template. Generates directive back to MA Agent.
-- ❌ **requires_physician_review** — No auto-response protocol. Queued for provider review.
+**Response (strict default policy):**
+- ⛔ **requires_physician_review** — Default for all escalations. Physician review is queued and no directive is auto-executed.
+- ✅ **auto_response_generated** — Only when `settings.allowTemplateAutoResponses === true` and a template match exists. This remains an explicit exception; generated directives are sent back to MA Agent.
 
 **Example:**
 ```javascript
@@ -394,7 +394,7 @@ context.physicianRequest = {
   }
 };
 
-// Response (if auto-response found)
+// Response (if policy exception is enabled and auto-response found)
 {
   status: 'escalation_handled',
   decision: 'auto_response_generated',
@@ -403,7 +403,7 @@ context.physicianRequest = {
   to_agent: 'ma'
 }
 
-// Response (if needs physician review)
+// Response (default outcome)
 {
   status: 'escalation_received',
   decision: 'requires_physician_review',
@@ -770,7 +770,10 @@ const result = await ma.run(context, {});
 const { PhysicianAgent } = require('./server/agents/physician-agent');
 
 const physician = new PhysicianAgent({
-  providerName: 'Dr. Provider'
+  providerName: 'Dr. Provider',
+  settings: {
+    allowTemplateAutoResponses: false // strict default
+  }
 });
 
 // Handle escalation
@@ -788,7 +791,7 @@ const context = {
 };
 
 const result = await physician.run(context, {});
-// result.result.decision: 'auto_response_generated' or 'requires_physician_review'
+// result.result.decision: 'auto_response_generated' (opt-in exception) or 'requires_physician_review' (default)
 ```
 
 ---
@@ -812,4 +815,5 @@ const result = await physician.run(context, {});
 
 **Built by:** Claude (Anthropic)
 **Date:** March 22, 2026
-**Status:** Production-ready
+**Status:** Implemented in the local synthetic demo. Not production-ready —
+see `docs/SYNTHETIC_ONLY_BASELINE.md` for the open gaps.

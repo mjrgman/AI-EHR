@@ -77,8 +77,8 @@ const PEPTIDE_RULES = [
           requiresDosingApproval: true,
           payload: {
             medication: 'Semaglutide',
-            currentDose: '{{currentDose}}',
-            proposedDose: '{{nextTitrationStep}}',
+            currentDose: 'current documented semaglutide dose',
+            proposedDose: 'next labeled titration step after clinician confirmation',
             route: 'SQ',
             frequency: 'weekly',
             rationale: 'A1C above target with adequate trial of current dose and good tolerability'

@@ -11,6 +11,20 @@ import Badge from '../components/common/Badge';
 import PatientBanner from '../components/patient/PatientBanner';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Check,
+  Printer,
+  Sparkles,
+  CalendarClock,
+  ClipboardCheck,
+  Pill,
+  FlaskConical,
+  Scan,
+  Send,
+} from 'lucide-react';
+import StatTile from '../components/workflow/StatTile';
 
 const FOLLOW_UP_INTERVALS = [
   { label: '1 week', days: 7 },
@@ -52,17 +66,20 @@ export default function CheckOutPage() {
 
   const { encounter, orders } = useEncounter(eid);
   const { patient } = usePatient(encounter?.patient_id);
-  const { workflow, timeline, transition } = useWorkflow(eid);
+  const { workflow, timeline } = useWorkflow(eid);
 
-  // Load E/M suggestion from billing engine when encounter is ready
+  // Load E/M suggestion from billing engine when encounter is ready. Keyed on
+  // the encounter *id* rather than the encounter object so a refetch that
+  // returns an equivalent record does not re-request the charge preview.
+  const loadedEncounterId = encounter?.id;
   useEffect(() => {
-    if (!eid || !encounter) return;
+    if (!eid || !loadedEncounterId) return;
     setChargeLoading(true);
     api.getCharge(eid)
       .then(data => setCharge(data))
       .catch(() => {/* charge preview non-fatal */})
       .finally(() => setChargeLoading(false));
-  }, [eid, encounter?.id]);
+  }, [eid, loadedEncounterId]);
 
   const orderCounts = useMemo(() => {
     if (!orders) return { prescriptions: 0, labs: 0, imaging: 0, referrals: 0, total: 0 };
@@ -131,11 +148,8 @@ export default function CheckOutPage() {
       if (billingNotes) checkoutPayload.notes = billingNotes;
       await api.finalizeCheckout(encounterId, checkoutPayload);
 
-      // Transition workflow state
-      if (workflow?.current_state === 'signed') {
-        await transition('checked-out');
-      }
-
+      // The checkout endpoint finalizes billing and moves the workflow to checked-out.
+      // Keep the client from issuing a duplicate workflow transition afterward.
       // Mark encounter completed with follow-up date
       const updateData = { status: 'completed' };
       if (followUpDate) updateData.follow_up_date = followUpDate;
@@ -161,7 +175,7 @@ export default function CheckOutPage() {
   // --- Post-checkout success screen ---
   if (checkedOut) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen">
         {/* Print styles are handled via @media print below */}
         <style>{`
           @media print {
@@ -184,42 +198,40 @@ export default function CheckOutPage() {
             <Card>
               <CardBody className="text-center py-10">
                 {/* Animated checkmark */}
-                <div className="animate-checkmark inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-100 mb-5">
-                  <svg className="w-10 h-10 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
+                <div className="animate-checkmark inline-flex items-center justify-center w-20 h-20 rounded-full bg-success-100 ring-4 ring-success-50 mb-5">
+                  <Check className="w-10 h-10 text-success-600" strokeWidth={3} aria-hidden="true" />
                 </div>
 
-                <h2 className="text-2xl font-bold text-gray-900 mb-1">Encounter Complete</h2>
-                <p className="text-gray-600 mb-1">{patientName} has been checked out.</p>
-                <p className="text-gray-400 text-sm mb-6">
+                <h2 className="font-display text-2xl font-semibold text-navy-700 mb-1">Encounter Complete</h2>
+                <p className="text-slate-600 mb-1">{patientName} has been checked out.</p>
+                <p className="text-slate-500 text-sm mb-6">
                   {orderCounts.total} order{orderCounts.total !== 1 ? 's' : ''} placed &middot; Encounter #{encounterId}
                 </p>
 
                 {followUpDate && (
-                  <div className="bg-blue-50 rounded-xl p-3 mb-4 text-sm">
-                    <span className="font-semibold text-blue-800">Follow-up: </span>
-                    <span className="text-blue-700">{formatDate(followUpDate)}</span>
+                  <div className="bg-navy-50 border border-navy-100 rounded-xl p-3 mb-4 text-sm">
+                    <span className="font-semibold text-navy-700">Follow-up: </span>
+                    <span className="text-slate-600">{formatDate(followUpDate)}</span>
                   </div>
                 )}
 
                 {/* After-Visit Summary */}
-                <div className="text-left bg-gray-50 rounded-xl p-5 mb-6">
+                <div className="text-left bg-ivory-100 border border-slate-100 rounded-xl p-5 mb-6">
                   {/* Print header */}
                   <div className="print-only mb-4">
                     <h1 className="text-xl font-bold">After-Visit Summary</h1>
-                    <p className="text-sm text-gray-500">{patientName} &middot; {new Date().toLocaleDateString()}</p>
+                    <p className="text-sm text-slate-600">{patientName} &middot; {new Date().toLocaleDateString()}</p>
                     <hr className="mt-2" />
                   </div>
 
-                  <h3 className="font-semibold text-gray-800 mb-3 text-sm uppercase tracking-wide">
+                  <h3 className="font-semibold text-slate-600 mb-3 text-xs uppercase tracking-[0.12em]">
                     After-Visit Summary
                   </h3>
 
                   {encounter.chief_complaint && (
                     <div className="mb-3">
-                      <p className="text-xs text-gray-500 uppercase font-semibold">Reason for Visit</p>
-                      <p className="text-sm text-gray-800">{encounter.chief_complaint}</p>
+                      <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide">Reason for Visit</p>
+                      <p className="text-sm text-navy-700">{encounter.chief_complaint}</p>
                     </div>
                   )}
 
@@ -227,55 +239,65 @@ export default function CheckOutPage() {
                     <div className="space-y-3">
                       {orders?.prescriptions?.length > 0 && (
                         <div>
-                          <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Pharmacy</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Pharmacy</p>
                           {instructions.filter((i) => i.type === 'pharmacy').map((inst, idx) => (
-                            <p key={idx} className="text-sm text-gray-700 py-0.5">&bull; {inst.text}</p>
+                            <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
                         </div>
                       )}
                       {orders?.lab_orders?.length > 0 && (
                         <div>
-                          <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Lab Work</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Lab Work</p>
                           {instructions.filter((i) => i.type === 'lab').map((inst, idx) => (
-                            <p key={idx} className="text-sm text-gray-700 py-0.5">&bull; {inst.text}</p>
+                            <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
                         </div>
                       )}
                       {orders?.imaging_orders?.length > 0 && (
                         <div>
-                          <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Imaging</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Imaging</p>
                           {instructions.filter((i) => i.type === 'imaging').map((inst, idx) => (
-                            <p key={idx} className="text-sm text-gray-700 py-0.5">&bull; {inst.text}</p>
+                            <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
                         </div>
                       )}
                       {orders?.referrals?.length > 0 && (
                         <div>
-                          <p className="text-xs text-gray-500 uppercase font-semibold mb-1">Referrals</p>
+                          <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide mb-1">Referrals</p>
                           {instructions.filter((i) => i.type === 'referral').map((inst, idx) => (
-                            <p key={idx} className="text-sm text-gray-700 py-0.5">&bull; {inst.text}</p>
+                            <p key={idx} className="text-sm text-navy-600 py-0.5">&bull; {inst.text}</p>
                           ))}
                         </div>
                       )}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-400 italic">No orders for this visit.</p>
+                    <p className="text-sm text-slate-500 italic">No orders for this visit.</p>
                   )}
 
                   {followUpDate && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <p className="text-xs text-gray-500 uppercase font-semibold">Follow-Up Appointment</p>
-                      <p className="text-sm text-gray-800">{formatDate(followUpDate)}</p>
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                      <p className="text-xs text-slate-600 uppercase font-semibold tracking-wide">Follow-Up Appointment</p>
+                      <p className="text-sm text-navy-700">{formatDate(followUpDate)}</p>
                     </div>
                   )}
                 </div>
 
                 {/* Action buttons (hidden on print) */}
                 <div className="no-print space-y-2">
-                  <TouchButton variant="secondary" onClick={handlePrint} className="w-full">
+                  <TouchButton
+                    variant="secondary"
+                    icon={<Printer className="w-4 h-4" strokeWidth={2.25} />}
+                    onClick={handlePrint}
+                    className="w-full"
+                  >
                     Print After-Visit Summary
                   </TouchButton>
-                  <TouchButton variant="primary" onClick={() => navigate('/')} className="w-full">
+                  <TouchButton
+                    variant="primary"
+                    icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
+                    onClick={() => navigate('/')}
+                    className="w-full"
+                  >
                     Back to Dashboard
                   </TouchButton>
                 </div>
@@ -292,39 +314,66 @@ export default function CheckOutPage() {
     <div>
       {patient && <PatientBanner patient={patient} />}
 
-      <div className="max-w-3xl mx-auto p-4 space-y-4">
+      <div className="mc-page max-w-3xl mc-reveal-stagger space-y-4">
+        {/* Page header — gold hairline + navy icon chip, matching the bar */}
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+          <p className="mc-section-label">Provider</p>
+          <h1 className="mc-page-title flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <ClipboardCheck size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            Check-Out
+          </h1>
+        </div>
+
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => navigate('/review/' + encounterId)}>
-            &#x2190; Back to Review
+          <TouchButton
+            variant="secondary"
+            size="sm"
+            icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
+            onClick={() => navigate('/review/' + encounterId)}
+          >
+            Back to Review
           </TouchButton>
           <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} />
         </div>
 
-        {/* Signed confirmation banner */}
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3">
-          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-            <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
+        {/* Signed confirmation banner — signature moment: gold hairline crowns the anchor */}
+        <div className="relative bg-success-50 border border-success-100 rounded-xl p-4 flex items-center gap-3 shadow-mc-lg overflow-hidden">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-x-4 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-gold-400/70 to-transparent" />
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-success-100 ring-2 ring-success-50 flex items-center justify-center">
+            <CheckCircle2 className="w-5 h-5 text-success-600" strokeWidth={2.5} aria-hidden="true" />
           </div>
           <div>
-            <p className="font-semibold text-green-800">Encounter Signed</p>
-            <p className="text-sm text-green-600">
+            <p className="font-semibold text-success-700">Encounter Signed</p>
+            <p className="text-sm text-success-600">
               {orderCounts.total} order{orderCounts.total !== 1 ? 's' : ''} ready for processing
               {encounter.signed_by && ` | Signed by ${encounter.signed_by}`}
             </p>
           </div>
         </div>
 
+        {/* Order summary — premium KPI tiles (AuditPage bar): Rx is the single
+            gold attention beat, labs/imaging/referrals stay navy/slate. */}
+        {orderCounts.total > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatTile icon={Pill} label="Prescriptions" value={orderCounts.prescriptions} tone={orderCounts.prescriptions > 0 ? 'gold' : 'slate'} />
+            <StatTile icon={FlaskConical} label="Lab Orders" value={orderCounts.labs} tone={orderCounts.labs > 0 ? 'navy' : 'slate'} />
+            <StatTile icon={Scan} label="Imaging" value={orderCounts.imaging} tone={orderCounts.imaging > 0 ? 'navy' : 'slate'} />
+            <StatTile icon={Send} label="Referrals" value={orderCounts.referrals} tone={orderCounts.referrals > 0 ? 'navy' : 'slate'} />
+          </div>
+        )}
+
         {/* Patient Instructions */}
         {instructions.length > 0 && (
           <Card>
-            <CardHeader>Patient Instructions</CardHeader>
+            <CardHeader><span className="mc-section-label mb-0">Patient Instructions</span></CardHeader>
             <CardBody className="space-y-3">
               {orders?.prescriptions?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1.5">Pharmacy Pickups</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Pharmacy Pickups</h4>
                   {orders.prescriptions.map((rx, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="success">Rx</Badge>
@@ -335,7 +384,7 @@ export default function CheckOutPage() {
               )}
               {orders?.lab_orders?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1.5">Lab Appointments</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Lab Appointments</h4>
                   {orders.lab_orders.map((lab, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="routine">Lab</Badge>
@@ -350,7 +399,7 @@ export default function CheckOutPage() {
               )}
               {orders?.imaging_orders?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1.5">Imaging Scheduling</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Imaging Scheduling</h4>
                   {orders.imaging_orders.map((img, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="purple">Imaging</Badge>
@@ -361,7 +410,7 @@ export default function CheckOutPage() {
               )}
               {orders?.referrals?.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-1.5">Referrals</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Referrals</h4>
                   {orders.referrals.map((ref, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
                       <Badge variant="warning">Referral</Badge>
@@ -379,13 +428,13 @@ export default function CheckOutPage() {
 
         {/* Follow-up Scheduling */}
         <Card>
-          <CardHeader>Follow-Up Scheduling</CardHeader>
+          <CardHeader><span className="mc-section-label mb-0">Follow-Up Scheduling</span></CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="label-clinical block mb-1">Interval</label>
                 <select
-                  className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="input-clinical w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                   value={followUpInterval}
                   onChange={handleIntervalChange}
                 >
@@ -399,7 +448,7 @@ export default function CheckOutPage() {
                 <label className="label-clinical block mb-1">Follow-Up Date</label>
                 <input
                   type="date"
-                  className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="input-clinical w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                   value={followUpDate}
                   onChange={handleFollowUpDateChange}
                   min={new Date().toISOString().split('T')[0]}
@@ -407,8 +456,9 @@ export default function CheckOutPage() {
               </div>
             </div>
             {followUpDate && (
-              <p className="text-sm text-blue-600 mt-2">
-                Follow-up scheduled for <span className="font-semibold">{formatDate(followUpDate)}</span>
+              <p className="inline-flex items-center gap-1.5 text-sm text-slate-600 mt-2">
+                <CalendarClock className="w-4 h-4 text-slate-400" strokeWidth={2} aria-hidden="true" />
+                Follow-up scheduled for <span className="font-semibold text-navy-700">{formatDate(followUpDate)}</span>
               </p>
             )}
           </CardBody>
@@ -416,21 +466,24 @@ export default function CheckOutPage() {
 
         {/* Billing / E&M Level */}
         <Card>
-          <CardHeader>Billing &amp; E/M Coding</CardHeader>
+          <CardHeader><span className="mc-section-label mb-0">Billing &amp; E/M Coding</span></CardHeader>
           <CardBody className="space-y-4">
             {chargeLoading ? (
-              <p className="text-sm text-gray-400 animate-pulse">Computing E/M level...</p>
+              <p className="text-sm text-slate-500 animate-pulse">Computing E/M level...</p>
             ) : charge?.em_suggestion ? (
               <>
                 {/* Suggested level badge */}
-                <div className="bg-blue-50 rounded-xl p-3 space-y-1.5">
+                <div className="bg-navy-50 border border-navy-100 rounded-xl p-3 space-y-1.5">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs font-semibold text-blue-500 uppercase tracking-wide">AI Suggestion</span>
-                    <span className="font-bold text-blue-800 text-base">{charge.em_suggestion.code}</span>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gold-600 uppercase tracking-wide">
+                      <Sparkles className="w-3.5 h-3.5 text-gold-500" strokeWidth={2.25} aria-hidden="true" />
+                      AI Suggestion
+                    </span>
+                    <span className="font-bold text-navy-700 text-base">{charge.em_suggestion.code}</span>
                     <Badge variant="routine" className="capitalize">{charge.em_suggestion.mdmLevel} complexity</Badge>
-                    <span className="text-xs text-blue-600">{charge.em_suggestion.rvu} wRVU</span>
+                    <span className="text-xs text-slate-600">{charge.em_suggestion.rvu} wRVU</span>
                   </div>
-                  <p className="text-xs text-blue-700 leading-relaxed">{charge.em_suggestion.rationale}</p>
+                  <p className="text-xs text-slate-600 leading-relaxed">{charge.em_suggestion.rationale}</p>
                 </div>
 
                 {/* MDM breakdown */}
@@ -441,27 +494,27 @@ export default function CheckOutPage() {
                     { label: 'Risk', value: charge.em_suggestion.risk?.level, sub: `${charge.em_suggestion.risk?.prescriptionMeds || 0} Rx` },
                   ].map(el => (
                     <div key={el.label} className={`rounded-lg p-2 border ${
-                      el.value === 'high' ? 'border-red-200 bg-red-50' :
-                      el.value === 'moderate' ? 'border-amber-200 bg-amber-50' :
-                      'border-gray-200 bg-gray-50'
+                      el.value === 'high' ? 'border-danger-200 bg-danger-50' :
+                      el.value === 'moderate' ? 'border-gold-200 bg-gold-50' :
+                      'border-slate-100 bg-ivory-100'
                     }`}>
-                      <p className="font-semibold text-gray-700">{el.label}</p>
+                      <p className="font-semibold text-slate-600">{el.label}</p>
                       <p className={`font-bold capitalize ${
-                        el.value === 'high' ? 'text-red-700' :
-                        el.value === 'moderate' ? 'text-amber-700' : 'text-gray-600'
+                        el.value === 'high' ? 'text-danger-700' :
+                        el.value === 'moderate' ? 'text-gold-700' : 'text-slate-600'
                       }`}>{el.value}</p>
-                      <p className="text-gray-400">{el.sub}</p>
+                      <p className="text-slate-500">{el.sub}</p>
                     </div>
                   ))}
                 </div>
 
                 {/* Provider override */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
-                    Provider Override <span className="normal-case font-normal text-gray-400">(leave blank to accept suggestion)</span>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                    Provider Override <span className="normal-case font-normal text-slate-500">(leave blank to accept suggestion)</span>
                   </label>
                   <select
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={emOverride}
                     onChange={(e) => setEmOverride(e.target.value)}
                   >
@@ -476,15 +529,15 @@ export default function CheckOutPage() {
                 </div>
               </>
             ) : (
-              <p className="text-sm text-gray-400 italic">E/M suggestion unavailable — billing engine requires a signed encounter with clinical data.</p>
+              <p className="text-sm text-slate-500 italic">E/M suggestion unavailable — billing engine requires a signed encounter with clinical data.</p>
             )}
 
             {/* Billing notes */}
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Billing Notes / Copay</label>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">Billing Notes / Copay</label>
               <input
                 type="text"
-                className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="input-clinical w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                 placeholder="Enter copay amount or billing notes..."
                 value={billingNotes}
                 onChange={(e) => setBillingNotes(e.target.value)}
@@ -496,6 +549,7 @@ export default function CheckOutPage() {
         {/* Complete Checkout */}
         <TouchButton
           variant="success"
+          icon={<Check className="w-5 h-5" strokeWidth={2.5} />}
           onClick={handleCheckOut}
           loading={checkingOut}
           className="w-full"

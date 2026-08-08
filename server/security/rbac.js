@@ -29,6 +29,8 @@
  * Role-Permission Matrix
  * Defines what each role can access, modify, and sign
  */
+const { logSafe } = require('./log-safe');
+
 const ROLES = {
   physician: {
     label: 'Physician',
@@ -58,7 +60,7 @@ const ROLES = {
       medications: false,  // Can't directly write meds (must go through prescriptions)
       allergies: true,
       labs: false,  // Labs created by orders, not directly
-      vitals: false,  // Typically entered by MA
+      vitals: true,  // Physicians may enter vitals directly (allow-physician policy 2026-06-09)
       prescriptions: true,
       lab_orders: true,
       imaging_orders: true,
@@ -114,7 +116,7 @@ const ROLES = {
       medications: false,
       allergies: true,
       labs: false,
-      vitals: false,
+      vitals: true,  // NPs may enter vitals directly (allow-physician policy 2026-06-09)
       prescriptions: true,
       lab_orders: true,
       imaging_orders: true,
@@ -165,10 +167,10 @@ const ROLES = {
     },
     canWrite: {
       patients: false,  // Can't modify patient demo
-      encounters: false,
+      encounters: true,  // Can create/update encounters for check-in and rooming (A1 fix)
       problems: false,
       medications: false,
-      allergies: false,
+      allergies: true,  // Can record allergies during intake (A1 fix)
       labs: false,
       vitals: true,  // Can record vitals
       prescriptions: false,
@@ -570,27 +572,55 @@ function getPhiScopeFields(roleName) {
 // EXPRESS MIDDLEWARE
 // ==========================================
 
-function getRequestIdentity(req) {
-  return {
-    userRole: req.session?.userRole || req.user?.role || 'guest',
-    userId: String(req.session?.userId || req.user?.username || req.user?.sub || 'anonymous'),
-  };
-}
-
 /**
  * Middleware: require one or more roles
  * Usage: app.get('/api/patients', rbac.requireRole('physician', 'nurse_practitioner'), handler)
  */
+// S-C4 hardening: identity must come from authenticated context only.
+// In production, header-based identity (x-user-id / x-user-role) is rejected.
+// In development, headers are honored ONLY when ENABLE_DEV_AUTH_BYPASS=true,
+// matching the gate in security/auth.js.
+function resolveIdentity(req) {
+  // Primary: req.user (set by auth.requireAuth from JWT)
+  if (req.user?.role) {
+    return {
+      role: req.user.role,
+      id: req.user.username || req.user.sub || 'authenticated',
+      source: 'jwt',
+    };
+  }
+  // Secondary: validated session set by HIPAA sessionTracker
+  if (req.session?.userRole) {
+    return {
+      role: req.session.userRole,
+      id: req.session.userId || 'session',
+      source: 'session',
+    };
+  }
+  // Tertiary: dev-only header bypass, gated by explicit env flag
+  const devBypass =
+    process.env.NODE_ENV === 'development' &&
+    process.env.ENABLE_DEV_AUTH_BYPASS === 'true';
+  if (devBypass && req.headers['x-user-role']) {
+    return {
+      role: req.headers['x-user-role'],
+      id: req.headers['x-user-id'] || 'dev-bypass',
+      source: 'dev-header',
+    };
+  }
+  return { role: 'guest', id: 'anonymous', source: 'unauthenticated' };
+}
+
 function requireRole(...allowedRoles) {
   return (req, res, next) => {
-    const { userRole, userId } = getRequestIdentity(req);
+    const { role: userRole, id: userId } = resolveIdentity(req);
 
     // Attach role to request for downstream middleware
     req.userRole = userRole;
     req.userId = userId;
 
     if (!allowedRoles.includes(userRole)) {
-      console.warn(`[RBAC] Access denied: user ${userId} (role: ${userRole}) attempted unauthorized access to ${req.path}`);
+      console.warn(`[RBAC] Access denied: user ${logSafe(userId)} (role: ${logSafe(userRole)}) attempted unauthorized access to ${logSafe(req.path)}`);
       return res.status(403).json({
         error: 'Insufficient permissions',
         requiredRoles: allowedRoles,
@@ -608,12 +638,12 @@ function requireRole(...allowedRoles) {
  */
 function requirePermission(action, resourceType) {
   return (req, res, next) => {
-    const { userRole, userId } = getRequestIdentity(req);
-    
+    const { role: userRole, id: userId } = resolveIdentity(req);
+
     if (!authorize(userRole, resourceType, action)) {
       console.warn(
-        `[RBAC] Permission denied: user ${userId} (role: ${userRole}) ` +
-        `attempted ${action} on ${resourceType}`
+        `[RBAC] Permission denied: user ${logSafe(userId)} (role: ${logSafe(userRole)}) ` +
+        `attempted ${logSafe(action)} on ${logSafe(resourceType)}`
       );
       return res.status(403).json({
         error: `Permission denied: cannot ${action} ${resourceType}`,
@@ -633,8 +663,8 @@ function requirePermission(action, resourceType) {
  * Usage: app.get('/api/patients/:id', rbac.filterResponse, handler)
  */
 function filterResponse(req, res, next) {
-  const { userRole } = getRequestIdentity(req);
-  
+  const { role: userRole } = resolveIdentity(req);
+
   // Wrap res.json to filter response
   const originalJson = res.json.bind(res);
   res.json = function(data) {
@@ -652,8 +682,8 @@ function filterResponse(req, res, next) {
  */
 function requireResourceAccess(resourceType) {
   return (req, res, next) => {
-    const { userRole, userId } = getRequestIdentity(req);
-    
+    const { role: userRole, id: userId } = resolveIdentity(req);
+
     // Determine action from HTTP method
     const action = {
       'GET': 'access',
@@ -665,8 +695,8 @@ function requireResourceAccess(resourceType) {
     
     if (!authorize(userRole, resourceType, action)) {
       console.warn(
-        `[RBAC] Resource access denied: user ${userId} (role: ${userRole}) ` +
-        `attempted ${action} on ${resourceType}`
+        `[RBAC] Resource access denied: user ${logSafe(userId)} (role: ${logSafe(userRole)}) ` +
+        `attempted ${logSafe(action)} on ${logSafe(resourceType)}`
       );
       return res.status(403).json({
         error: `Cannot ${action} ${resourceType}`,

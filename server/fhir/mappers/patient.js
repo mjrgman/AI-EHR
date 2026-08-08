@@ -6,7 +6,7 @@
  * Spec: https://hl7.org/fhir/R4/patient.html
  */
 
-const { codeableConcept, identifier } = require('../utils/fhir-response');
+const { codeableConcept } = require('../utils/fhir-response');
 
 // Internal sex → FHIR AdministrativeGender
 const GENDER_MAP = {

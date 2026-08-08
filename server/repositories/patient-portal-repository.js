@@ -15,17 +15,34 @@ async function getPatientSessionProfile(patientId) {
   };
 }
 
+/**
+ * Upcoming appointments for the patient portal.
+ *
+ * Returns requests alongside confirmed appointments, but flags which is which.
+ * `is_confirmed` is the field the UI should key on: a patient must not read
+ * "you have an appointment" from a row that staff have not accepted.
+ *
+ * 'declined' joins 'cancelled' and 'no-show' in the exclusion list -- a
+ * refused request is not upcoming.
+ */
 async function getUpcomingAppointments(patientId) {
-  return db.dbAll(
+  const rows = await db.dbAll(
     `SELECT a.id, a.provider_name, a.appointment_date, a.appointment_time,
             a.duration_minutes, a.appointment_type, a.status, a.chief_complaint, a.notes
      FROM appointments a
      WHERE a.patient_id = ?
        AND a.appointment_date >= date('now')
-       AND a.status NOT IN ('cancelled', 'no-show')
+       AND a.status NOT IN ('cancelled', 'no-show', 'declined')
      ORDER BY a.appointment_date ASC, a.appointment_time ASC`,
     [patientId]
   );
+
+  return rows.map((row) => ({
+    ...row,
+    // Explicit rather than left to the client to infer from a status string.
+    awaiting_staff_confirmation: row.status === 'requested',
+    is_confirmed: row.status === 'confirmed' || row.status === 'checked-in',
+  }));
 }
 
 async function getActiveMedications(patientId) {

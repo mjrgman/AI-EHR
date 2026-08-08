@@ -21,9 +21,45 @@ const { createUsersTable } = require('../database-migrations');
 // CONFIGURATION
 // ==========================================
 
+// sec-jwt-no-alg-pin-06: FAIL TO BOOT in production if JWT_SECRET is unset.
+// Dev/test continue to work: scripts/dev-server.js bakes a dev secret and
+// test/run-tests.js sets a test secret, both BEFORE this module loads. Only a
+// genuine production process (NODE_ENV==='production') with no secret aborts.
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error(
+    '[AUTH] FATAL: JWT_SECRET must be set in production. Refusing to boot with an ' +
+    'ephemeral key (would silently invalidate all sessions on restart and weaken token integrity). ' +
+    'Set JWT_SECRET in the environment / secret manager.'
+  );
+}
+
+// sec-dev-bypass-header-12: the x-user-id / x-user-role header-trust bypass is
+// gated on NODE_ENV==='development' && ENABLE_DEV_AUTH_BYPASS==='true' (see
+// requireAuth below, plus mirrored gates in rbac.js and hipaa-middleware.js).
+// Those gates already make the bypass INERT in production (the NODE_ENV check
+// fails closed). This boot-time assertion is defense-in-depth against the
+// single-misconfig failure mode: if a production process is ever started with
+// the bypass flag set, refuse to boot rather than risk full header-trust
+// impersonation. Production must NEVER carry this flag.
+if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEV_AUTH_BYPASS === 'true') {
+  throw new Error(
+    '[AUTH] FATAL: ENABLE_DEV_AUTH_BYPASS must NOT be set in production. The ' +
+    'x-user-id/x-user-role header-trust bypass is a development-only convenience and would ' +
+    'permit unauthenticated impersonation of any role. Unset ENABLE_DEV_AUTH_BYPASS in the ' +
+    'production environment.'
+  );
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 const JWT_EXPIRY = process.env.JWT_EXPIRY || '8h';
 const BCRYPT_ROUNDS = 12;
+
+// sec-jwt-no-alg-pin-06: Pin algorithm + issuer/audience to defeat
+// alg-confusion / "none" attacks and cross-service token replay. HS256 is the
+// only algorithm we sign with, so it is the only one we accept on verify.
+const JWT_ALGORITHM = 'HS256';
+const JWT_ISSUER = process.env.JWT_ISSUER || 'agentic-ehr';
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE || 'agentic-ehr-api';
 
 // Password complexity requirements (S-M6)
 const PASSWORD_MIN_LENGTH = 12;
@@ -105,16 +141,32 @@ function signToken(payload, options = {}) {
     fullName: payload.full_name,
   };
   if (!tokenPayload.jti) tokenPayload.jti = crypto.randomUUID();
+  // sec-jwt-no-alg-pin-06: stamp algorithm + issuer/audience at sign time so
+  // verify can enforce them. jsonwebtoken sets `iss`/`aud` claims from options.
   return jwt.sign(
     tokenPayload,
     JWT_SECRET,
-    { expiresIn: options.expiresIn || JWT_EXPIRY }
+    {
+      algorithm: JWT_ALGORITHM,
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+      expiresIn: options.expiresIn || JWT_EXPIRY,
+    }
   );
 }
 
 function verifyToken(token) {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    // sec-jwt-no-alg-pin-06: pin the algorithm allow-list (HS256 only) and
+    // validate issuer/audience. This rejects alg-confusion ("none"/RS256-as-HS)
+    // and tokens minted for a different service. These are short-lived session
+    // tokens (not persisted in mjr-ehr.db), so strict validation has no
+    // stored-record backward-compat concern.
+    return jwt.verify(token, JWT_SECRET, {
+      algorithms: [JWT_ALGORITHM],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    });
   } catch (err) {
     return null;
   }
@@ -189,6 +241,7 @@ async function login(req, res) {
     let refreshToken = null;
     let refreshExpiresAt = null;
     try {
+      // eslint-disable-next-line global-require -- optional module; refresh tokens are opt-in
       const refreshMod = require('./refresh-tokens');
       const rt = await refreshMod.create(user.id);
       refreshToken = rt.refreshToken;

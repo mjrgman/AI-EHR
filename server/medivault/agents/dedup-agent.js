@@ -102,10 +102,10 @@ class DedupAgent extends BaseAgent {
    * Process: scan for duplicates in the patient's vault timeline.
    *
    * @param {Object} context - Patient context
-   * @param {Object} agentResults - Results from previously-run agents
+   * @param {Object} _agentResults - Results from previously-run agents
    * @returns {Promise<Object>} Deduplication result
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const patientId = context.patient?.id;
 
     if (!patientId) {

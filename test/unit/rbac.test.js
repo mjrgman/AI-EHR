@@ -28,7 +28,11 @@ function mockReq({ role = 'guest', method = 'GET', headers = {}, session = undef
   return {
     method,
     path: '/api/test',
+    // Back-compat: still expose headers for any test that inspects them, but
+    // the hardened resolveIdentity() never reads x-user-* outside the gated
+    // dev-bypass — identity must resolve from req.user (JWT) or req.session.
     headers: { 'x-user-role': role, 'x-user-id': 'test-user', ...headers },
+    user: { role, username: 'test-user' },
     session: effectiveSession,
   };
 }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Save, PenLine, ClipboardCheck, Pill, FlaskConical, Camera, Send } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useWorkflow } from '../hooks/useWorkflow';
@@ -12,6 +13,7 @@ import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
 import PatientBanner from '../components/patient/PatientBanner';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
+import StatTile from '../components/workflow/StatTile';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
 export default function ReviewPage() {
@@ -130,12 +132,33 @@ export default function ReviewPage() {
         await api.updateEncounter(encounterId, { soap_note: soapNote });
       }
 
-      // Transition workflow to documentation then signed
-      const state = workflow?.current_state;
-      if (state !== 'documentation' && state !== 'signed') {
-        try { await transition('documentation'); } catch (e) { /* may already be past this */ }
+      // Advance workflow through all states up to and including 'signed'.
+      // The state machine only accepts one-step transitions, so we walk the
+      // full ordered chain from the current state to 'signed', skipping states
+      // already passed.
+      const STATE_CHAIN = [
+        'scheduled',
+        'checked-in',
+        'roomed',
+        'vitals-recorded',
+        'provider-examining',
+        'documentation',
+        'signed',
+      ];
+      const currentState = workflow?.current_state;
+      const currentIdx = STATE_CHAIN.indexOf(currentState);
+      const signedIdx = STATE_CHAIN.indexOf('signed');
+      if (currentIdx < signedIdx) {
+        for (let i = currentIdx + 1; i <= signedIdx; i++) {
+          try {
+            await transition(STATE_CHAIN[i]);
+          } catch (e) {
+            // If transition fails for a state we've already passed, continue.
+            // Re-throw only if we couldn't reach 'signed'.
+            if (i === signedIdx) throw e;
+          }
+        }
       }
-      try { await transition('signed'); } catch (e) { /* may already be signed */ }
 
       await api.updateEncounter(encounterId, {
         status: 'signed',
@@ -144,7 +167,7 @@ export default function ReviewPage() {
       });
 
       toast.success('Encounter signed successfully.');
-      navigate('/checkout/' + encounterId);
+      navigate('/visit/' + encounterId);
     } catch (err) {
       toast.error('Signing failed: ' + err.message);
     } finally {
@@ -159,15 +182,40 @@ export default function ReviewPage() {
 
   return (
     <div>
+      {/* Signature moment: slim gold hairline crowning the patient banner. */}
+      <div className="h-0.5 bg-gradient-to-r from-gold-500/0 via-gold-500/70 to-gold-500/0" aria-hidden="true" />
       {patient && <PatientBanner patient={patient} />}
 
-      <div className="max-w-4xl mx-auto p-4 space-y-4">
+      <div className="max-w-4xl mx-auto p-4 space-y-4 mc-reveal-stagger">
         {/* Top bar */}
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => navigate('/encounter/' + encounterId)}>
-            &#x2190; Continue Editing
+          <TouchButton variant="ghost" size="sm" icon={<ArrowLeft size={16} />} onClick={() => navigate('/encounter/' + encounterId)}>
+            Continue Editing
           </TouchButton>
           <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} />
+        </div>
+
+        {/* Page header — gold eyebrow + icon chip (Audit/Dashboard bar) */}
+        <div className="relative">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+          <p className="mc-section-label">Documentation &amp; Sign-off</p>
+          <h1 className="mc-page-title flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <ClipboardCheck size={20} strokeWidth={2} aria-hidden="true" />
+            </span>
+            Review &amp; Sign
+          </h1>
+          <p className="mt-1 text-sm text-slate-600">Verify the note, confirm orders, attest, and sign the encounter</p>
+        </div>
+
+        {/* Orders at-a-glance — premium StatTiles matching the Audit stat bar.
+            Prescriptions carry the single gold attention beat (the most
+            controlled order class); the rest sit on navy/slate authority. */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatTile icon={Pill} label="Prescriptions" value={orderCounts.prescriptions} tone="gold" />
+          <StatTile icon={FlaskConical} label="Lab Orders" value={orderCounts.labs} tone="navy" />
+          <StatTile icon={Camera} label="Imaging" value={orderCounts.imaging} tone="slate" />
+          <StatTile icon={Send} label="Referrals" value={orderCounts.referrals} tone="slate" />
         </div>
 
         {/* Encounter Timestamps */}
@@ -177,24 +225,24 @@ export default function ReviewPage() {
             <div className="flex flex-wrap gap-6 text-sm">
               <div>
                 <span className="label-clinical">Check-in</span>
-                <p className="font-semibold text-gray-900">{formatTime(timestamps.checkIn)}</p>
+                <p className="font-semibold text-navy-700">{formatTime(timestamps.checkIn)}</p>
               </div>
               <div>
                 <span className="label-clinical">Exam Start</span>
-                <p className="font-semibold text-gray-900">{formatTime(timestamps.examStart)}</p>
+                <p className="font-semibold text-navy-700">{formatTime(timestamps.examStart)}</p>
               </div>
               <div>
                 <span className="label-clinical">Duration</span>
-                <p className="font-semibold text-gray-900">{timestamps.duration || '--'}</p>
+                <p className="font-semibold text-navy-700">{timestamps.duration || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">Encounter Type</span>
-                <p className="font-semibold text-gray-900">{encounter.encounter_type || 'Office Visit'}</p>
+                <p className="font-semibold text-navy-700">{encounter.encounter_type || 'Office Visit'}</p>
               </div>
               {encounter.chief_complaint && (
                 <div>
                   <span className="label-clinical">Chief Complaint</span>
-                  <p className="font-semibold text-gray-900">{encounter.chief_complaint}</p>
+                  <p className="font-semibold text-navy-700">{encounter.chief_complaint}</p>
                 </div>
               )}
             </div>
@@ -208,6 +256,7 @@ export default function ReviewPage() {
               <TouchButton
                 variant="primary"
                 size="sm"
+                icon={<Save size={15} />}
                 onClick={handleSaveSoap}
                 loading={saving}
                 disabled={!soapDirty}
@@ -221,7 +270,7 @@ export default function ReviewPage() {
           <CardBody>
             {soapNote || encounter.soap_note ? (
               <textarea
-                className="textarea-clinical w-full min-h-[280px] font-mono text-sm leading-relaxed resize-y border border-gray-300 rounded-xl p-4 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="textarea-clinical w-full min-h-[280px] font-mono text-sm leading-relaxed resize-y border border-slate-300 rounded-xl p-4 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                 value={soapNote}
                 onChange={(e) => {
                   setSoapNote(e.target.value);
@@ -230,7 +279,7 @@ export default function ReviewPage() {
               />
             ) : (
               <div className="text-center py-8">
-                <p className="text-gray-400 italic">No SOAP note generated for this encounter.</p>
+                <p className="text-slate-400 italic">No SOAP note generated for this encounter.</p>
                 <TouchButton
                   variant="secondary"
                   size="sm"
@@ -253,7 +302,7 @@ export default function ReviewPage() {
             <CardBody className="space-y-3">
               {accepted.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Accepted ({accepted.length})</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Accepted ({accepted.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {accepted.map((s) => (
                       <Badge key={s.id} variant="success">
@@ -265,12 +314,12 @@ export default function ReviewPage() {
               )}
               {rejected.length > 0 && (
                 <div>
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Rejected ({rejected.length})</h4>
+                  <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Rejected ({rejected.length})</h4>
                   <div className="flex flex-wrap gap-2">
                     {rejected.map((s) => (
                       <span
                         key={s.id}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-400 line-through"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-ivory-200 text-slate-400 border border-slate-100 line-through"
                       >
                         {s.title || s.suggestion_type}
                       </span>
@@ -282,80 +331,134 @@ export default function ReviewPage() {
           </Card>
         )}
 
-        {/* Orders Summary */}
+        {/* Orders Summary — AuditPage-grade tabular treatment: each order class
+            is a refined table with slate eyebrow column headers, a steady row
+            rhythm, and a hover wash. One disciplined surface, no rainbow. */}
         <Card>
-          <CardHeader>Orders Summary ({orderCounts.total} total)</CardHeader>
-          <CardBody className="space-y-4">
+          <CardHeader action={<span className="font-mono text-xs text-slate-400">{orderCounts.total} total</span>}>
+            Orders Summary
+          </CardHeader>
+          <CardBody className="space-y-5">
             {orderCounts.total === 0 && (
-              <p className="text-sm text-gray-400 italic">No orders created for this encounter.</p>
+              <p className="text-sm text-slate-400 italic">No orders created for this encounter.</p>
             )}
 
             {orders?.prescriptions?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
-                  Prescriptions ({orders.prescriptions.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.prescriptions.map((rx, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
-                      <Badge variant="success">Rx</Badge>
-                      <span className="font-medium">{rx.medication_name}</span>
-                      <span className="text-gray-500">{rx.dose} {rx.route} {rx.frequency}</span>
-                      <span className="text-gray-400 text-xs ml-auto">{rx.status}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Prescriptions ({orders.prescriptions.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Medication</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Sig</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.prescriptions.map((rx, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="success">Rx</Badge>
+                              <span className="font-medium text-navy-700">{rx.medication_name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-600">{rx.dose} {rx.route} {rx.frequency}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-xs text-slate-400">{rx.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
             {orders?.lab_orders?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
-                  Lab Orders ({orders.lab_orders.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.lab_orders.map((lab, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
-                      <Badge variant="routine">Lab</Badge>
-                      <span className="font-medium">{lab.test_name}</span>
-                      {lab.cpt_code && <span className="text-gray-400 text-xs">CPT: {lab.cpt_code}</span>}
-                      <span className="text-gray-400 text-xs ml-auto">{lab.priority}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Lab Orders ({orders.lab_orders.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Test</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">CPT</th>
+                        <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-600">Priority</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.lab_orders.map((lab, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="routine">Lab</Badge>
+                              <span className="font-medium text-navy-700">{lab.test_name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{lab.cpt_code || '—'}</td>
+                          <td className="px-4 py-2.5 text-right text-xs text-slate-400">{lab.priority}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
             {orders?.imaging_orders?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
-                  Imaging ({orders.imaging_orders.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.imaging_orders.map((img, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
-                      <Badge variant="purple">Imaging</Badge>
-                      <span className="font-medium">{img.study_type}</span>
-                      <span className="text-gray-500">{img.body_part}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Imaging ({orders.imaging_orders.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Study</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Body Part</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.imaging_orders.map((img, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="info">Imaging</Badge>
+                              <span className="font-medium text-navy-700">{img.study_type}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-600">{img.body_part}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
             {orders?.referrals?.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">
-                  Referrals ({orders.referrals.length})
-                </h4>
-                <div className="space-y-1">
-                  {orders.referrals.map((ref, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm py-1.5 border-b border-gray-50 last:border-0">
-                      <Badge variant="warning">Referral</Badge>
-                      <span className="font-medium">{ref.specialty}</span>
-                      <span className="text-gray-500">{ref.reason}</span>
-                    </div>
-                  ))}
+                <p className="mc-section-label">Referrals ({orders.referrals.length})</p>
+                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-ivory-200/70">
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Specialty</th>
+                        <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {orders.referrals.map((ref, i) => (
+                        <tr key={i} className="transition-colors hover:bg-ivory-200/60">
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="warning">Referral</Badge>
+                              <span className="font-medium text-navy-700">{ref.specialty}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-slate-600">{ref.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -370,35 +473,55 @@ export default function ReviewPage() {
                 type="checkbox"
                 checked={attested}
                 onChange={(e) => setAttested(e.target.checked)}
-                className="mt-1 w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="mt-1 w-5 h-5 rounded border-slate-300 text-navy-600 focus:ring-navy-500"
               />
               <div>
-                <p className="font-semibold text-gray-900">
+                <p className="font-semibold text-navy-700">
                   I have reviewed and approve this documentation
                 </p>
-                <p className="text-sm text-gray-500 mt-0.5">
+                <p className="text-sm text-slate-600 mt-0.5">
                   By checking this box, I attest that the SOAP note, orders, and clinical decision support
                   actions accurately reflect the care provided during this encounter.
                 </p>
                 {providerName && (
-                  <p className="text-xs text-gray-400 mt-1">Signing as: {providerName}</p>
+                  <p className="text-xs text-slate-400 mt-1">Signing as: {providerName}</p>
                 )}
               </div>
             </label>
           </CardBody>
         </Card>
 
-        {/* Action Buttons */}
+        {/* Readiness hint — surfaces exactly why Sign is inert, so the disabled
+            state reads as a clear gate, not a washed-out button. Presentation
+            only; mirrors the existing canSign predicate. */}
+        {!canSign && (
+          <div className="flex items-start gap-2 rounded-xl border border-gold-200 bg-gold-50/70 px-4 py-3 text-sm text-gold-800">
+            <PenLine size={16} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-gold-600" aria-hidden="true" />
+            <span>
+              {!soapNote.trim()
+                ? 'A SOAP note is required before this encounter can be signed.'
+                : 'Check the attestation box above to enable signing.'}
+            </span>
+          </div>
+        )}
+
+        {/* Action Buttons. Sign Encounter is the terminal positive/complete
+            action — confident brand success green with a signing icon. Continue
+            Editing is a quiet secondary so the sign path reads as the hero. */}
         <div className="flex gap-3 pb-6">
           <TouchButton
             variant="secondary"
+            size="lg"
+            icon={<ArrowLeft size={16} />}
             onClick={() => navigate('/encounter/' + encounterId)}
             className="flex-1"
           >
-            &#x2190; Continue Editing
+            Continue Editing
           </TouchButton>
           <TouchButton
             variant="success"
+            size="lg"
+            icon={<PenLine size={18} />}
             onClick={handleSign}
             loading={signing}
             disabled={!canSign}

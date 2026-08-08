@@ -20,7 +20,7 @@
  */
 
 const { BaseAgent, AUTONOMY_TIER } = require('../../agents/base-agent');
-const { dbRun, dbGet, dbAll } = require('../../database');
+const { dbRun } = require('../../database');
 
 // ==========================================
 // DOCUMENT TYPE CLASSIFICATION
@@ -118,9 +118,9 @@ const DOCUMENT_TYPES = [
  */
 const DATE_PATTERNS = [
   // MM/DD/YYYY or MM-DD-YYYY
-  /\b(0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12]\d|3[01])[\/\-](19|20)\d{2}\b/g,
+  /\b(0?[1-9]|1[0-2])[/-](0?[1-9]|[12]\d|3[01])[/-](19|20)\d{2}\b/g,
   // YYYY-MM-DD (ISO format)
-  /\b(19|20)\d{2}[\/\-](0?[1-9]|1[0-2])[\/\-](0?[1-9]|[12]\d|3[01])\b/g,
+  /\b(19|20)\d{2}[/-](0?[1-9]|1[0-2])[/-](0?[1-9]|[12]\d|3[01])\b/g,
   // Month DD, YYYY (e.g., January 15, 2024)
   /\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(0?[1-9]|[12]\d|3[01]),?\s+(19|20)\d{2}\b/gi,
   // DD Mon YYYY (e.g., 15 Jan 2024)
@@ -147,10 +147,10 @@ class IngestionAgent extends BaseAgent {
    * Classifies the document, extracts dates, and stores in the vault.
    *
    * @param {Object} context - Patient context with document data
-   * @param {Object} agentResults - Results from previously-run agents
+   * @param {Object} _agentResults - Results from previously-run agents
    * @returns {Promise<Object>} Ingestion result
    */
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const patientId = context.patient?.id;
 
     if (!patientId) {
@@ -343,9 +343,9 @@ class IngestionAgent extends BaseAgent {
     };
   }
 
-  // Future: OCR integration
+  // Future OCR integration sketch
   // async ocrDocument(imageBuffer) {
-  //   // TODO: Integrate Tesseract.js for on-device OCR
+  //   // Integrate Tesseract.js for on-device OCR
   //   // const Tesseract = require('tesseract.js');
   //   // const { data: { text, confidence } } = await Tesseract.recognize(imageBuffer, 'eng');
   //   // return { text, confidence: confidence / 100 };

@@ -74,15 +74,63 @@ async function checkDrugInteractions(newDrugName, activeMeds) {
 
   const interactions = await rxnorm.checkInteractionsAgainstList(newDrugName, activeMeds);
 
-  return interactions.map(i => ({
-    drug1: i.drug1,
-    drug2: i.drug2,
-    severity: classifySeverity(i.severity),
-    description: i.description,
-    source: i.source || 'NLM RxNorm',
-    rxcui1: i.rxcui1,
-    rxcui2: i.rxcui2
-  }));
+  return interactions.map(i => {
+    // Preserve the fail-closed "screening unavailable" sentinel verbatim so
+    // downstream consumers surface it as a WARNING rather than treating the
+    // absence of interactions as a clean result. Do NOT re-classify its
+    // severity (it is 'unknown', not a clinical grade).
+    if (i && i.unavailable) {
+      return {
+        drug1: i.drug1,
+        drug2: i.drug2,
+        severity: 'unknown',
+        status: rxnorm.SCREENING_UNAVAILABLE,
+        unavailable: true,
+        description: i.description,
+        source: i.source || 'screening-unavailable',
+        rxcui1: i.rxcui1 || null,
+        rxcui2: i.rxcui2 || null
+      };
+    }
+    // Curated interactions already carry a clinical-grade severity
+    // ('critical'/'serious'/'moderate'); preserve it verbatim rather than
+    // re-running classifySeverity (which would, e.g., upgrade 'serious' to
+    // 'critical' because it matches the 'serious' keyword test).
+    if (i && i.curated) {
+      return {
+        drug1: i.drug1,
+        drug2: i.drug2,
+        severity: i.severity,
+        description: i.description,
+        source: i.source || 'Curated DDI (interim)',
+        curated: true,
+        rxcui1: i.rxcui1 || null,
+        rxcui2: i.rxcui2 || null
+      };
+    }
+    return {
+      drug1: i.drug1,
+      drug2: i.drug2,
+      severity: classifySeverity(i.severity),
+      description: i.description,
+      source: i.source || 'NLM RxNorm',
+      rxcui1: i.rxcui1,
+      rxcui2: i.rxcui2
+    };
+  });
+}
+
+/**
+ * True if a checkDrugInteractions result indicates screening could not be
+ * performed (fail-closed sentinel present). Callers should surface a
+ * "verify manually" warning rather than reporting "no interactions."
+ *
+ * @param {Array} interactions - result of checkDrugInteractions
+ * @returns {boolean}
+ */
+function isScreeningUnavailable(interactions) {
+  return Array.isArray(interactions)
+    && interactions.some(i => i && i.unavailable === true);
 }
 
 // ──────────────────────────────────────────
@@ -97,13 +145,25 @@ async function checkDrugInteractions(newDrugName, activeMeds) {
  * @returns {Promise<{boxedWarning: string|null, contraindications: string|null, adverseReactions: string|null, dosageAdmin: string|null}>}
  */
 async function getDrugLabelSafety(drugName) {
-  if (!drugName) return { boxedWarning: null, contraindications: null, adverseReactions: null, dosageAdmin: null };
+  const EMPTY = { boxedWarning: null, contraindications: null, adverseReactions: null, dosageAdmin: null };
+  if (!drugName) return EMPTY;
 
-  const query = `search=openfda.generic_name:"${encodeURIComponent(drugName)}"+openfda.brand_name:"${encodeURIComponent(drugName)}"&limit=1`;
-  const data = await fdaGet(query);
+  const encoded = encodeURIComponent(drugName);
+
+  // Query generic_name FIRST, then fall back to a SEPARATE brand_name query.
+  // (Previously the two were AND-ed in one query — `generic_name:"X" +
+  // brand_name:"X"` — which requires a single label to carry the same string as
+  // BOTH its generic and brand name, so it almost never matched and boxed
+  // warnings were silently dropped for drugs that carry one, e.g. warfarin,
+  // methotrexate. This mirrors the dosing-service generic-then-brand pattern.)
+  let data = await fdaGet(`search=openfda.generic_name:"${encoded}"&limit=1`);
 
   if (!data || !data.results || data.results.length === 0) {
-    return { boxedWarning: null, contraindications: null, adverseReactions: null, dosageAdmin: null };
+    data = await fdaGet(`search=openfda.brand_name:"${encoded}"&limit=1`);
+  }
+
+  if (!data || !data.results || data.results.length === 0) {
+    return { ...EMPTY };
   }
 
   const label = data.results[0];
@@ -152,8 +212,21 @@ async function fullSafetyCheck(drugName, activeMeds, allergies) {
 
   const alerts = [];
 
-  // Generate alerts from interactions
+  // Generate alerts from interactions. The screening-unavailable sentinel is
+  // surfaced as an explicit WARNING (fail closed) — never silently dropped and
+  // never presented as a clean "no interactions" result.
   for (const interaction of interactions) {
+    if (interaction.unavailable) {
+      alerts.push({
+        type: 'interaction_screening_unavailable',
+        severity: 'warning',
+        title: `Interaction check unavailable: ${drugName}`,
+        description: interaction.description,
+        source: interaction.source,
+        unavailable: true
+      });
+      continue;
+    }
     alerts.push({
       type: 'drug_interaction',
       severity: interaction.severity,
@@ -190,12 +263,18 @@ async function fullSafetyCheck(drugName, activeMeds, allergies) {
     }
   }
 
-  // Sort by severity (critical first)
-  const severityOrder = { critical: 0, serious: 1, moderate: 2, minor: 3 };
+  // Sort by severity (critical first). 'warning' (unavailable) ranks just
+  // above the lowest tier so it stays visible without masking real findings.
+  const severityOrder = { critical: 0, serious: 1, moderate: 2, warning: 2.5, minor: 3 };
   alerts.sort((a, b) => (severityOrder[a.severity] || 3) - (severityOrder[b.severity] || 3));
+
+  // Fail-closed flag: when true, the interaction screen could NOT be completed
+  // and the empty/partial interaction list must not be read as "no interactions."
+  const interactionScreeningUnavailable = isScreeningUnavailable(interactions);
 
   return {
     interactions,
+    interactionScreeningUnavailable,
     boxedWarning: {
       hasBoxedWarning: !!labelSafety.boxedWarning,
       warning: labelSafety.boxedWarning
@@ -207,6 +286,7 @@ async function fullSafetyCheck(drugName, activeMeds, allergies) {
 
 module.exports = {
   checkDrugInteractions,
+  isScreeningUnavailable,
   getDrugLabelSafety,
   checkBoxedWarning,
   fullSafetyCheck,

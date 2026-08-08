@@ -47,6 +47,8 @@ async function runMigrations(db) {
     await addRxNormColumns(db);
     await createLabCorpTokensTable(db);
     await addLabCorpColumns(db);
+    await createDecisionQueueTable(db);
+    await addDurableAuditColumns(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -627,8 +629,8 @@ async function createAppointmentsTable(db) {
       )),
       chief_complaint TEXT,
       status TEXT NOT NULL CHECK(status IN (
-        'scheduled','confirmed','checked-in','no-show',
-        'cancelled','completed','rescheduled'
+        'requested','scheduled','confirmed','checked-in','no-show',
+        'cancelled','completed','rescheduled','declined'
       )) DEFAULT 'scheduled',
       encounter_id INTEGER,
       notes TEXT,
@@ -638,10 +640,92 @@ async function createAppointmentsTable(db) {
       FOREIGN KEY (encounter_id) REFERENCES encounters(id)
     )
   `);
+  await migrateAppointmentRequestedStatus(db);
   await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_date)`);
   await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments(patient_id)`);
   await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_provider ON appointments(provider_name, appointment_date)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status)`);
   console.log('[MIGRATIONS] appointments table ready');
+}
+
+/**
+ * Widen the appointments status CHECK constraint to admit 'requested' and
+ * 'declined'.
+ *
+ * A patient-initiated booking previously entered as 'scheduled' -- the same
+ * state as an appointment staff had actually accepted. The patient's portal
+ * then showed it among their upcoming appointments, so the system told them
+ * they had an appointment that nobody had agreed to. 'requested' is the
+ * honest entry state; 'declined' is the terminal state when staff refuse,
+ * which was previously indistinguishable from 'cancelled'.
+ *
+ * SQLite cannot ALTER a CHECK constraint, so this rebuilds the table. Follows
+ * the same pattern as migrateSuggestionTypes above: transaction, copy, swap,
+ * rollback on error. Existing rows are preserved unchanged -- no historical
+ * appointment is reinterpreted as a request.
+ */
+async function migrateAppointmentRequestedStatus(db) {
+  const row = await dbGetCompat(
+    db,
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='appointments'"
+  );
+  if (!row) return;
+  if (row.sql.includes("'requested'")) {
+    return; // already current
+  }
+
+  console.log('[MIGRATIONS] Expanding appointments status constraint (requested/declined)...');
+  await dbRun(db, 'PRAGMA foreign_keys=OFF');
+  await dbRun(db, 'BEGIN TRANSACTION');
+  try {
+    await dbRun(db, `
+      CREATE TABLE IF NOT EXISTS appointments_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        patient_id INTEGER NOT NULL,
+        provider_name TEXT NOT NULL,
+        appointment_date DATE NOT NULL,
+        appointment_time TEXT NOT NULL,
+        duration_minutes INTEGER DEFAULT 20,
+        appointment_type TEXT NOT NULL CHECK(appointment_type IN (
+          'new_patient','follow_up','sick_visit','wellness',
+          'procedure','telehealth','referral','urgent'
+        )),
+        chief_complaint TEXT,
+        status TEXT NOT NULL CHECK(status IN (
+          'requested','scheduled','confirmed','checked-in','no-show',
+          'cancelled','completed','rescheduled','declined'
+        )) DEFAULT 'scheduled',
+        encounter_id INTEGER,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (patient_id) REFERENCES patients(id),
+        FOREIGN KEY (encounter_id) REFERENCES encounters(id)
+      )
+    `);
+    // Column-explicit copy rather than SELECT * so a column-order difference
+    // between the live table and this definition cannot silently misalign data.
+    await dbRun(db, `
+      INSERT INTO appointments_new (
+        id, patient_id, provider_name, appointment_date, appointment_time,
+        duration_minutes, appointment_type, chief_complaint, status,
+        encounter_id, notes, created_at, updated_at
+      )
+      SELECT
+        id, patient_id, provider_name, appointment_date, appointment_time,
+        duration_minutes, appointment_type, chief_complaint, status,
+        encounter_id, notes, created_at, updated_at
+      FROM appointments
+    `);
+    await dbRun(db, `DROP TABLE appointments`);
+    await dbRun(db, `ALTER TABLE appointments_new RENAME TO appointments`);
+    await dbRun(db, 'COMMIT');
+    console.log('[MIGRATIONS] appointments status constraint expanded successfully');
+  } catch (err) {
+    await dbRun(db, 'ROLLBACK');
+    throw err;
+  }
+  await dbRun(db, 'PRAGMA foreign_keys=ON');
 }
 
 // ==========================================
@@ -845,27 +929,16 @@ function dbGetCompat(db, sql, params = []) {
  * Enables canonical drug identification via NLM RxNorm API.
  */
 async function addRxNormColumns(db) {
-  // server/server.js passes the database module's exports object; unwrap to the
-  // raw sqlite3 instance so .all()/.run() resolve. Mirrors dbAllCompat (L806).
-  const rawDb = db && typeof db.all === 'function' ? db : db?.db;
+  // dbAllCompat/dbRun unwrap the database module's exports object to the raw
+  // sqlite3 instance internally (see L789/L807), incorporating main's rawDb-
+  // unwrap fix (#12) via the shared compat helpers.
   const tables = ['medications', 'prescriptions'];
   for (const table of tables) {
     try {
-      const cols = await new Promise((resolve, reject) => {
-        rawDb.all(`PRAGMA table_info(${table})`, (err, rows) => {
-          if (err) reject(err); else resolve(rows);
-        });
-      });
+      const cols = await dbAllCompat(db, `PRAGMA table_info(${table})`);
       if (!cols.some(c => c.name === 'rxnorm_cui')) {
-        await new Promise((resolve, reject) => {
-          rawDb.run(`ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`, (err) => {
-            if (err) reject(err);
-            else {
-              console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
-              resolve();
-            }
-          });
-        });
+        await dbRun(db, `ALTER TABLE ${table} ADD COLUMN rxnorm_cui TEXT`);
+        console.log(`[MIGRATIONS] Added rxnorm_cui column to ${table}`);
       }
     } catch (err) {
       console.warn(`[MIGRATIONS] rxnorm_cui migration for ${table}: ${err.message}`);
@@ -926,31 +999,20 @@ async function createLabCorpTokensTable(db) {
  * Uses the same PRAGMA-then-ALTER pattern as addRxNormColumns. Idempotent.
  */
 async function addLabCorpColumns(db) {
-  // server/server.js passes the database module's exports object; unwrap to the
-  // raw sqlite3 instance so .all()/.run() resolve. Mirrors dbAllCompat (L806).
-  const rawDb = db && typeof db.all === 'function' ? db : db?.db;
+  // dbAllCompat/dbRun unwrap the database module's exports object to the raw
+  // sqlite3 instance internally (see L789/L807), incorporating main's rawDb-
+  // unwrap fix (#12) via the shared compat helpers.
   const columns = [
     { name: 'external_order_id', type: 'TEXT' },
     { name: 'labcorp_status', type: 'TEXT' },
     { name: 'labcorp_raw_pdf_path', type: 'TEXT' },
   ];
   try {
-    const cols = await new Promise((resolve, reject) => {
-      rawDb.all('PRAGMA table_info(lab_orders)', (err, rows) => {
-        if (err) reject(err); else resolve(rows);
-      });
-    });
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(lab_orders)');
     for (const col of columns) {
       if (!cols.some(c => c.name === col.name)) {
-        await new Promise((resolve, reject) => {
-          rawDb.run(`ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`, (err) => {
-            if (err) reject(err);
-            else {
-              console.log(`[MIGRATIONS] Added ${col.name} column to lab_orders`);
-              resolve();
-            }
-          });
-        });
+        await dbRun(db, `ALTER TABLE lab_orders ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`[MIGRATIONS] Added ${col.name} column to lab_orders`);
       }
     }
   } catch (err) {
@@ -958,10 +1020,103 @@ async function addLabCorpColumns(db) {
   }
 }
 
+/**
+ * Add durable-audit columns to audit_log.
+ *
+ * `receipt_id` is the caller-visible correlation id returned as the
+ * X-Audit-Receipt header, so a caller can quote it when asking whether an
+ * access was recorded. `outcome_recorded` distinguishes an audit intent
+ * written BEFORE a high-consequence operation from one whose outcome was
+ * recorded after: a row left at 0 means a response completed without its audit
+ * row being closed out, which is queryable via findOrphanedAuditIntents.
+ *
+ * Existing rows default to outcome_recorded = 1 -- they were written after the
+ * fact under the old fire-and-forget path, so their outcome is by definition
+ * already in the row. Backfilling them as 0 would invent a fleet of orphans.
+ */
+async function addDurableAuditColumns(db) {
+  const columns = [
+    { name: 'receipt_id', type: 'TEXT' },
+    { name: 'outcome_recorded', type: 'INTEGER DEFAULT 1' },
+  ];
+  try {
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(audit_log)');
+    if (!cols.length) return; // table not created yet
+    for (const col of columns) {
+      if (!cols.some(c => c.name === col.name)) {
+        await dbRun(db, `ALTER TABLE audit_log ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`[MIGRATIONS] Added ${col.name} column to audit_log`);
+      }
+    }
+    // Partial-index equivalent: orphan lookups filter on outcome_recorded.
+    await dbRun(db, 'CREATE INDEX IF NOT EXISTS idx_audit_log_outcome ON audit_log(outcome_recorded)');
+    await dbRun(db, 'CREATE INDEX IF NOT EXISTS idx_audit_log_receipt ON audit_log(receipt_id)');
+  } catch (err) {
+    console.warn(`[MIGRATIONS] audit_log durable-audit column migration: ${err.message}`);
+  }
+}
+
+// ==========================================
+// DECISION QUEUE TABLE (Provider Decision Queue + AI Triage)
+// ==========================================
+
+/**
+ * Create decision_queue table backing the provider Decision Queue feature.
+ *
+ * Each row is one encounter awaiting a provider disposition decision. The
+ * upstream AI triage (top tier) sorts the patient to a level of care (ESI 1-5
+ * per AHRQ Emergency Severity Index); the mid-tier model produces a one-
+ * paragraph summary; the top-tier model produces a decision tree of one-click
+ * options. The provider's chosen action is then routed to the medical-
+ * assistant (MA) queue to close out (ma_status awaiting -> closed).
+ *
+ * Model-tier provenance is persisted (summary_model / decision_model) so the
+ * demo visibly shows which tier produced what.
+ *
+ * One row per encounter (encounter_id UNIQUE). Idempotent via
+ * CREATE TABLE IF NOT EXISTS.
+ */
+async function createDecisionQueueTable(db) {
+  await dbRun(db, `
+    CREATE TABLE IF NOT EXISTS decision_queue (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      encounter_id INTEGER NOT NULL UNIQUE,
+      patient_id INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','decided','closed')) DEFAULT 'pending',
+      esi_level INTEGER CHECK(esi_level BETWEEN 1 AND 5),
+      level_of_care TEXT,
+      triage_rationale TEXT,
+      triage_model TEXT,
+      ai_summary TEXT,
+      summary_model TEXT,
+      decision_options TEXT,
+      decision_model TEXT,
+      decision_key TEXT,
+      decision_label TEXT,
+      decision_text TEXT,
+      decided_by TEXT,
+      decided_at DATETIME,
+      ma_status TEXT CHECK(ma_status IN ('awaiting','closed')),
+      closed_by TEXT,
+      closed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )
+  `);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_status ON decision_queue(status)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_encounter ON decision_queue(encounter_id)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_ma_status ON decision_queue(ma_status)`);
+  await dbRun(db, `CREATE INDEX IF NOT EXISTS idx_decision_queue_esi ON decision_queue(esi_level)`);
+  console.log('[MIGRATIONS] decision_queue table ready');
+}
+
 // ==========================================
 
 module.exports = {
   runMigrations,
+  addDurableAuditColumns,
+  createDecisionQueueTable,
   createUsersTable,
   createPatientConsentTable,
   createAgentAuditTrailTable,

@@ -17,7 +17,7 @@
  */
 
 const { BaseAgent, AUTONOMY_TIER } = require('../../agents/base-agent');
-const { dbRun, dbGet, dbAll } = require('../../database');
+const { dbRun, dbGet } = require('../../database');
 
 // ==========================================
 // MEDICAL TERM MAP (subset for vault translations)

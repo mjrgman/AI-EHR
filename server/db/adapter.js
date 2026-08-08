@@ -14,7 +14,6 @@
  *   const rows = await db.all('SELECT * FROM patients WHERE id = ?', [1]);
  */
 
-const path = require('path');
 const logger = require('../utils/logger').child({ _module: 'db' });
 
 // ==========================================
@@ -30,6 +29,7 @@ function getAdapter() {
       'Set DATABASE_PATH for SQLite or contribute the postgres adapter.'
     );
   }
+  // eslint-disable-next-line global-require -- adapter chosen at runtime from DATABASE_URL
   return require('./adapters/sqlite');
 }
 

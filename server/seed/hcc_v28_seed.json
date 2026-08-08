@@ -1,0 +1,279 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "effective_year": 2026,
+    "model": "CMS-HCC V28",
+    "phase_in_status": "100% V28 in CY 2026 (final year of 2024-2026 phase-in)",
+    "source_canonical": "https://www.cms.gov/medicare/payment/medicare-advantage-rates-statistics/risk-adjustment/2026-model-software-icd-10-mappings",
+    "source_aafp_overview": "https://www.aafp.org/pubs/fpm/issues/2023/1100/hcc-update.html",
+    "scope": "Curated subset of the highest-confidence primary-care HCCs. Full population (~10K rows) requires running scripts/build-hcc-v28-seed.js against the CMS-published mapping CSV. This curated seed is enough for Phase 1 unit tests + a working coding-agent on the most common chronic conditions.",
+    "verification_required": "Each row's hcc_v28_number should be re-verified against the CMS 2026 Model Software CSV before any production use. Comments below each row note the citation.",
+    "generated": "2026-05-03"
+  },
+  "rows": [
+    {
+      "icd10_code": "E11.65",
+      "icd10_prefix": "E11",
+      "hcc_v28_number": 36,
+      "hcc_v28_label": "Diabetes with Glycemic, Unspecified, or Long-term Complications",
+      "is_payment_hcc": 1,
+      "notes": "Diabetes with hyperglycemia. V28 retained diabetes payment HCC (was V24 HCC 19). AAFP confirms diabetes as payment HCC in V28."
+    },
+    {
+      "icd10_code": "E11.9",
+      "icd10_prefix": "E11",
+      "hcc_v28_number": 36,
+      "hcc_v28_label": "Diabetes with Glycemic, Unspecified, or Long-term Complications",
+      "is_payment_hcc": 1,
+      "notes": "Type 2 diabetes without complications. V28 keeps as payment HCC."
+    },
+    {
+      "icd10_code": "E11.21",
+      "icd10_prefix": "E11",
+      "hcc_v28_number": 37,
+      "hcc_v28_label": "Diabetes with Kidney Complications",
+      "is_payment_hcc": 1,
+      "notes": "Type 2 DM with diabetic nephropathy. Higher-coefficient HCC than uncomplicated diabetes."
+    },
+    {
+      "icd10_code": "E11.22",
+      "icd10_prefix": "E11",
+      "hcc_v28_number": 37,
+      "hcc_v28_label": "Diabetes with Kidney Complications",
+      "is_payment_hcc": 1,
+      "notes": "Type 2 DM with CKD."
+    },
+    {
+      "icd10_code": "E11.31",
+      "icd10_prefix": "E11",
+      "hcc_v28_number": 38,
+      "hcc_v28_label": "Diabetes with Ophthalmic Complications",
+      "is_payment_hcc": 1,
+      "notes": "Type 2 DM with unspecified diabetic retinopathy."
+    },
+    {
+      "icd10_code": "E11.40",
+      "icd10_prefix": "E11",
+      "hcc_v28_number": 39,
+      "hcc_v28_label": "Diabetes with Neurologic Complications",
+      "is_payment_hcc": 1,
+      "notes": "Type 2 DM with diabetic neuropathy, unspecified."
+    },
+    {
+      "icd10_code": "E10.9",
+      "icd10_prefix": "E10",
+      "hcc_v28_number": 36,
+      "hcc_v28_label": "Diabetes with Glycemic, Unspecified, or Long-term Complications",
+      "is_payment_hcc": 1,
+      "notes": "Type 1 DM without complications."
+    },
+    {
+      "icd10_code": "I50.21",
+      "icd10_prefix": "I50",
+      "hcc_v28_number": 224,
+      "hcc_v28_label": "Heart Failure",
+      "is_payment_hcc": 1,
+      "notes": "Acute systolic heart failure. V28 simplified V24's split heart failure HCCs into single HCC 224."
+    },
+    {
+      "icd10_code": "I50.22",
+      "icd10_prefix": "I50",
+      "hcc_v28_number": 224,
+      "hcc_v28_label": "Heart Failure",
+      "is_payment_hcc": 1,
+      "notes": "Chronic systolic heart failure."
+    },
+    {
+      "icd10_code": "I50.32",
+      "icd10_prefix": "I50",
+      "hcc_v28_number": 224,
+      "hcc_v28_label": "Heart Failure",
+      "is_payment_hcc": 1,
+      "notes": "Chronic diastolic heart failure."
+    },
+    {
+      "icd10_code": "I50.9",
+      "icd10_prefix": "I50",
+      "hcc_v28_number": 224,
+      "hcc_v28_label": "Heart Failure",
+      "is_payment_hcc": 1,
+      "notes": "Heart failure, unspecified. Coding to specificity (I50.21/22/32) is preferred for documentation quality."
+    },
+    {
+      "icd10_code": "J44.0",
+      "icd10_prefix": "J44",
+      "hcc_v28_number": 280,
+      "hcc_v28_label": "Chronic Obstructive Pulmonary Disease",
+      "is_payment_hcc": 1,
+      "notes": "COPD with acute lower respiratory infection. V28 simplified V24's COPD HCCs."
+    },
+    {
+      "icd10_code": "J44.1",
+      "icd10_prefix": "J44",
+      "hcc_v28_number": 280,
+      "hcc_v28_label": "Chronic Obstructive Pulmonary Disease",
+      "is_payment_hcc": 1,
+      "notes": "COPD with acute exacerbation."
+    },
+    {
+      "icd10_code": "J44.9",
+      "icd10_prefix": "J44",
+      "hcc_v28_number": 280,
+      "hcc_v28_label": "Chronic Obstructive Pulmonary Disease",
+      "is_payment_hcc": 1,
+      "notes": "COPD, unspecified. Specificity to J44.0/J44.1 preferred when applicable."
+    },
+    {
+      "icd10_code": "N18.3",
+      "icd10_prefix": "N18",
+      "hcc_v28_number": null,
+      "hcc_v28_label": "CKD Stage 3 — REMOVED FROM PAYMENT HCCs IN V28",
+      "is_payment_hcc": 0,
+      "notes": "MAJOR 2024-2026 CHANGE: CKD Stage 3 is no longer a payment HCC under V28. Per AAFP, this represents significant revenue impact for MA panels with CKD-3 patients. Code still must be documented for clinical care."
+    },
+    {
+      "icd10_code": "N18.4",
+      "icd10_prefix": "N18",
+      "hcc_v28_number": 326,
+      "hcc_v28_label": "Chronic Kidney Disease, Stage 4",
+      "is_payment_hcc": 1,
+      "notes": "CKD Stage 4 — payment HCC retained in V28."
+    },
+    {
+      "icd10_code": "N18.5",
+      "icd10_prefix": "N18",
+      "hcc_v28_number": 327,
+      "hcc_v28_label": "Chronic Kidney Disease, Stage 5",
+      "is_payment_hcc": 1,
+      "notes": "CKD Stage 5 — payment HCC."
+    },
+    {
+      "icd10_code": "N18.6",
+      "icd10_prefix": "N18",
+      "hcc_v28_number": 329,
+      "hcc_v28_label": "End Stage Renal Disease",
+      "is_payment_hcc": 1,
+      "notes": "ESRD — highest-coefficient kidney HCC in V28."
+    },
+    {
+      "icd10_code": "F32.9",
+      "icd10_prefix": "F32",
+      "hcc_v28_number": 151,
+      "hcc_v28_label": "Major Depressive Disorder, Single Episode",
+      "is_payment_hcc": 1,
+      "notes": "MDD single episode. V28 separated single-episode and recurrent depression into different HCCs (V24 had one combined HCC 155)."
+    },
+    {
+      "icd10_code": "F33.1",
+      "icd10_prefix": "F33",
+      "hcc_v28_number": 152,
+      "hcc_v28_label": "Major Depressive Disorder, Recurrent, Moderate",
+      "is_payment_hcc": 1,
+      "notes": "Recurrent MDD now a separate HCC in V28."
+    },
+    {
+      "icd10_code": "F33.2",
+      "icd10_prefix": "F33",
+      "hcc_v28_number": 152,
+      "hcc_v28_label": "Major Depressive Disorder, Recurrent, Severe Without Psychosis",
+      "is_payment_hcc": 1,
+      "notes": "Severe recurrent depression."
+    },
+    {
+      "icd10_code": "I48.0",
+      "icd10_prefix": "I48",
+      "hcc_v28_number": 248,
+      "hcc_v28_label": "Atrial Fibrillation and Flutter",
+      "is_payment_hcc": 1,
+      "notes": "Paroxysmal atrial fibrillation."
+    },
+    {
+      "icd10_code": "I48.91",
+      "icd10_prefix": "I48",
+      "hcc_v28_number": 248,
+      "hcc_v28_label": "Atrial Fibrillation and Flutter",
+      "is_payment_hcc": 1,
+      "notes": "Unspecified atrial fibrillation."
+    },
+    {
+      "icd10_code": "E66.01",
+      "icd10_prefix": "E66",
+      "hcc_v28_number": 48,
+      "hcc_v28_label": "Morbid (Severe) Obesity",
+      "is_payment_hcc": 1,
+      "notes": "Morbid obesity due to excess calories. Requires BMI ≥40 documented for HCC capture."
+    },
+    {
+      "icd10_code": "I69.30",
+      "icd10_prefix": "I69",
+      "hcc_v28_number": 214,
+      "hcc_v28_label": "Sequelae of Stroke",
+      "is_payment_hcc": 1,
+      "notes": "Unspecified sequelae of cerebral infarction. V28 keeps stroke sequelae as payment HCC."
+    },
+    {
+      "icd10_code": "I70.211",
+      "icd10_prefix": "I70",
+      "hcc_v28_number": 264,
+      "hcc_v28_label": "Vascular Disease with Complications",
+      "is_payment_hcc": 1,
+      "notes": "Atherosclerosis of native arteries of extremities with intermittent claudication, right leg."
+    },
+    {
+      "icd10_code": "I25.10",
+      "icd10_prefix": "I25",
+      "hcc_v28_number": 263,
+      "hcc_v28_label": "Atherosclerosis of Coronary Artery without Angina Pectoris",
+      "is_payment_hcc": 1,
+      "notes": "Atherosclerotic heart disease of native coronary artery without angina pectoris."
+    },
+    {
+      "icd10_code": "C50.911",
+      "icd10_prefix": "C50",
+      "hcc_v28_number": 17,
+      "hcc_v28_label": "Cancer, Breast",
+      "is_payment_hcc": 1,
+      "notes": "Malignant neoplasm of unspecified site of right female breast. Active cancer HCC; recapture annually."
+    },
+    {
+      "icd10_code": "C61",
+      "icd10_prefix": "C61",
+      "hcc_v28_number": 21,
+      "hcc_v28_label": "Cancer, Prostate",
+      "is_payment_hcc": 1,
+      "notes": "Malignant neoplasm of prostate. Active cancer HCC."
+    },
+    {
+      "icd10_code": "C18.9",
+      "icd10_prefix": "C18",
+      "hcc_v28_number": 19,
+      "hcc_v28_label": "Cancer, Colon",
+      "is_payment_hcc": 1,
+      "notes": "Malignant neoplasm of colon, unspecified."
+    },
+    {
+      "icd10_code": "I10",
+      "icd10_prefix": "I10",
+      "hcc_v28_number": null,
+      "hcc_v28_label": "Essential Hypertension — NOT A PAYMENT HCC",
+      "is_payment_hcc": 0,
+      "notes": "Essential hypertension is not a payment HCC under V28 (was not under V24 either). Document for clinical care; do not expect risk-adjustment credit."
+    },
+    {
+      "icd10_code": "J45.909",
+      "icd10_prefix": "J45",
+      "hcc_v28_number": null,
+      "hcc_v28_label": "Asthma — NOT A PAYMENT HCC",
+      "is_payment_hcc": 0,
+      "notes": "Mild persistent asthma is not a payment HCC under V28. Severe persistent asthma with status asthmaticus may map; verify against CMS CSV."
+    },
+    {
+      "icd10_code": "E78.5",
+      "icd10_prefix": "E78",
+      "hcc_v28_number": null,
+      "hcc_v28_label": "Hyperlipidemia — NOT A PAYMENT HCC",
+      "is_payment_hcc": 0,
+      "notes": "Hyperlipidemia, unspecified is not a payment HCC under V28."
+    }
+  ]
+}

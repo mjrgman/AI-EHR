@@ -322,26 +322,82 @@ async function getDosing(drugName) {
 /**
  * Parse a dose string into a numeric value and unit.
  * Handles patterns like "500 mg", "10mg", "0.5 g", "100 mcg".
+ * Also captures a per-modifier ("/kg", "/day", "/dose", "/m2") when present so
+ * downstream comparisons can refuse to compare e.g. "mg/kg" against a flat "mg".
  *
  * @param {string} doseStr - Dose string to parse
- * @returns {{value: number, unit: string}|null}
+ * @returns {{value: number, unit: string, per: string|null, raw: string}|null}
  */
 function parseDose(doseStr) {
   if (!doseStr || typeof doseStr !== 'string') return null;
-  const match = doseStr.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|mL|units?)/i);
+  const match = doseStr.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g|mL|units?)(?:\s*\/\s*(kg|day|dose|m2))?/i);
   if (!match) return null;
-  return { value: parseFloat(match[1]), unit: match[2].toLowerCase() };
+  return {
+    value: parseFloat(match[1]),
+    unit: match[2].toLowerCase(),
+    per: match[3] ? match[3].toLowerCase() : null,
+    raw: match[0].trim()
+  };
 }
 
 /**
- * Convert a dose to milligrams for comparison.
+ * Map a base unit to its physical dimension. Doses are only comparable when
+ * they share a dimension — mass (mg/mcg/g) is interconvertible, but mass cannot
+ * be compared to volume (mL) or to dimensionless activity ("units").
+ */
+const UNIT_DIMENSION = {
+  mg: 'mass',
+  mcg: 'mass',
+  g: 'mass',
+  ml: 'volume',
+  unit: 'activity',
+  units: 'activity'
+};
+
+function unitDimension(unit) {
+  if (!unit) return null;
+  return UNIT_DIMENSION[unit.toLowerCase()] || null;
+}
+
+/**
+ * Determine whether two parsed doses can be meaningfully compared.
+ * Compatible = same physical dimension AND the same per-modifier (a flat dose
+ * and a weight-based "mg/kg" dose are NOT comparable without the patient weight).
+ *
+ * @returns {{compatible: boolean, reason: string|null}}
+ */
+function unitsAreComparable(a, b) {
+  if (!a || !b) return { compatible: false, reason: 'missing dose' };
+  const dimA = unitDimension(a.unit);
+  const dimB = unitDimension(b.unit);
+  if (!dimA || !dimB) {
+    return { compatible: false, reason: `unrecognized unit (${a.unit} vs ${b.unit})` };
+  }
+  if (dimA !== dimB) {
+    return { compatible: false, reason: `incompatible units (${a.unit} vs ${b.unit})` };
+  }
+  // A weight/time/dose-normalized value cannot be compared to a flat value, nor
+  // to a value normalized on a different basis.
+  if ((a.per || null) !== (b.per || null)) {
+    return {
+      compatible: false,
+      reason: `incompatible dose basis (${a.per ? a.unit + '/' + a.per : a.unit} vs ${b.per ? b.unit + '/' + b.per : b.unit})`
+    };
+  }
+  return { compatible: true, reason: null };
+}
+
+/**
+ * Convert a mass dose to milligrams for comparison. ONLY valid for the mass
+ * dimension; callers must gate on unitsAreComparable() first. Returns null for
+ * non-mass units so an un-gated caller fails closed rather than comparing junk.
  */
 function toMg(value, unit) {
-  switch (unit) {
+  switch ((unit || '').toLowerCase()) {
     case 'g': return value * 1000;
     case 'mcg': return value / 1000;
     case 'mg': return value;
-    default: return value; // units, mL — can't convert, return as-is
+    default: return null; // volume / activity — not convertible to mass
   }
 }
 
@@ -371,42 +427,68 @@ async function validateDose(drugName, prescribedDose) {
   }
 
   const warnings = [];
+  const incomparable = [];
 
-  // Check against max dose
+  // Check against max dose — only when the units are dimensionally compatible.
   if (dosing.max_dose) {
     const maxParsed = parseDose(dosing.max_dose);
     if (maxParsed) {
-      const prescribedMg = toMg(prescribed.value, prescribed.unit);
-      const maxMg = toMg(maxParsed.value, maxParsed.unit);
-
-      if (prescribedMg > maxMg) {
-        warnings.push(
-          `Prescribed dose ${prescribedDose} exceeds maximum dose ${dosing.max_dose} for ${drugName}`
+      const cmp = unitsAreComparable(prescribed, maxParsed);
+      if (!cmp.compatible) {
+        // Fail CLOSED on a mismatch: never return a false "within max" pass when
+        // we cannot actually compare (e.g. prescribed mL vs max mg, or mg/kg vs mg).
+        incomparable.push(
+          `cannot compare prescribed ${prescribedDose} to maximum ${dosing.max_dose} — ${cmp.reason}`
         );
+      } else {
+        const prescribedMg = toMg(prescribed.value, prescribed.unit);
+        const maxMg = toMg(maxParsed.value, maxParsed.unit);
+        if (prescribedMg !== null && maxMg !== null && prescribedMg > maxMg) {
+          warnings.push(
+            `Prescribed dose ${prescribedDose} exceeds maximum dose ${dosing.max_dose} for ${drugName}`
+          );
+        }
       }
     }
   }
 
-  // Check if significantly higher than typical dose (> 2x)
+  // Check if significantly higher than typical dose (> 2x) — same compatibility gate.
   if (dosing.typical_dose) {
     const typicalParsed = parseDose(dosing.typical_dose);
     if (typicalParsed) {
-      const prescribedMg = toMg(prescribed.value, prescribed.unit);
-      const typicalMg = toMg(typicalParsed.value, typicalParsed.unit);
-
-      if (typicalMg > 0 && prescribedMg > typicalMg * 2) {
-        warnings.push(
-          `Prescribed dose ${prescribedDose} is more than 2x the typical dose ${dosing.typical_dose} for ${drugName}`
+      const cmp = unitsAreComparable(prescribed, typicalParsed);
+      if (!cmp.compatible) {
+        incomparable.push(
+          `cannot compare prescribed ${prescribedDose} to typical ${dosing.typical_dose} — ${cmp.reason}`
         );
+      } else {
+        const prescribedMg = toMg(prescribed.value, prescribed.unit);
+        const typicalMg = toMg(typicalParsed.value, typicalParsed.unit);
+        if (prescribedMg !== null && typicalMg !== null && typicalMg > 0 && prescribedMg > typicalMg * 2) {
+          warnings.push(
+            `Prescribed dose ${prescribedDose} is more than 2x the typical dose ${dosing.typical_dose} for ${drugName}`
+          );
+        }
       }
     }
   }
 
+  // An over-max / over-typical breach is a hard fail.
   if (warnings.length > 0) {
     return { isValid: false, warning: warnings.join('; ') };
   }
 
-  return { isValid: true, warning: null };
+  // If we could not compare on units, do NOT report a clean pass — surface a
+  // manual-verification notice (fail closed: comparison was indeterminate).
+  if (incomparable.length > 0) {
+    return {
+      isValid: false,
+      comparable: false,
+      warning: `Cannot validate dose automatically — verify manually: ${incomparable.join('; ')}`
+    };
+  }
+
+  return { isValid: true, comparable: true, warning: null };
 }
 
 // ──────────────────────────────────────────
@@ -417,5 +499,10 @@ module.exports = {
   getDosing,
   validateDose,
   getDosingFromFDA,
-  getDosingFromDailyMed
+  getDosingFromDailyMed,
+  // Exported for unit testing of the compatible-unit guard (pharma-dose-units-04)
+  parseDose,
+  toMg,
+  unitDimension,
+  unitsAreComparable
 };

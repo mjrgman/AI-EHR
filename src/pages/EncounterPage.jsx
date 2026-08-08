@@ -1,5 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft, Mic, Square, FileText, Save, Sparkles, ClipboardCheck,
+  Pill, FlaskConical, Camera, Send, Download, RefreshCw, CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react';
 import api, { safeLog } from '../api/client';
 import { exportPatient as exportMediVaultPatient } from '../api/medivault';
 import { usePatient } from '../hooks/usePatient';
@@ -10,13 +15,13 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { useHRTKeywords } from '../hooks/useHRTKeywords';
 import { useToast } from '../components/common/Toast';
 import PatientBanner from '../components/patient/PatientBanner';
-import ProblemList from '../components/patient/ProblemList';
-import MedList from '../components/patient/MedList';
 import VitalsDisplay from '../components/patient/VitalsDisplay';
 import LabResults from '../components/patient/LabResults';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import CDSSuggestionList from '../components/encounter/CDSSuggestionList';
-import HRTPanel, { isHrtRelevant } from '../components/encounter/HRTPanel';
+import RxSafetyAlerts from '../components/encounter/RxSafetyAlerts';
+import HRTPanel, { isHRTRelevant } from '../components/encounter/HRTPanel';
+import AgentPanel from '../components/agents/AgentPanel';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
@@ -46,8 +51,8 @@ function EncounterTimer({ startTime }) {
   }, [startTime]);
 
   return (
-    <div className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-sm font-mono font-semibold">
-      <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+    <div className="flex items-center gap-1.5 bg-navy-50 text-navy-700 px-3 py-1 rounded-full text-sm font-mono font-semibold border border-navy-100">
+      <span className="w-2 h-2 bg-navy-500 rounded-full animate-pulse" />
       {elapsed}
     </div>
   );
@@ -110,8 +115,8 @@ function RxModalForm({ onSubmit, onClose }) {
           onChange={e => set('instructions', e.target.value)} placeholder="Take with food..." />
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
-        <TouchButton variant="success" size="sm"
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="primary" size="sm"
           disabled={!form.medication_name || !form.dose}
           onClick={() => onSubmit(form)}>
           Add Prescription
@@ -152,8 +157,8 @@ function LabModalForm({ onSubmit, onClose }) {
       <label className="flex items-center gap-2 cursor-pointer">
         <input type="checkbox" checked={form.fasting_required}
           onChange={e => set('fasting_required', e.target.checked)}
-          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-        <span className="text-sm text-gray-700">Fasting required</span>
+          className="w-4 h-4 rounded border-slate-300 text-navy-600 focus:ring-navy-500" />
+        <span className="text-sm text-slate-700">Fasting required</span>
       </label>
       <div>
         <label className="label-clinical">Special Instructions</label>
@@ -161,7 +166,7 @@ function LabModalForm({ onSubmit, onClose }) {
           onChange={e => set('special_instructions', e.target.value)} />
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
         <TouchButton variant="primary" size="sm" disabled={!form.test_name}
           onClick={() => onSubmit(form)}>
           Add Lab Order
@@ -203,8 +208,8 @@ function ImagingModalForm({ onSubmit, onClose }) {
         <label className="flex items-center gap-2 cursor-pointer">
           <input type="checkbox" checked={form.contrast_required}
             onChange={e => set('contrast_required', e.target.checked)}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-          <span className="text-sm text-gray-700">Contrast required</span>
+            className="w-4 h-4 rounded border-slate-300 text-navy-600 focus:ring-navy-500" />
+          <span className="text-sm text-slate-700">Contrast required</span>
         </label>
         <div>
           <label className="label-clinical">Priority</label>
@@ -215,7 +220,7 @@ function ImagingModalForm({ onSubmit, onClose }) {
         </div>
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
         <TouchButton variant="primary" size="sm"
           disabled={!form.body_part || !form.indication}
           onClick={() => onSubmit(form)}>
@@ -257,8 +262,8 @@ function ReferralModalForm({ onSubmit, onClose }) {
           onChange={e => set('notes', e.target.value)} />
       </div>
       <div className="flex justify-end gap-2 pt-2">
-        <TouchButton variant="secondary" size="sm" onClick={onClose}>Cancel</TouchButton>
-        <TouchButton variant="warning" size="sm"
+        <TouchButton variant="ghost" size="sm" onClick={onClose}>Cancel</TouchButton>
+        <TouchButton variant="primary" size="sm"
           disabled={!form.specialty || !form.reason}
           onClick={() => onSubmit(form)}>
           Add Referral
@@ -279,10 +284,10 @@ export default function EncounterPage() {
 
   // --- Hooks ---
   const { encounter, orders, update: updateEncounter, refresh: refreshEncounter } = useEncounter(eid);
-  const { patient, refresh: refreshPatient } = usePatient(encounter?.patient_id);
+  const { patient } = usePatient(encounter?.patient_id);
   const { workflow, timeline, transition } = useWorkflow(eid);
   const {
-    suggestions, pending, accepted, evaluate, accept, reject, refresh: refreshCDS,
+    suggestions, pending, evaluate, accept, reject, refresh: refreshCDS, error: cdsError,
   } = useCDS(eid, encounter?.patient_id, { pollInterval: 5000, autoEvaluate: true });
   const speech = useSpeechRecognition();
 
@@ -295,7 +300,7 @@ export default function EncounterPage() {
   const [loading, setLoading] = useState(true);
 
   // Auto-save indicator
-  const [autoSaveStatus, setAutoSaveStatus] = useState(''); // '', 'saving', 'saved'
+  const [autoSaveStatus, setAutoSaveStatus] = useState(''); // '', 'saving', 'saved', 'failed'
   const autoSaveTimerRef = useRef(null);
 
   // Encounter timer start time
@@ -304,13 +309,22 @@ export default function EncounterPage() {
   // Modal state
   const [activeModal, setActiveModal] = useState(null); // 'rx' | 'lab' | 'imaging' | 'referral' | null
 
+  // Drug-safety screen results, surfaced at sign time. The server runs a
+  // warn-and-allow screen on every prescription and returns a `safety` object;
+  // these hold the latest result for each prescription path so the prescriber
+  // SEES interactions / boxed warnings / "screening unavailable" before the
+  // script is finalized (audit UR-001/A2: server computed it, UI ignored it).
+  const [rxSafety, setRxSafety] = useState(null);          // manual Rx modal path
+  const [speechRxSafety, setSpeechRxSafety] = useState([]); // from-speech path (one per Rx)
+  const [generatingRx, setGeneratingRx] = useState(false);
+
   // Mobile tab state — also doubles as the HRT-view toggle on desktop, since
   // 'hrt' is the only value that overrides the 3-panel desktop layout.
   const [mobileTab, setMobileTab] = useState('encounter'); // 'patient' | 'encounter' | 'cds' | 'hrt'
 
   // Count of HRT/peptide-relevant pending suggestions — drives the tab badge.
   const hrtPendingCount = useMemo(
-    () => (pending || []).filter(isHrtRelevant).length,
+    () => (pending || []).filter(isHRTRelevant).length,
     [pending]
   );
 
@@ -364,9 +378,36 @@ export default function EncounterPage() {
       });
       speech.resetTranscript();
     }
+    // `speech` is a fresh object literal every render (useSpeechRecognition),
+    // so we intentionally key this effect on the two primitive fields we read.
+    // `speech.resetTranscript` is a stable useCallback; adding the whole `speech`
+    // object would re-run this transcript-append on every render. Behavior is
+    // intentional and load-bearing — do not widen this dep list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speech.transcript, speech.isListening]);
 
   // --- Auto-save transcript with 2s debounce ---
+  // Extracted so the visible "save failed — retry" affordance (UR-010) can
+  // re-run the exact same persistence call on demand. A silent failure here
+  // means a prescriber believes the encounter is saved when it is not.
+  async function persistTranscript() {
+    try {
+      setAutoSaveStatus('saving');
+      await api.updateEncounter(eid, {
+        transcript,
+        patient_id: encounter.patient_id,
+      });
+      setAutoSaveStatus('saved');
+      setTimeout(() => setAutoSaveStatus(''), 2000);
+    } catch (e) {
+      // UR-010: do NOT silently blank the indicator. A failed save must remain
+      // visible as a persistent "save failed — retry" state so unsaved work is
+      // never mistaken for saved work.
+      safeLog.error('Auto-save failed:', e);
+      setAutoSaveStatus('failed');
+    }
+  }
+
   useEffect(() => {
     if (!encounter || !transcript) return;
     // Don't auto-save if unchanged from server
@@ -374,28 +415,18 @@ export default function EncounterPage() {
 
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
-    autoSaveTimerRef.current = setTimeout(async () => {
-      try {
-        setAutoSaveStatus('saving');
-        await api.updateEncounter(eid, {
-          transcript,
-          patient_id: encounter.patient_id,
-        });
-        setAutoSaveStatus('saved');
-        setTimeout(() => setAutoSaveStatus(''), 2000);
-      } catch (e) {
-        safeLog.error('Auto-save failed:', e);
-        setAutoSaveStatus('');
-      }
-    }, 2000);
+    autoSaveTimerRef.current = setTimeout(() => { persistTranscript(); }, 2000);
 
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
+    // persistTranscript closes over transcript/encounter/eid; keep the same
+    // primitive dep list the debounce has always used.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transcript, encounter, eid]);
 
   // --- Unsaved work protection ---
-  const hasUnsavedChanges = autoSaveStatus === 'saving' ||
+  const hasUnsavedChanges = autoSaveStatus === 'saving' || autoSaveStatus === 'failed' ||
     (encounter && transcript !== (encounter.transcript || '')) ||
     (encounter && soapNote !== (encounter.soap_note || ''));
 
@@ -495,12 +526,52 @@ export default function EncounterPage() {
   // --- Order creation handlers ---
   async function handleCreateRx(data) {
     try {
-      await api.createPrescription({ ...data, encounter_id: eid, patient_id: encounter.patient_id });
+      // Server returns { ...result, safety }. Capture `safety` and surface it at
+      // sign time — the drug-safety net is useless if the prescriber never sees
+      // the interaction / boxed-warning / screening-unavailable result.
+      const result = await api.createPrescription({ ...data, encounter_id: eid, patient_id: encounter.patient_id });
+      setRxSafety(result?.safety
+        ? { medication_name: data.medication_name, safety: result.safety }
+        : null);
       await refreshEncounter();
       setActiveModal(null);
       toast.success(`Prescription added: ${data.medication_name}`);
     } catch (e) {
       toast.error('Failed to create prescription: ' + e.message);
+    }
+  }
+
+  // Sign-time Rx-from-speech: parse the live transcript into prescriptions and
+  // surface each script's warn-and-allow drug-safety screen. The server returns
+  // { prescriptions: [{ ...rxData, id, safety }] }; we keep every `safety` so the
+  // interaction / boxed-warning / screening-unavailable alerts are visible.
+  async function handleGenerateRxFromSpeech() {
+    if (!transcript.trim()) {
+      toast.error('No transcript to parse for prescriptions');
+      return;
+    }
+    setGeneratingRx(true);
+    try {
+      const result = await api.generatePrescriptionsFromSpeech({
+        transcript,
+        patient_id: encounter.patient_id,
+        encounter_id: eid,
+      });
+      const created = Array.isArray(result?.prescriptions) ? result.prescriptions : [];
+      setSpeechRxSafety(
+        created.map(rx => ({ medication_name: rx.medication_name, safety: rx.safety }))
+      );
+      await refreshEncounter();
+      if (created.length === 0) {
+        toast.info('No new prescriptions detected in the transcript');
+      } else {
+        toast.success(`${created.length} prescription${created.length > 1 ? 's' : ''} added from speech`);
+      }
+    } catch (e) {
+      safeLog.error('Rx-from-speech failed:', e);
+      toast.error('Failed to generate prescriptions from speech: ' + e.message);
+    } finally {
+      setGeneratingRx(false);
     }
   }
 
@@ -562,7 +633,7 @@ export default function EncounterPage() {
   const referrals      = orders?.referrals       || [];
   const totalOrders    = prescriptions.length + labOrders.length + imagingOrders.length + referrals.length;
 
-  const canReviewSign = !!(soapNote || totalOrders > 0);
+  const canReviewSign = soapNote.trim().length > 0;
 
   if (loading || !encounter) return <LoadingSpinner message="Loading encounter..." />;
 
@@ -570,71 +641,78 @@ export default function EncounterPage() {
   // Left Panel: Patient Summary
   // ============================================================
   const leftPanel = (
-    <div className="p-3 space-y-3">
+    <div className="p-3 space-y-4 mc-reveal-stagger">
       {/* Problems */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Problems
         </h3>
         {patient?.problems && patient.problems.length > 0 ? (
           <div className="space-y-1">
             {patient.problems.map((p, i) => (
-              <div key={i} className="bg-white rounded-lg p-2 text-sm border border-gray-100">
-                <div className="font-medium text-gray-900">{p.name || p.problem_name}</div>
+              <div key={i} className="mc-row text-sm">
+                <div className="font-medium text-navy-700">{p.name || p.problem_name}</div>
                 {p.icd10_code && (
-                  <div className="text-xs text-gray-500 font-mono">{p.icd10_code}</div>
+                  <div className="text-xs text-slate-500 font-mono">{p.icd10_code}</div>
                 )}
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs text-gray-400 px-1">No active problems</p>
+          <p className="text-xs text-slate-400 px-1">No active problems</p>
         )}
       </div>
 
       {/* Medications */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Medications
         </h3>
-        {patient?.medications && patient.medications.length > 0 ? (
-          <div className="space-y-1">
-            {patient.medications.map((m, i) => (
-              <div key={i} className="bg-white rounded-lg p-2 text-sm border border-gray-100">
-                <div className="font-medium text-gray-900">{m.name || m.medication_name}</div>
-                <div className="text-xs text-gray-500">
-                  {m.dosage}
-                  {m.frequency ? ` \u2022 ${m.frequency}` : ''}
+        {(() => {
+          // Only active meds belong on the prescribing surface \u2014 a discontinued
+          // drug must not read as current to the provider (UR-009).
+          const activeMeds = (patient?.medications || []).filter(m => m.status === 'active');
+          return activeMeds.length > 0 ? (
+            <div className="space-y-1">
+              {activeMeds.map((m, i) => (
+                <div key={i} className="mc-row text-sm">
+                  <div className="font-medium text-navy-700">{m.name || m.medication_name}</div>
+                  <div className="text-xs text-slate-600">
+                    {m.dosage}
+                    {m.frequency ? ` \u2022 ${m.frequency}` : ''}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-gray-400 px-1">No medications</p>
-        )}
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 px-1">No active medications</p>
+          );
+        })()}
       </div>
 
       {/* Latest Vitals */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Latest Vitals
         </h3>
-        {patient?.vitals && patient.vitals.length > 0 ? (
+        {patient?.vitals && typeof patient.vitals === 'object' && !Array.isArray(patient.vitals) ? (
+          <VitalsDisplay vitals={patient.vitals} compact />
+        ) : Array.isArray(patient?.vitals) && patient.vitals.length > 0 ? (
           <VitalsDisplay vitals={patient.vitals[0]} compact />
         ) : (
-          <p className="text-xs text-gray-400 px-1">No vitals recorded</p>
+          <p className="text-xs text-slate-400 px-1">No vitals recorded</p>
         )}
       </div>
 
       {/* Recent Labs */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+        <h3 className="mc-section-label px-1">
           Recent Labs
         </h3>
         {patient?.labs && patient.labs.length > 0 ? (
           <LabResults labs={patient.labs} compact />
         ) : (
-          <p className="text-xs text-gray-400 px-1">No lab results</p>
+          <p className="text-xs text-slate-400 px-1">No lab results</p>
         )}
       </div>
     </div>
@@ -644,7 +722,7 @@ export default function EncounterPage() {
   // Center Panel: Transcript, Data, Note, Orders
   // ============================================================
   const centerPanel = (
-    <div className="max-w-2xl mx-auto p-4 space-y-4">
+    <div className="max-w-2xl mx-auto p-4 space-y-4 mc-reveal-stagger">
 
       {/* Encounter Timer + Start Exam */}
       <div className="flex items-center justify-between">
@@ -657,10 +735,28 @@ export default function EncounterPage() {
           {examStartTime && <EncounterTimer startTime={examStartTime} />}
         </div>
         {autoSaveStatus === 'saving' && (
-          <span className="text-xs text-gray-400">Saving...</span>
+          <span className="text-xs text-slate-400">Saving...</span>
         )}
         {autoSaveStatus === 'saved' && (
-          <span className="text-xs text-green-500">Saved</span>
+          <span className="flex items-center gap-1 text-xs font-medium text-success-600">
+            <CheckCircle2 size={13} /> Saved
+          </span>
+        )}
+        {autoSaveStatus === 'failed' && (
+          <span
+            className="flex items-center gap-1.5 text-xs font-semibold text-danger-700"
+            role="alert"
+            aria-live="assertive"
+          >
+            <AlertTriangle size={13} className="text-danger-600" /> Save failed
+            <button
+              type="button"
+              onClick={persistTranscript}
+              className="underline underline-offset-2 hover:text-danger-800"
+            >
+              Retry
+            </button>
+          </span>
         )}
       </div>
 
@@ -668,10 +764,10 @@ export default function EncounterPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between w-full">
-            <span>Encounter Transcript</span>
+            <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">Encounter Transcript</span>
             {speech.isListening && (
-              <span className="flex items-center gap-1 text-red-500 text-xs animate-pulse">
-                <span className="w-2 h-2 bg-red-500 rounded-full" />
+              <span className="flex items-center gap-1 text-danger-600 text-xs font-semibold animate-pulse">
+                <span className="w-2 h-2 bg-danger-500 rounded-full" />
                 Recording...
               </span>
             )}
@@ -685,9 +781,9 @@ export default function EncounterPage() {
             className="textarea-clinical w-full min-h-[120px] resize-y"
             rows={5}
           />
-          {/* Live interim text in blue */}
+          {/* Live interim text */}
           {speech.isListening && speech.interimTranscript && (
-            <div className="bg-blue-50 rounded-lg p-2 text-sm text-blue-600 italic">
+            <div className="bg-navy-50 rounded-lg p-2 text-sm text-navy-600 italic border border-navy-100">
               {speech.interimTranscript}
             </div>
           )}
@@ -696,6 +792,7 @@ export default function EncounterPage() {
               <TouchButton
                 variant={speech.isListening ? 'danger' : 'primary'}
                 size="sm"
+                icon={speech.isListening ? <Square size={16} /> : <Mic size={16} />}
                 onClick={speech.isListening ? speech.stopListening : speech.startListening}
               >
                 {speech.isListening ? 'Stop Recording' : 'Record'}
@@ -703,6 +800,7 @@ export default function EncounterPage() {
             )}
             <TouchButton
               variant="secondary" size="sm"
+              icon={<Sparkles size={16} />}
               onClick={handleExtract} loading={extracting}
               disabled={!transcript.trim()}
             >
@@ -710,6 +808,7 @@ export default function EncounterPage() {
             </TouchButton>
             <TouchButton
               variant="secondary" size="sm"
+              icon={<FileText size={16} />}
               onClick={handleGenerateNote} loading={generating}
               disabled={!transcript.trim()}
             >
@@ -717,6 +816,7 @@ export default function EncounterPage() {
             </TouchButton>
             <TouchButton
               variant="secondary" size="sm"
+              icon={<Save size={16} />}
               onClick={handleSaveTranscript}
               disabled={!transcript.trim()}
             >
@@ -731,56 +831,56 @@ export default function EncounterPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <span>Extracted Clinical Data</span>
+              <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">Extracted Clinical Data</span>
               <Badge variant="success">AI Parsed</Badge>
             </div>
           </CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Blue = Vitals */}
+              {/* Vitals */}
               {extractedData.vitals && Object.keys(extractedData.vitals).length > 0 && (
-                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                  <h4 className="text-xs font-semibold text-blue-700 uppercase mb-2">Vitals</h4>
+                <div className="bg-navy-50 rounded-lg p-3 border border-navy-100">
+                  <h4 className="text-xs font-semibold text-navy-700 uppercase tracking-wide mb-2">Vitals</h4>
                   {Object.entries(extractedData.vitals).map(([k, v]) => (
                     <div key={k} className="flex justify-between text-sm">
-                      <span className="text-gray-600">{k.replace(/_/g, ' ')}</span>
-                      <span className="font-medium">{v}</span>
+                      <span className="text-slate-600">{k.replace(/_/g, ' ')}</span>
+                      <span className="font-medium text-navy-700">{v}</span>
                     </div>
                   ))}
                 </div>
               )}
-              {/* Green = Medications */}
+              {/* Medications */}
               {extractedData.medications && extractedData.medications.length > 0 && (
-                <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                  <h4 className="text-xs font-semibold text-green-700 uppercase mb-2">Medications</h4>
+                <div className="bg-success-50 rounded-lg p-3 border border-success-100">
+                  <h4 className="text-xs font-semibold text-success-700 uppercase tracking-wide mb-2">Medications</h4>
                   {extractedData.medications.map((m, i) => (
-                    <div key={i} className="text-sm mb-1">
+                    <div key={i} className="text-sm mb-1 text-navy-700">
                       <span className="font-medium">{m.name || m.medication}</span>
-                      {m.dosage && <span className="text-gray-500 ml-1">{m.dosage}</span>}
+                      {m.dosage && <span className="text-slate-500 ml-1">{m.dosage}</span>}
                     </div>
                   ))}
                 </div>
               )}
-              {/* Amber = Diagnoses */}
+              {/* Diagnoses */}
               {extractedData.problems && extractedData.problems.length > 0 && (
-                <div className="bg-amber-50 rounded-lg p-3 border border-amber-200">
-                  <h4 className="text-xs font-semibold text-amber-700 uppercase mb-2">Diagnoses</h4>
+                <div className="bg-gold-50 rounded-lg p-3 border border-gold-200">
+                  <h4 className="text-xs font-semibold text-gold-700 uppercase tracking-wide mb-2">Diagnoses</h4>
                   {extractedData.problems.map((p, i) => (
-                    <div key={i} className="text-sm mb-1">
+                    <div key={i} className="text-sm mb-1 text-navy-700">
                       <span className="font-medium">{p.name || p.problem}</span>
-                      {p.icd10 && <span className="text-gray-500 ml-1">({p.icd10})</span>}
+                      {p.icd10 && <span className="text-slate-500 ml-1">({p.icd10})</span>}
                     </div>
                   ))}
                 </div>
               )}
-              {/* Purple = Labs */}
+              {/* Labs */}
               {extractedData.labs && extractedData.labs.length > 0 && (
-                <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
-                  <h4 className="text-xs font-semibold text-purple-700 uppercase mb-2">Lab Orders</h4>
+                <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
+                  <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Lab Orders</h4>
                   {extractedData.labs.map((l, i) => (
-                    <div key={i} className="text-sm mb-1">
+                    <div key={i} className="text-sm mb-1 text-navy-700">
                       <span className="font-medium">{l.test_name || l.name}</span>
-                      {l.cpt_code && <span className="text-gray-500 ml-1">({l.cpt_code})</span>}
+                      {l.cpt_code && <span className="text-slate-500 ml-1">({l.cpt_code})</span>}
                     </div>
                   ))}
                 </div>
@@ -796,11 +896,27 @@ export default function EncounterPage() {
           <CardHeader>
             <div className="flex items-center gap-2 w-full justify-between">
               <div className="flex items-center gap-2">
-                <span>SOAP Note</span>
+                <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">SOAP Note</span>
                 <Badge variant="info">Editable</Badge>
               </div>
               {autoSaveStatus === 'saving' && (
-                <span className="text-xs text-gray-400">Auto-saving...</span>
+                <span className="text-xs text-slate-400">Auto-saving...</span>
+              )}
+              {autoSaveStatus === 'failed' && (
+                <span
+                  className="flex items-center gap-1.5 text-xs font-semibold text-danger-700"
+                  role="alert"
+                  aria-live="assertive"
+                >
+                  <AlertTriangle size={13} className="text-danger-600" /> Save failed
+                  <button
+                    type="button"
+                    onClick={persistTranscript}
+                    className="underline underline-offset-2 hover:text-danger-800"
+                  >
+                    Retry
+                  </button>
+                </span>
               )}
             </div>
           </CardHeader>
@@ -820,56 +936,83 @@ export default function EncounterPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <span>Orders</span>
+            <span className="font-display text-sm font-semibold tracking-tight text-navy-700 normal-case">Orders</span>
             {totalOrders > 0 && <Badge variant="success">{totalOrders}</Badge>}
           </div>
         </CardHeader>
         <CardBody className="space-y-4">
-          {/* 4 order type buttons */}
+          {/* Order-entry actions. Disciplined semantics: the two highest-frequency
+              orders (Rx, Lab) are NAVY primary; Imaging + Referral are matching
+              ivory/slate OUTLINE secondaries — one consistent treatment, no rainbow. */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <TouchButton variant="success" size="sm" onClick={() => setActiveModal('rx')}>
-              + Add Rx
+            <TouchButton variant="primary" size="sm" icon={<Pill size={16} />} onClick={() => setActiveModal('rx')}>
+              Add Rx
             </TouchButton>
-            <TouchButton variant="primary" size="sm" onClick={() => setActiveModal('lab')}>
-              + Add Lab
+            <TouchButton variant="primary" size="sm" icon={<FlaskConical size={16} />} onClick={() => setActiveModal('lab')}>
+              Add Lab
             </TouchButton>
-            <TouchButton variant="secondary" size="sm" onClick={() => setActiveModal('imaging')}>
-              + Add Imaging
+            <TouchButton variant="secondary" size="sm" icon={<Camera size={16} />} onClick={() => setActiveModal('imaging')}>
+              Add Imaging
             </TouchButton>
-            <TouchButton variant="warning" size="sm" onClick={() => setActiveModal('referral')}>
-              + Add Referral
+            <TouchButton variant="secondary" size="sm" icon={<Send size={16} />} onClick={() => setActiveModal('referral')}>
+              Add Referral
             </TouchButton>
           </div>
 
+          {/* Sign-time Rx-from-speech: parse the dictated transcript into scripts.
+              Each created prescription's drug-safety screen renders below. */}
+          <TouchButton
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            icon={<Mic size={16} />}
+            onClick={handleGenerateRxFromSpeech}
+            disabled={generatingRx || !transcript.trim()}
+          >
+            {generatingRx ? 'Parsing prescriptions…' : 'Add Rx from Speech'}
+          </TouchButton>
+
+          {/* Drug-safety screen — surfaced at SIGN TIME for BOTH prescription
+              paths. Critical findings (interactions, boxed warnings,
+              contraindications) get danger treatment and must stay visible;
+              "interaction screening unavailable — verify manually" is a
+              warn-and-allow warning, never a hard block (UR-001/A2). */}
+          {rxSafety && (
+            <RxSafetyAlerts safety={rxSafety.safety} medicationName={rxSafety.medication_name} />
+          )}
+          {speechRxSafety.map((rx, i) => (
+            <RxSafetyAlerts key={`speech-rx-${i}`} safety={rx.safety} medicationName={rx.medication_name} />
+          ))}
+
           {/* Display created orders */}
           {totalOrders > 0 && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
+            <div className="space-y-2 pt-2 border-t border-slate-100">
               {prescriptions.map((rx, i) => (
-                <div key={'rx' + i} className="flex items-center gap-2 bg-green-50 rounded-lg p-2 text-sm">
-                  <span className="text-green-600 font-bold text-xs">Rx</span>
-                  <span className="font-medium">{rx.medication_name}</span>
-                  <span className="text-gray-500">{rx.dosage || rx.dose} {rx.frequency}</span>
-                  {rx.route && <span className="text-gray-400">({rx.route})</span>}
+                <div key={'rx' + i} className="flex items-center gap-2 bg-success-50 rounded-lg p-2 text-sm border border-success-100 transition-all duration-150 hover:shadow-mc hover:border-success-200">
+                  <span className="text-success-700 font-bold text-xs">Rx</span>
+                  <span className="font-medium text-navy-700">{rx.medication_name}</span>
+                  <span className="text-slate-500">{rx.dosage || rx.dose} {rx.frequency}</span>
+                  {rx.route && <span className="text-slate-400">({rx.route})</span>}
                   <Badge variant="success">Rx</Badge>
                 </div>
               ))}
               {labOrders.map((lab, i) => (
-                <div key={'lab' + i} className="flex items-center gap-2 bg-purple-50 rounded-lg p-2 text-sm">
-                  <span className="text-purple-600 font-bold text-xs">LAB</span>
-                  <span className="font-medium">{lab.test_name}</span>
-                  {lab.cpt_code && <span className="text-gray-500">({lab.cpt_code})</span>}
+                <div key={'lab' + i} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2 text-sm border border-slate-100 transition-all duration-150 hover:shadow-mc hover:border-slate-200">
+                  <span className="text-slate-600 font-bold text-xs">LAB</span>
+                  <span className="font-medium text-navy-700">{lab.test_name}</span>
+                  {lab.cpt_code && <span className="text-slate-500">({lab.cpt_code})</span>}
                   {lab.priority && lab.priority !== 'routine' && (
                     <Badge variant={lab.priority === 'stat' ? 'urgent' : 'warning'}>
                       {lab.priority}
                     </Badge>
                   )}
-                  <Badge variant="purple">Lab</Badge>
+                  <Badge variant="routine">Lab</Badge>
                 </div>
               ))}
               {imagingOrders.map((img, i) => (
-                <div key={'img' + i} className="flex items-center gap-2 bg-blue-50 rounded-lg p-2 text-sm">
-                  <span className="text-blue-600 font-bold text-xs">IMG</span>
-                  <span className="font-medium">
+                <div key={'img' + i} className="flex items-center gap-2 bg-navy-50 rounded-lg p-2 text-sm border border-navy-100 transition-all duration-150 hover:shadow-mc hover:border-navy-200">
+                  <span className="text-navy-600 font-bold text-xs">IMG</span>
+                  <span className="font-medium text-navy-700">
                     {img.study_type || img.modality} - {img.body_part}
                   </span>
                   {img.priority && img.priority !== 'routine' && (
@@ -881,10 +1024,10 @@ export default function EncounterPage() {
                 </div>
               ))}
               {referrals.map((ref, i) => (
-                <div key={'ref' + i} className="flex items-center gap-2 bg-amber-50 rounded-lg p-2 text-sm">
-                  <span className="text-amber-600 font-bold text-xs">REF</span>
-                  <span className="font-medium">{ref.specialty}</span>
-                  <span className="text-gray-500">{ref.reason}</span>
+                <div key={'ref' + i} className="flex items-center gap-2 bg-gold-50 rounded-lg p-2 text-sm border border-gold-200 transition-all duration-150 hover:shadow-mc hover:border-gold-300">
+                  <span className="text-gold-700 font-bold text-xs">REF</span>
+                  <span className="font-medium text-navy-700">{ref.specialty}</span>
+                  <span className="text-slate-500">{ref.reason}</span>
                   {ref.urgency && ref.urgency !== 'routine' && (
                     <Badge variant={ref.urgency === 'emergent' ? 'urgent' : 'warning'}>
                       {ref.urgency}
@@ -898,11 +1041,26 @@ export default function EncounterPage() {
         </CardBody>
       </Card>
 
-      {/* Review & Sign + MediVault Export Buttons */}
+      {/* Readiness hint — when Review & Sign is gated, name the gate so the
+          disabled button reads as an intentional lock, not a washed-out CTA.
+          Presentation only; mirrors the existing canReviewSign predicate. */}
+      {!canReviewSign && (
+        <div className="flex items-start gap-2 rounded-xl border border-gold-200 bg-gold-50/70 px-4 py-3 text-sm text-gold-800">
+          <ClipboardCheck size={16} strokeWidth={2} className="mt-0.5 flex-shrink-0 text-gold-600" aria-hidden="true" />
+          <span>Generate a SOAP note to enable Review &amp; Sign.</span>
+        </div>
+      )}
+
+      {/* Review & Sign + MediVault Export Buttons.
+          Review & Sign is the encounter's positive/complete moment — confident
+          brand success green, with an icon to reinforce it. Export is a quiet
+          secondary so it never competes with the primary path. */}
       <div className="flex gap-3 pb-4">
         <TouchButton
           variant="success"
+          size="lg"
           className="flex-1"
+          icon={<ClipboardCheck size={18} />}
           onClick={() => navigate('/review/' + encounterId)}
           disabled={!canReviewSign}
         >
@@ -910,6 +1068,8 @@ export default function EncounterPage() {
         </TouchButton>
         <TouchButton
           variant="secondary"
+          size="lg"
+          icon={<Download size={16} />}
           onClick={handleMediVaultExport}
           disabled={!(encounter?.patient_id || patient?.id)}
           title="Download this patient's full record as a FHIR R4 Bundle (patient-owned)"
@@ -925,15 +1085,25 @@ export default function EncounterPage() {
   // Right Panel: CDS
   // ============================================================
   const rightPanel = (
-    <div className="p-3 space-y-3">
+    <div className="p-3 space-y-4 mc-reveal-stagger">
       {/* CDS Suggestions */}
       <div>
-        <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1 flex items-center justify-between">
+        <h3 className="mc-section-label px-1 flex items-center justify-between">
           <span>CDS Suggestions</span>
           {pending.length > 0 && (
             <Badge variant="urgent">{pending.length} pending</Badge>
           )}
         </h3>
+        {/* A failed CDS evaluation must be visually distinct from "no findings" —
+            an empty list after an error would falsely read as "all clear" (UR-002). */}
+        {cdsError && (
+          <div className="mx-1 mb-2 flex items-start gap-2 rounded-lg bg-danger-50 px-3 py-2 ring-1 ring-danger-200" role="alert" aria-live="assertive">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0 text-danger-600" />
+            <p className="text-xs text-danger-700">
+              CDS screening unavailable — results could not be retrieved. Verify drug interactions, warnings, and care gaps manually; do not read the list below as &ldquo;no findings.&rdquo;
+            </p>
+          </div>
+        )}
         <CDSSuggestionList
           suggestions={clinicalSuggestions}
           onAccept={handleAcceptSuggestion}
@@ -944,15 +1114,15 @@ export default function EncounterPage() {
       {/* Differential Diagnoses */}
       {differentials.length > 0 && (
         <div>
-          <h3 className="section-header text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2 px-1">
+          <h3 className="mc-section-label px-1">
             Differential Diagnoses
           </h3>
           <div className="space-y-1">
             {differentials.map((d, i) => (
-              <div key={d.id || i} className="bg-white rounded-lg p-2 border border-gray-100">
-                <div className="font-medium text-sm text-gray-900">{d.title}</div>
+              <div key={d.id || i} className="mc-row">
+                <div className="font-medium text-sm text-navy-700">{d.title}</div>
                 {d.description && (
-                  <p className="text-xs text-gray-500 mt-1">{d.description}</p>
+                  <p className="text-xs text-slate-600 mt-1">{d.description}</p>
                 )}
               </div>
             ))}
@@ -962,9 +1132,15 @@ export default function EncounterPage() {
 
       {/* Re-evaluate button */}
       <div className="pt-2">
-        <TouchButton variant="secondary" size="sm" className="w-full" onClick={evaluate}>
+        <TouchButton variant="secondary" size="sm" className="w-full" icon={<RefreshCw size={15} />} onClick={evaluate}>
           Re-evaluate CDS
         </TouchButton>
+      </div>
+
+      {/* Agent Pipeline — 9-agent clinical pipeline status.
+          Mounted as collapsible section in the CDS rail. */}
+      <div className="pt-2 border-t border-slate-100">
+        <AgentPanel encounterId={eid} patientId={encounter?.patient_id || patient?.id} />
       </div>
     </div>
   );
@@ -974,13 +1150,16 @@ export default function EncounterPage() {
   // ============================================================
   return (
     <div className="flex flex-col h-screen">
+      {/* Signature moment: a slim gold hairline crowns the patient banner —
+          a single restrained brand accent at the top edge of every encounter. */}
+      <div className="h-0.5 bg-gradient-to-r from-gold-500/0 via-gold-500/70 to-gold-500/0" aria-hidden="true" />
       {/* Patient Banner */}
       {patient && <PatientBanner patient={patient} />}
 
       {/* Workflow Bar */}
-      <div className="bg-white border-b border-gray-100 px-4 py-2 flex items-center justify-between">
-        <TouchButton variant="secondary" size="sm" onClick={() => navigate('/')}>
-          &#x2190; Dashboard
+      <div className="bg-offWhite-100 border-b border-slate-100 px-4 py-2 flex items-center justify-between">
+        <TouchButton variant="ghost" size="sm" icon={<ArrowLeft size={16} />} onClick={() => navigate('/')}>
+          Dashboard
         </TouchButton>
         <WorkflowTracker timeline={timeline} currentState={workflow?.current_state} compact />
       </div>
@@ -989,7 +1168,7 @@ export default function EncounterPage() {
           the HRT view. Patient/Encounter/CDS tabs are no-ops on desktop
           (all three panels stay visible); clicking 'HRT / Peptide' swaps the
           entire body to the HRT panel regardless of screen size. */}
-      <div className="bg-white border-b border-gray-200 flex">
+      <div className="bg-offWhite-100 border-b border-slate-200 flex">
         {[
           { key: 'patient', label: 'Patient' },
           { key: 'encounter', label: 'Encounter' },
@@ -999,15 +1178,15 @@ export default function EncounterPage() {
           <button
             key={tab.key}
             onClick={() => setMobileTab(tab.key)}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium text-center border-b-2 transition-colors ${
+            className={`flex-1 px-4 py-2.5 text-sm font-semibold text-center border-b-2 transition-colors ${
               mobileTab === tab.key
-                ? 'border-blue-500 text-blue-600 bg-blue-50/50'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'border-gold-400 text-navy-700 bg-navy-50/40'
+                : 'border-transparent text-slate-500 hover:text-navy-700'
             }`}
           >
             {tab.label}
             {tab.badge > 0 && (
-              <span className="ml-1.5 bg-red-500 text-white text-xs rounded-full px-1.5 py-0.5">
+              <span className="ml-1.5 bg-danger-500 text-white text-xs rounded-full px-1.5 py-0.5">
                 {tab.badge}
               </span>
             )}
@@ -1018,13 +1197,14 @@ export default function EncounterPage() {
       {/* Body: HRT tab takes over full width when active; otherwise show the
           standard 3-panel layout (desktop: always 3 visible; mobile: one-of). */}
       {mobileTab === 'hrt' ? (
-        <div className="flex-1 overflow-y-auto clinical-scroll bg-gray-50/50">
-          <HRTPanel regimens={[]} suggestions={suggestions} />
+        <div className="flex-1 overflow-y-auto clinical-scroll bg-ivory-200/60">
+          {/* regimens: no server endpoint yet — panel renders suggestions only */}
+          <HRTPanel regimens={hrtDomain.regimens || []} suggestions={suggestions} />
         </div>
       ) : (
         <div className="flex flex-1 overflow-hidden">
           {/* LEFT PANEL - desktop always visible, mobile conditional */}
-          <div className={`w-72 border-r border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
+          <div className={`w-72 border-r border-slate-200 bg-ivory-200/60 overflow-y-auto clinical-scroll flex-shrink-0 ${
             mobileTab === 'patient' ? 'block' : 'hidden'
           } lg:block`}>
             {leftPanel}
@@ -1038,7 +1218,7 @@ export default function EncounterPage() {
           </div>
 
           {/* RIGHT PANEL */}
-          <div className={`w-80 border-l border-gray-200 bg-gray-50/50 overflow-y-auto clinical-scroll flex-shrink-0 ${
+          <div className={`w-80 border-l border-slate-200 bg-ivory-200/60 overflow-y-auto clinical-scroll flex-shrink-0 ${
             mobileTab === 'cds' ? 'block' : 'hidden'
           } lg:block`}>
             {rightPanel}

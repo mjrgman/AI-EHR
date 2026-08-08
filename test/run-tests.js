@@ -1339,6 +1339,17 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     fhirRouter = require('../server/fhir/router');
     fhirTestApp = expressHttp();
     fhirTestApp.use(expressHttp.json());
+    // SECURE-BEHAVIOR UPDATE (Wave 1 authz): the FHIR router now FAILS CLOSED on
+    // scope-check + RBAC (sec-fhir-rbac-idor-01 / sec-smart-scope-noop-02). These
+    // contract tests previously relied on the old INSECURE passthrough (no req.user
+    // → next()). They are contract tests, not authz tests, so we inject an
+    // authenticated physician (phiScope ['all'], all read scopes via ROLE_SCOPES)
+    // exactly as auth.requireAuth would in production. Authz denial is covered by
+    // test/unit/authz-boundary.test.js.
+    fhirTestApp.use((req, _res, next) => {
+      req.user = { sub: 1, username: 'dr.test', role: 'physician', fullName: 'Dr Test' };
+      next();
+    });
     fhirTestApp.use('/fhir/R4', fhirRouter);
     fhirTestServer = await new Promise((resolve) => {
       const srv = fhirTestApp.listen(0, '127.0.0.1', () => resolve(srv));
@@ -1847,10 +1858,16 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(body.error, 'invalid_client');
   });
 
-  await test('SMART: introspect returns active:false for invalid token', async () => {
+  await test('SMART: introspect refuses an unauthenticated caller', async () => {
+    // This test previously asserted that an anonymous POST got a 200 with
+    // active:false. That was the defect, not the contract: introspection is
+    // client-authenticated per RFC 7662 §2.1, and answering an unauthenticated
+    // caller at all turns the endpoint into a token oracle. The active:false
+    // response is still correct -- but only AFTER the client authenticates.
     const { status, body } = await smartPost('/smart/introspect', { token: 'not.a.real.token' });
-    assertEqual(status, 200);
-    assertEqual(body.active, false);
+    assertEqual(status, 401);
+    assertEqual(body.error, 'invalid_client');
+    assert(body.active === undefined, 'must not disclose token state to an unauthenticated caller');
   });
 
   // ── CapabilityStatement SMART security extension ──
@@ -2007,6 +2024,13 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   const fhirRouterP17 = require('../server/fhir/router');
   const p17App = expressP17();
   p17App.use(expressP17.json());
+  // SECURE-BEHAVIOR UPDATE (Wave 1 authz): inject an authenticated physician so
+  // the fail-closed FHIR router serves these paging/_include contract tests
+  // (see Phase 14 note). Authz denial coverage lives in authz-boundary.test.js.
+  p17App.use((req, _res, next) => {
+    req.user = { sub: 1, username: 'dr.test', role: 'physician', fullName: 'Dr Test' };
+    next();
+  });
   p17App.use('/fhir/R4', fhirRouterP17);
 
   const p17Server = await new Promise((resolve) => {
@@ -2281,31 +2305,25 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(results[1].ok, true);
   });
 
-  await test('LabCorp: client API mode without db/userId throws clearly', async () => {
-    // Chunk 4 replaced the Phase-2b stub with real API behavior. Constructing
-    // an API-mode client without db/userId must still fail loud so callers
-    // get a diagnostic instead of a mystery 500. Full API behavior (auto-
-    // refresh, Bearer auth) is covered by the Chunk 4 tests in PHASE 19.
+  await test('LabCorp: constructing an API-mode client is refused', async () => {
+    // SYNTHETIC-ONLY BASELINE: api mode would carry orders and results for the
+    // demo's fictional patients to a real laboratory. The constructor refuses
+    // it outright, so this replaces the former "API mode without db/userId
+    // throws clearly" test -- there is no longer an API-mode client to build.
     const { LabCorpClient } = labcorpClientModule;
-    const client = new LabCorpClient({ mode: 'api' });
     let threw = false;
     try {
-      await client.submitOrder({ patientId: 1, tests: ['CBC'] });
+      new LabCorpClient({ mode: 'api' });
     } catch (err) {
       threw = true;
       assert(
-        /db.*userId/i.test(err.message) || /not authorized|baseUrl/i.test(err.message),
-        `API mode error should explain missing config, got: ${err.message}`
+        /is not supported/.test(err.message),
+        `expected a synthetic-only refusal, got: ${err.message}`
       );
     }
-    assert(threw, 'API mode submitOrder should throw without db/userId');
+    assert(threw, 'constructing an api-mode LabCorpClient must throw');
   });
 
-  await test('LabCorp: client getStatus reports current mode and credential state', () => {
-    const status = labcorpClientModule.getStatus();
-    assert(status.mode === 'mock', 'status should report mock mode');
-    assert(typeof status.hasCredentials === 'boolean');
-  });
 
   await test('LabCorp: client pollPendingOrders reports per-order error on unknown id', async () => {
     // An unknown ID in mock mode returns a graceful fixture-not-found warning,
@@ -2904,124 +2922,54 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     });
   }
 
-  await test('LabCorp API: submitOrder posts JSON with Bearer and returns externalOrderId', async () => {
+  await test('LabCorp API: every api-mode entry point is refused', async () => {
+    // These five tests previously exercised submitOrder/fetchResults against a
+    // fake LabCorp HTTP server with OAuth token refresh. That behavior is now
+    // unreachable: the constructor refuses mode='api' before any request can
+    // be built, so there is nothing left to drive over HTTP. What matters now
+    // is that the refusal is total -- no option combination gets past it.
     const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: _oauthTestUserId
-    });
-    const result = await client.submitOrder({
-      patientId: 42,
-      tests: ['Hemoglobin A1c']
-    });
-    assertEqual(result.ok, true);
-    assertEqual(result.externalOrderId, 'LC-API-12345');
-    assertEqual(result.status, 'submitted');
+    const optionSets = [
+      { mode: 'api' },
+      { mode: 'api', baseUrl: labcorpApiBase, tokenUrl: fakeTokenUrl, clientId: 'test-client', clientSecret: 'test-secret', db, userId: _oauthTestUserId },
+      { mode: 'api', baseUrl: labcorpApiBase, db, userId: 888888 },
+      { mode: 'API' },
+      { mode: 'sandbox' }
+    ];
+    for (const opts of optionSets) {
+      let threw = false;
+      try {
+        new LabCorpClient(opts);
+      } catch (err) {
+        threw = true;
+        assert(/is not supported/.test(err.message), `unexpected error: ${err.message}`);
+      }
+      assert(threw, `LabCorpClient must refuse mode='${opts.mode}'`);
+    }
   });
 
-  await test('LabCorp API: submitOrder throws without stored token', async () => {
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: 888888 // no stored token
-    });
+  await test('LabCorp API: requiring the client with LABCORP_MODE=api is refused', async () => {
+    // The constructor guard covers in-process construction; this covers the
+    // env path, which is what an operator would actually reach for.
+    const { execFileSync } = require('child_process');
+    const clientPath = require.resolve('../server/integrations/labcorp/client');
     let threw = false;
     try {
-      await client.submitOrder({ patientId: 1, tests: ['CBC'] });
-    } catch (e) {
+      execFileSync(process.execPath, ['-e', `require(${JSON.stringify(clientPath)})`], {
+        env: { ...process.env, LABCORP_MODE: 'api' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+        encoding: 'utf8'
+      });
+    } catch (err) {
       threw = true;
       assert(
-        e.message.toLowerCase().includes('no tokens') ||
-        e.message.toLowerCase().includes('not authorized') ||
-        e.message.toLowerCase().includes('authenticate'),
-        `error should surface missing credentials, got: ${e.message}`
+        /LABCORP_MODE='api' is not supported/.test(String(err.stderr || '')),
+        `expected the env guard to fire, got: ${String(err.stderr || err.message).slice(0, 200)}`
       );
     }
-    assert(threw, 'API submitOrder must throw without stored token');
+    assert(threw, 'requiring the labcorp client with LABCORP_MODE=api must throw');
   });
 
-  await test('LabCorp API: submitOrder auto-refreshes on 401 and retries', async () => {
-    const oauth = require('../server/integrations/labcorp/oauth');
-    // Store a stale token that the fake server will reject with 401
-    await oauth.storeTokens(db, _oauthTestUserId, {
-      access_token: 'stale-access-token',
-      refresh_token: 'valid-refresh', // the token server will accept this
-      token_type: 'Bearer',
-      expires_in: 3600,
-      scope: 'lab.read lab.write'
-    });
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: _oauthTestUserId
-    });
-    const result = await client.submitOrder({
-      patientId: 42,
-      tests: ['CBC']
-    });
-    assertEqual(result.ok, true, 'auto-refresh retry must succeed');
-    assertEqual(result.externalOrderId, 'LC-API-12345');
-    // After refresh, the stored access_token should be the new one
-    const fresh = await oauth.getTokens(db, _oauthTestUserId);
-    assertEqual(fresh.access_token, 'at-refreshed', 'stored token must be updated after auto-refresh');
-  });
-
-  await test('LabCorp API: fetchResults GETs XML and returns parsed result', async () => {
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: _oauthTestUserId
-    });
-    const result = await client.fetchResults('LC-API-12345');
-    assertEqual(result.ok, true, 'parser should report ok=true');
-    assertEqual(result.labOrderId, 'LC-API-12345');
-    assert(Array.isArray(result.results), 'results should be an array');
-    assert(result.results.length >= 1, 'should parse at least one result row');
-    const hba1c = result.results.find(r => /a1c/i.test(r.name || r.code || ''));
-    assert(hba1c, 'should find HbA1c row in parsed output');
-    assertEqual(String(hba1c.value), '8.2');
-    assertEqual(hba1c.abnormalFlag, 'H');
-  });
-
-  await test('LabCorp API: fetchResults throws without stored token', async () => {
-    const { LabCorpClient } = require('../server/integrations/labcorp/client');
-    const client = new LabCorpClient({
-      mode: 'api',
-      baseUrl: labcorpApiBase,
-      tokenUrl: fakeTokenUrl,
-      clientId: 'test-client',
-      clientSecret: 'test-secret',
-      db,
-      userId: 888888
-    });
-    let threw = false;
-    try {
-      await client.fetchResults('LC-API-99999');
-    } catch (e) {
-      threw = true;
-    }
-    assert(threw, 'API fetchResults must throw without stored token');
-  });
 
   await test('LabCorp API: mock-mode client still works unchanged', async () => {
     // Regression guard: API mode options must not break mock mode
@@ -3114,7 +3062,9 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     LABCORP_REDIRECT_URI: process.env.LABCORP_REDIRECT_URI,
     LABCORP_SANDBOX_URL: process.env.LABCORP_SANDBOX_URL,
   };
-  process.env.LABCORP_MODE = 'api';
+  // Synthetic-only baseline: the route pins mode='mock', and the client
+  // module refuses to load in any other mode. The fixture reflects that.
+  process.env.LABCORP_MODE = 'mock';
   process.env.LABCORP_AUTH_URL = 'https://fake.labcorp.test/oauth/authorize';
   process.env.LABCORP_TOKEN_URL = fakeTokenUrl;
   process.env.LABCORP_CLIENT_ID = 'test-client';
@@ -3132,8 +3082,24 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   await test('LabCorp routes: GET /api/integrations/labcorp/status returns mode + hasCredentials', async () => {
     const { status, body } = await labcorpRoutesRequest({ path: '/api/integrations/labcorp/status' });
     assertEqual(status, 200);
-    assertEqual(body.mode, 'api');
+    // The endpoint reports the mode this build can actually run in. Even with
+    // credentials present in the environment, it must never advertise 'api'.
+    assertEqual(body.mode, 'mock');
+    assertEqual(body.syntheticOnly, true);
     assertEqual(body.hasCredentials, true);
+  });
+
+  await test('LabCorp routes: status never advertises api mode even if env says so', async () => {
+    const prev = process.env.LABCORP_MODE;
+    process.env.LABCORP_MODE = 'api'; // simulate a stray runtime env write
+    try {
+      const { body } = await labcorpRoutesRequest({ path: '/api/integrations/labcorp/status' });
+      assertEqual(body.mode, 'mock', 'status must not echo a mutated LABCORP_MODE');
+      assertEqual(body.syntheticOnly, true);
+    } finally {
+      if (prev === undefined) delete process.env.LABCORP_MODE;
+      else process.env.LABCORP_MODE = prev;
+    }
   });
 
   // Fresh access_token for the submit test (previous test may have left a stale one)
@@ -3253,13 +3219,14 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     });
     assertEqual(status, 200, `submit should succeed, got ${status}: ${JSON.stringify(body)}`);
     assertEqual(body.ok, true);
-    assertEqual(body.externalOrderId, 'LC-API-12345');
+    assert(String(body.externalOrderId).startsWith('LC-MOCK-'),
+      `synthetic-only submit must return a mock id, got ${body.externalOrderId}`);
     // The lab_orders row should now carry the externalOrderId
     const row = await db.dbGet(
       'SELECT external_order_id, labcorp_status FROM lab_orders WHERE id = ?',
       [_labOrderIdForSubmit]
     );
-    assertEqual(row.external_order_id, 'LC-API-12345',
+    assert(String(row.external_order_id).startsWith('LC-MOCK-'),
       'external_order_id column must be updated after successful submit');
     assertEqual(row.labcorp_status, 'submitted');
   });
@@ -3698,7 +3665,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   // ==========================================
   // Phase 3a: hrt-keywords — CDS suggestion filter for the HRT/Peptide tab
   //
-  // HRTPanel uses isHrtRelevant() to pull hormone/peptide-related CDS +
+  // HRTPanel uses isHRTRelevant() to pull hormone/peptide-related CDS +
   // Domain Logic suggestions out of the shared suggestion stream. The filter
   // is a simple keyword match over title/description/rule_type/category/
   // suggestion_type, but the keyword list is load-bearing: miss a term and
@@ -3730,48 +3697,48 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(HRT_KEYWORDS.includes('tirzepatide'), true);
   });
 
-  await test('Phase 3a: hrt-keywords — isHrtRelevant returns false for null/undefined/empty', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
-    assertEqual(isHrtRelevant(null), false);
-    assertEqual(isHrtRelevant(undefined), false);
-    assertEqual(isHrtRelevant({}), false);
-    assertEqual(isHrtRelevant({ title: '', description: '', rule_type: '' }), false);
+  await test('Phase 3a: hrt-keywords — isHRTRelevant returns false for null/undefined/empty', async () => {
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    assertEqual(isHRTRelevant(null), false);
+    assertEqual(isHRTRelevant(undefined), false);
+    assertEqual(isHRTRelevant({}), false);
+    assertEqual(isHRTRelevant({ title: '', description: '', rule_type: '' }), false);
   });
 
   await test('Phase 3a: hrt-keywords — matches testosterone in title (case-insensitive)', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Testosterone Replacement Initiation', description: '', rule_type: 'dosing' };
-    assertEqual(isHrtRelevant(s), true);
+    assertEqual(isHRTRelevant(s), true);
   });
 
   await test('Phase 3a: hrt-keywords — matches semaglutide in description', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'GLP-1 agonist', description: 'Start semaglutide 0.25 mg SC weekly', rule_type: 'prescribing' };
-    assertEqual(isHrtRelevant(s), true);
+    assertEqual(isHRTRelevant(s), true);
   });
 
   await test('Phase 3a: hrt-keywords — matches peptide in category field', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Titration reminder', description: '', category: 'peptide-dosing' };
-    assertEqual(isHrtRelevant(s), true);
+    assertEqual(isHRTRelevant(s), true);
   });
 
   await test('Phase 3a: hrt-keywords — does NOT match unrelated hypertension suggestion', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Blood pressure control', description: 'Consider lisinopril 10 mg daily', rule_type: 'prescribing' };
-    assertEqual(isHrtRelevant(s), false);
+    assertEqual(isHRTRelevant(s), false);
   });
 
   await test('Phase 3a: hrt-keywords — does NOT match diabetes without a GLP-1 keyword', async () => {
-    const { isHrtRelevant } = await import('../src/utils/hrt-keywords.mjs');
+    const { isHRTRelevant } = await import('../src/utils/hrt-keywords.mjs');
     const s = { title: 'Diabetes management', description: 'A1c elevated, consider metformin', rule_type: 'screening' };
-    assertEqual(isHrtRelevant(s), false);
+    assertEqual(isHRTRelevant(s), false);
   });
 
   // ==========================================
   // Phase 3b: hrt-keywords — transcript classification (voice routing)
   //
-  // `detectHrtCategories(text)` scans an encounter transcript for any
+  // `detectHRTCategories(text)` scans an encounter transcript for any
   // DOMAIN_KEYWORDS category and returns the matched category names. This
   // is the client-side mirror of server/agents/domain-logic-agent.js
   // `_classifyDomain()`; the two MUST return the same categories for the
@@ -3811,47 +3778,47 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     }
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories returns [] for empty / null', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    assertEqual(JSON.stringify(detectHrtCategories('')), '[]');
-    assertEqual(JSON.stringify(detectHrtCategories(null)), '[]');
-    assertEqual(JSON.stringify(detectHrtCategories(undefined)), '[]');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories returns [] for empty / null', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    assertEqual(JSON.stringify(detectHRTCategories('')), '[]');
+    assertEqual(JSON.stringify(detectHRTCategories(null)), '[]');
+    assertEqual(JSON.stringify(detectHRTCategories(undefined)), '[]');
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories matches testosterone -> hrt_male', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Start testosterone 200 mg IM every two weeks');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories matches testosterone -> hrt_male', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Start testosterone 200 mg IM every two weeks');
     assertEqual(cats.includes('hrt_male'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories matches semaglutide -> glp1', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Prescribe semaglutide 0.25 mg subcutaneously weekly');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories matches semaglutide -> glp1', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Prescribe semaglutide 0.25 mg subcutaneously weekly');
     assertEqual(cats.includes('glp1'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories matches menopause -> hrt_female', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Patient reports vasomotor symptoms and hot flashes from menopause');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories matches menopause -> hrt_female', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Patient reports vasomotor symptoms and hot flashes from menopause');
     assertEqual(cats.includes('hrt_female'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories is case-insensitive', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('MOUNJARO titration next visit');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories is case-insensitive', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('MOUNJARO titration next visit');
     assertEqual(cats.includes('glp1'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories returns multiple categories when overlapping', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Combine testosterone replacement with semaglutide for the weight goal');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories returns multiple categories when overlapping', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Combine testosterone replacement with semaglutide for the weight goal');
     assertEqual(cats.includes('hrt_male'), true);
     assertEqual(cats.includes('glp1'), true);
   });
 
-  await test('Phase 3b: hrt-keywords — detectHrtCategories returns [] for hypertension-only transcript', async () => {
-    const { detectHrtCategories } = await import('../src/utils/hrt-keywords.mjs');
-    const cats = detectHrtCategories('Blood pressure 160/95, start lisinopril 10 mg daily');
+  await test('Phase 3b: hrt-keywords — detectHRTCategories returns [] for hypertension-only transcript', async () => {
+    const { detectHRTCategories } = await import('../src/utils/hrt-keywords.mjs');
+    const cats = detectHRTCategories('Blood pressure 160/95, start lisinopril 10 mg daily');
     assertEqual(JSON.stringify(cats), '[]');
   });
 
@@ -4675,6 +4642,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     assertEqual(verify.status, 200, `expected 200 verify, got ${verify.status}`);
@@ -4693,6 +4665,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
@@ -4714,14 +4691,23 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
+    // sec-portal-csrf-07: state-changing portal POSTs must carry the per-session
+    // CSRF token returned by /verify, echoed in the x-portal-csrf header.
+    const csrfToken = verify.body.csrfToken;
     const before = await db.dbGet('SELECT COUNT(*) AS count FROM patient_messages WHERE patient_id = ?', [sarahId]);
 
     const res = await httpRequest('/api/patient-portal/message', {
       method: 'POST',
       cookie,
+      headers: { 'x-portal-csrf': csrfToken },
       body: {
         subject: 'Portal test message',
         message: 'Checking secure message persistence from the regression suite.',
@@ -4731,6 +4717,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
 
     const after = await db.dbGet('SELECT COUNT(*) AS count FROM patient_messages WHERE patient_id = ?', [sarahId]);
     assert(after.count > before.count, 'message submission should create a patient_messages row');
+    const row = await db.dbGet(
+      'SELECT status FROM patient_messages WHERE patient_id = ? ORDER BY id DESC LIMIT 1',
+      [sarahId]
+    );
+    assertEqual(row.status, 'physician_review', 'portal messages should enter the care-team review queue');
   });
 
   await test('Patient Portal HTTP: symptom triage persists and returns routed urgency', async () => {
@@ -4740,13 +4731,21 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
+    // sec-portal-csrf-07: state-changing POST requires the per-session CSRF token.
+    const csrfToken = verify.body.csrfToken;
 
     const res = await httpRequest('/api/patient-portal/symptom-triage', {
       method: 'POST',
       cookie,
+      headers: { 'x-portal-csrf': csrfToken },
       body: {
         symptoms: 'Chest tightness with dizziness',
         severity: 8,
@@ -4766,13 +4765,21 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
+    // sec-portal-csrf-07: state-changing POST requires the per-session CSRF token.
+    const csrfToken = verify.body.csrfToken;
 
     const res = await httpRequest('/api/patient-portal/voice-intent', {
       method: 'POST',
       cookie,
+      headers: { 'x-portal-csrf': csrfToken },
       body: { transcript: 'What are my upcoming appointments?' }
     });
     assertEqual(res.status, 200, `expected 200 voice intent, got ${res.status}`);
@@ -4786,6 +4793,11 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        // P1-2 (sec-portal-weak-verify-05): MRN is now a MANDATORY non-public
+        // second factor in ALL environments. Name+DOB alone (both semi-public)
+        // no longer establishes a session, so every session-establishing verify
+        // must supply the patient's MRN.
+        mrn: sarahPatient.mrn,
       }
     });
     const cookie = extractCookie(verify);
@@ -4802,6 +4814,17 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     const res = await httpRequest('/api/patient-portal/session', { token: login.body.token });
     assertEqual(res.status, 401, 'clinician bearer token must not grant portal session access');
   });
+
+  // ──────────────────────────────────────────────────────────────────
+  // MediVault HTTP export (origin/main UR-001/UR-002/UR-003 RBAC hotfix).
+  //
+  // These assertions pin the export RBAC gates: unauthenticated → 401,
+  // clinician bearer → 200 bundle, and a portal session may export ONLY
+  // its own record (cross-patient export → 403). The portal /verify calls
+  // below supply the mandatory MRN third factor required by the wave-1
+  // P1-2 hardening (sec-portal-weak-verify-05) that this branch merges in —
+  // without it, verify now fails closed and no portal session is issued.
+  // ──────────────────────────────────────────────────────────────────
 
   await test('MediVault HTTP: GET /api/medivault/export/:patientId rejects unauthenticated requests', async () => {
     const res = await httpRequest(`/api/medivault/export/${sarahId}`);
@@ -4826,6 +4849,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: sarahPatient.first_name,
         last_name: sarahPatient.last_name,
         dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
       }
     });
     const sarahCookie = extractCookie(sarahVerify);
@@ -4838,11 +4862,163 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
         first_name: robertPatient.first_name,
         last_name: robertPatient.last_name,
         dob: robertPatient.dob,
+        mrn: robertPatient.mrn,
       }
     });
     const robertCookie = extractCookie(robertVerify);
     const robertExport = await httpRequest(`/api/medivault/export/${sarahId}`, { cookie: robertCookie });
     assertEqual(robertExport.status, 403, `expected 403, got ${robertExport.status}`);
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // P1-2 (sec-portal-weak-verify-05) — mandatory MRN second factor.
+  //
+  // Name + DOB are both semi-public; alone they must NEVER establish a
+  // portal session in ANY environment. The MRN is the mandatory non-public
+  // third factor. Failures (missing MRN, wrong MRN, no such patient) must
+  // all return the SAME generic 401 — never reveal which factor failed.
+  // ──────────────────────────────────────────────────────────────────
+
+  await test('P1-2 Portal verify: name+DOB without MRN is DENIED (no session)', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        // intentionally NO mrn
+      }
+    });
+    assertEqual(verify.status, 401, `name+DOB alone must be denied, got ${verify.status}`);
+    const cookie = extractCookie(verify);
+    assert(!cookie || !cookie.startsWith('portal_session='), 'no portal_session cookie should be issued without MRN');
+    // Generic message — must not name the missing field.
+    assert(!/mrn/i.test(verify.body.error || ''), 'error must not reveal that MRN was the missing factor');
+  });
+
+  await test('P1-2 Portal verify: correct name+DOB+MRN establishes a session', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    assertEqual(verify.status, 200, `correct three-factor verify must succeed, got ${verify.status}`);
+    const cookie = extractCookie(verify);
+    assert(cookie.startsWith('portal_session='), 'three-factor verify should return a portal_session cookie');
+    assertEqual(verify.body.patient.id, sarahId, 'session must bind to the verified patient');
+  });
+
+  await test('P1-2 Portal verify: WRONG MRN with correct name+DOB returns generic 401', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: 'WRONG-MRN-000000',
+      }
+    });
+    assertEqual(verify.status, 401, `wrong MRN must be denied, got ${verify.status}`);
+    const cookie = extractCookie(verify);
+    assert(!cookie || !cookie.startsWith('portal_session='), 'no portal_session cookie should be issued for a wrong MRN');
+    // Same generic message as a missing-MRN / no-such-patient failure.
+    assert(!/mrn/i.test(verify.body.error || ''), 'error must not reveal that the MRN was the failing factor');
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // sec-portal-csrf-07 — CSRF protection on the cookie-backed portal session.
+  //
+  // A valid session cookie alone is NOT sufficient to authorize a
+  // state-changing request. Each state-changing POST must echo the per-session
+  // CSRF token (returned by /verify in the body) via the x-portal-csrf header.
+  // Fail closed: a state-changing POST that presents the valid session cookie
+  // but no CSRF token must be rejected with 403 (defeats cross-site forgery
+  // that rides the ambient cookie but cannot read the token).
+  // ──────────────────────────────────────────────────────────────────
+
+  await test('sec-portal-csrf-07: /verify returns a per-session CSRF token', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    assertEqual(verify.status, 200, `expected 200 verify, got ${verify.status}`);
+    assert(typeof verify.body.csrfToken === 'string' && verify.body.csrfToken.length >= 32,
+      '/verify must return a non-trivial csrfToken bound to the session');
+  });
+
+  await test('sec-portal-csrf-07: state-changing POST WITHOUT CSRF token is rejected 403', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    const cookie = extractCookie(verify);
+    assert(cookie.startsWith('portal_session='), 'precondition: a valid session cookie was issued');
+
+    // Valid session cookie, but NO x-portal-csrf header — must fail closed.
+    const res = await httpRequest('/api/patient-portal/message', {
+      method: 'POST',
+      cookie,
+      body: {
+        subject: 'CSRF probe',
+        message: 'This write should be blocked without a CSRF token.',
+      }
+    });
+    assertEqual(res.status, 403, `state-changing POST without CSRF token must be 403, got ${res.status}`);
+  });
+
+  await test('sec-portal-csrf-07: WRONG CSRF token is rejected 403', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    const cookie = extractCookie(verify);
+
+    const res = await httpRequest('/api/patient-portal/message', {
+      method: 'POST',
+      cookie,
+      headers: { 'x-portal-csrf': 'not-the-real-token-0000000000000000' },
+      body: {
+        subject: 'CSRF probe',
+        message: 'This write should be blocked with a wrong CSRF token.',
+      }
+    });
+    assertEqual(res.status, 403, `state-changing POST with wrong CSRF token must be 403, got ${res.status}`);
+  });
+
+  await test('sec-portal-csrf-07: GET endpoints remain accessible without a CSRF token', async () => {
+    const verify = await httpRequest('/api/patient-portal/verify', {
+      method: 'POST',
+      body: {
+        first_name: sarahPatient.first_name,
+        last_name: sarahPatient.last_name,
+        dob: sarahPatient.dob,
+        mrn: sarahPatient.mrn,
+      }
+    });
+    const cookie = extractCookie(verify);
+
+    // Safe method — CSRF guard must pass it through with no token.
+    const res = await httpRequest('/api/patient-portal/medications', { cookie });
+    assertEqual(res.status, 200, `safe GET must not require a CSRF token, got ${res.status}`);
   });
 
   // ==========================================
@@ -4871,7 +5047,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
 
     const result = spawnSync(
       process.execPath,
-      ['--test', ...unitFiles],
+      ['--test', '--test-concurrency=1', ...unitFiles],
       {
         cwd: path.resolve(__dirname, '..'),
         encoding: 'utf8',

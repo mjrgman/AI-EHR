@@ -1,12 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/client';
+import api, { safeLog } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
 import Badge from '../components/common/Badge';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import {
+  ChevronLeft,
+  ChevronRight,
+  CalendarPlus,
+  CalendarDays,
+  CalendarX,
+  LogIn,
+  CheckCircle2,
+  CalendarRange,
+  AlertTriangle,
+  RefreshCw,
+} from 'lucide-react';
 
 const STATUS_LABELS = {
   scheduled: { label: 'Scheduled', variant: 'routine' },
@@ -17,7 +29,19 @@ const STATUS_LABELS = {
   cancelled: { label: 'Cancelled', variant: 'warning' },
 };
 
-const VISIT_TYPES = ['office-visit', 'follow-up', 'new-patient', 'wellness', 'urgent', 'procedure', 'telehealth'];
+const VISIT_TYPES = [
+  { value: 'follow_up', label: 'Follow Up' },
+  { value: 'new_patient', label: 'New Patient' },
+  { value: 'sick_visit', label: 'Sick Visit' },
+  { value: 'wellness', label: 'Wellness' },
+  { value: 'urgent', label: 'Urgent' },
+  { value: 'procedure', label: 'Procedure' },
+  { value: 'telehealth', label: 'Telehealth' },
+];
+
+function formatAppointmentType(value) {
+  return VISIT_TYPES.find((type) => type.value === value)?.label || String(value || '').replace(/_/g, ' ');
+}
 
 function toDateStr(d) {
   return d.toISOString().split('T')[0];
@@ -55,6 +79,8 @@ export default function SchedulePage() {
   const [appointments, setAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [patientLoadError, setPatientLoadError] = useState(null);
   const [showNewForm, setShowNewForm] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
 
@@ -64,7 +90,7 @@ export default function SchedulePage() {
     appointment_date: toDateStr(new Date()),
     appointment_time: '09:00',
     duration_minutes: 30,
-    visit_type: 'office-visit',
+    appointment_type: 'follow_up',
     chief_complaint: '',
     notes: '',
     provider_name: providerName || '',
@@ -75,20 +101,49 @@ export default function SchedulePage() {
     try {
       const data = await api.getSchedule({ date: selectedDate });
       setAppointments(data.appointments || []);
+      setLoadError(null);
     } catch (err) {
+      safeLog.error('Schedule load failed:', err);
+      setLoadError(err?.message || 'The schedule could not be loaded.');
       toast.error('Failed to load schedule: ' + err.message);
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, toast]);
 
   useEffect(() => {
     loadSchedule();
   }, [loadSchedule]);
 
   useEffect(() => {
-    api.getPatients().then((data) => setPatients(data.patients || data || [])).catch(() => {});
+    api.getPatients()
+      .then((data) => {
+        setPatients(data.patients || data || []);
+        setPatientLoadError(null);
+      })
+      .catch((err) => {
+        safeLog.error('Schedule patient list load failed:', err);
+        setPatientLoadError(err?.message || 'The patient list could not be loaded.');
+      });
   }, []);
+
+  const retryLoads = useCallback(async () => {
+    try {
+      const [scheduleData, patientData] = await Promise.all([
+        api.getSchedule({ date: selectedDate }),
+        api.getPatients(),
+      ]);
+      setAppointments(scheduleData.appointments || []);
+      setPatients(patientData.patients || patientData || []);
+      setLoadError(null);
+      setPatientLoadError(null);
+    } catch (err) {
+      safeLog.error('Schedule retry failed:', err);
+      setLoadError(err?.message || 'The schedule could not be loaded.');
+    }
+  }, [selectedDate]);
+
+  const displayedLoadError = loadError || patientLoadError;
 
   async function handleStatusChange(apptId, newStatus) {
     setUpdatingId(apptId);
@@ -121,6 +176,7 @@ export default function SchedulePage() {
         ...form,
         patient_id: parseInt(form.patient_id),
         duration_minutes: parseInt(form.duration_minutes),
+        provider_name: form.provider_name || providerName || 'Dr. MJR',
       });
       toast.success('Appointment scheduled');
       setShowNewForm(false);
@@ -136,12 +192,12 @@ export default function SchedulePage() {
     try {
       const enc = await api.createEncounter({
         patient_id: appt.patient_id,
-        chief_complaint: appt.chief_complaint || appt.visit_type || 'Office Visit',
+        chief_complaint: appt.chief_complaint || formatAppointmentType(appt.appointment_type) || 'Office Visit',
         encounter_date: selectedDate,
-        encounter_type: appt.visit_type === 'new-patient' ? 'new_patient' : 'office_visit',
+        encounter_type: appt.appointment_type === 'new_patient' ? 'new_patient' : 'office_visit',
       });
       const encId = enc.encounter_id || enc.id;
-      await api.updateAppointment(appt.id, { status: 'arrived', encounter_id: encId });
+      await api.updateAppointment(appt.id, { status: 'checked-in', encounter_id: encId });
       navigate('/checkin/' + encId);
     } catch (err) {
       toast.error('Check-in failed: ' + err.message);
@@ -154,41 +210,74 @@ export default function SchedulePage() {
   }, {});
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-4">
-      {/* Date navigation */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="mc-page max-w-4xl mc-reveal-stagger space-y-5">
+      {/* Page header — gold hairline crowns the surface + a navy icon chip in the
+          title, matching the AuditPage reference bar (signature). */}
+      <div className="relative">
+        <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+        <p className="mc-section-label">Reception</p>
+        <h1 className="mc-page-title flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+            <CalendarRange size={20} strokeWidth={2} aria-hidden="true" />
+          </span>
+          Schedule
+        </h1>
+      </div>
+
+      {/* Date navigation — signature moment: a gold hairline crowns the control bar */}
+      <div className="relative mc-card rounded-2xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <span aria-hidden="true" className="pointer-events-none absolute inset-x-5 top-0 h-px rounded-full bg-gradient-to-r from-transparent via-gold-400/70 to-transparent" />
         <div className="flex items-center gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => setSelectedDate(d => shiftDate(d, -1))}>
-            &#x2190;
-          </TouchButton>
-          <div className="text-center min-w-[180px]">
-            <p className="font-semibold text-gray-900">{formatDisplayDate(selectedDate)}</p>
-            <p className="text-xs text-gray-400">{selectedDate}</p>
+          <TouchButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-label="Previous day"
+            icon={<ChevronLeft className="w-4 h-4" strokeWidth={2.25} />}
+            onClick={() => setSelectedDate(d => shiftDate(d, -1))}
+          />
+          <div className="flex items-center gap-2.5 min-w-[180px] justify-center px-1">
+            <CalendarDays className="w-4 h-4 text-gold-500 flex-shrink-0" strokeWidth={2} aria-hidden="true" />
+            <div className="text-center">
+              <p className="font-display text-lg font-semibold text-navy-700 tracking-tight leading-tight">{formatDisplayDate(selectedDate)}</p>
+              <p className="text-xs text-slate-500 tabular-nums">{selectedDate}</p>
+            </div>
           </div>
-          <TouchButton variant="secondary" size="sm" onClick={() => setSelectedDate(d => shiftDate(d, 1))}>
-            &#x2192;
-          </TouchButton>
+          <TouchButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            aria-label="Next day"
+            icon={<ChevronRight className="w-4 h-4" strokeWidth={2.25} />}
+            onClick={() => setSelectedDate(d => shiftDate(d, 1))}
+          />
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <input
             type="date"
             value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
-            className="border border-gray-300 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
           />
-          <TouchButton variant="secondary" size="sm" onClick={() => setSelectedDate(toDateStr(new Date()))}>
+          <TouchButton type="button" variant="secondary" size="sm" onClick={() => setSelectedDate(toDateStr(new Date()))}>
             Today
           </TouchButton>
-          <TouchButton variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
-            + New Appointment
+          <TouchButton
+            type="button"
+            variant="primary"
+            size="sm"
+            icon={<CalendarPlus className="w-4 h-4" strokeWidth={2.25} />}
+            onClick={() => setShowNewForm(true)}
+          >
+            New Appointment
           </TouchButton>
         </div>
       </div>
 
       {/* Summary badges */}
       {appointments.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
-          <span className="text-sm text-gray-500">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}:</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="mc-section-label mb-0">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}</span>
           {Object.entries(totalByStatus).map(([status, count]) => (
             <Badge key={status} variant={STATUS_LABELS[status]?.variant || 'routine'}>
               {count} {STATUS_LABELS[status]?.label || status}
@@ -203,62 +292,73 @@ export default function SchedulePage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <span>New Appointment</span>
-              <button onClick={() => setShowNewForm(false)} className="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+              <button
+                type="button"
+                onClick={() => setShowNewForm(false)}
+                aria-label="Close new appointment form"
+                className="text-slate-400 hover:text-navy-700 text-lg leading-none rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"
+              >
+                &times;
+              </button>
             </div>
           </CardHeader>
           <CardBody>
             <form onSubmit={handleNewAppointment} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Patient *</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Patient *</label>
                   <select
                     required
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.patient_id}
                     onChange={e => setForm(f => ({ ...f, patient_id: e.target.value }))}
                   >
                     <option value="">Select patient...</option>
-                    {patients.map(p => (
-                      <option key={p.id} value={p.id}>{p.last_name}, {p.first_name}</option>
-                    ))}
+                    {patients.map(p => {
+                      const dob = p.dob ? ` · DOB ${p.dob}` : '';
+                      const mrn = p.mrn ? ` · MRN ${p.mrn}` : '';
+                      return (
+                        <option key={p.id} value={p.id}>{p.last_name}, {p.first_name}{mrn}{dob}</option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Visit Type</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Visit Type</label>
                   <select
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    value={form.visit_type}
-                    onChange={e => setForm(f => ({ ...f, visit_type: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
+                    value={form.appointment_type}
+                    onChange={e => setForm(f => ({ ...f, appointment_type: e.target.value }))}
                   >
                     {VISIT_TYPES.map(t => (
-                      <option key={t} value={t}>{t.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
+                      <option key={t.value} value={t.value}>{t.label}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Date</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Date</label>
                   <input
                     type="date"
                     required
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.appointment_date}
                     onChange={e => setForm(f => ({ ...f, appointment_date: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Time</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Time</label>
                   <input
                     type="time"
                     required
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.appointment_time}
                     onChange={e => setForm(f => ({ ...f, appointment_time: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Duration (min)</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Duration (min)</label>
                   <select
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     value={form.duration_minutes}
                     onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))}
                   >
@@ -268,10 +368,10 @@ export default function SchedulePage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Chief Complaint</label>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Chief Complaint</label>
                   <input
                     type="text"
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
                     placeholder="Reason for visit..."
                     value={form.chief_complaint}
                     onChange={e => setForm(f => ({ ...f, chief_complaint: e.target.value }))}
@@ -294,105 +394,173 @@ export default function SchedulePage() {
       {/* Appointment list */}
       {loading ? (
         <LoadingSpinner message="Loading schedule..." />
+      ) : displayedLoadError ? (
+        <Card className="border-danger-200 bg-danger-50" role="alert">
+          <CardBody className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 shrink-0 text-danger-600" size={22} aria-hidden="true" />
+            <div>
+              <h2 className="font-display text-lg font-semibold text-danger-800">Schedule unavailable</h2>
+              <p className="mt-1 text-sm text-danger-700">{displayedLoadError} This is a load failure, not an empty schedule.</p>
+              <TouchButton className="mt-4" variant="danger" size="sm" icon={<RefreshCw size={15} />} onClick={retryLoads}>
+                Retry
+              </TouchButton>
+            </div>
+          </CardBody>
+        </Card>
       ) : appointments.length === 0 ? (
         <Card>
-          <CardBody className="text-center py-12">
-            <p className="text-3xl mb-3">📅</p>
-            <p className="text-gray-500 font-medium">No appointments scheduled</p>
-            <p className="text-sm text-gray-400 mt-1">for {formatDisplayDate(selectedDate)}</p>
-            <div className="mt-4">
-              <TouchButton variant="primary" size="sm" onClick={() => setShowNewForm(true)}>
+          <CardBody className="text-center py-14">
+            <span className="mb-4 inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-ivory-200 border border-slate-100 shadow-mc">
+              <CalendarDays className="w-8 h-8 text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+            </span>
+            <h3 className="font-display text-lg font-semibold text-navy-700">No appointments scheduled</h3>
+            <p className="text-sm text-slate-600 mt-1">for {formatDisplayDate(selectedDate)}</p>
+            <div className="mt-5">
+              <TouchButton
+                type="button"
+                variant="primary"
+                size="sm"
+                icon={<CalendarPlus className="w-4 h-4" strokeWidth={2.25} />}
+                onClick={() => setShowNewForm(true)}
+              >
                 Schedule an Appointment
               </TouchButton>
             </div>
           </CardBody>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {appointments
-            .sort((a, b) => (a.appointment_time || '').localeCompare(b.appointment_time || ''))
-            .map(appt => {
-              const statusInfo = STATUS_LABELS[appt.status] || { label: appt.status, variant: 'routine' };
-              const isUpdating = updatingId === appt.id;
-              return (
-                <Card key={appt.id}>
-                  <CardBody className="py-3">
-                    <div className="flex items-start gap-3">
-                      {/* Time column */}
-                      <div className="flex-shrink-0 w-16 text-center">
-                        <p className="text-sm font-bold text-gray-900">{formatTime(appt.appointment_time)}</p>
-                        <p className="text-xs text-gray-400">{appt.duration_minutes || 30}m</p>
-                      </div>
-
-                      {/* Info column */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold text-gray-900 text-sm">
+        /* Appointment list — audit-grade refined table treatment: slate
+           column-header eyebrows, refined row rhythm, hover, semantic status
+           dots, and a danger lead-edge on no-show / cancelled rows. */
+        <Card>
+          <CardHeader action={<span className="font-mono text-xs text-slate-500">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}</span>}>
+            {formatDisplayDate(selectedDate)}
+          </CardHeader>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-ivory-200/70">
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Time</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Patient</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-600">Visit</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {[...appointments]
+                  .sort((a, b) => (a.appointment_time || '').localeCompare(b.appointment_time || ''))
+                  .map(appt => {
+                    const statusInfo = STATUS_LABELS[appt.status] || { label: appt.status, variant: 'routine' };
+                    const isUpdating = updatingId === appt.id;
+                    // A flagged row (no-show / cancelled) carries a quiet danger
+                    // lead-edge; an active arrival carries a gold attention edge.
+                    const isFlagged = appt.status === 'no-show' || appt.status === 'cancelled';
+                    const isArrived = appt.status === 'arrived';
+                    const dotColor = appt.status === 'completed' || appt.status === 'confirmed'
+                      ? 'bg-success-500'
+                      : isFlagged
+                      ? 'bg-danger-500'
+                      : isArrived
+                      ? 'bg-gold-500'
+                      : 'bg-navy-400';
+                    return (
+                      <tr key={appt.id} className={`group transition-colors ${
+                        isFlagged ? 'bg-danger-50/40 hover:bg-danger-50/70' : 'hover:bg-ivory-200'
+                      }`}>
+                        {/* Time */}
+                        <td className={`relative whitespace-nowrap px-4 py-3 ${
+                          isFlagged ? 'before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-danger-400 before:opacity-70' :
+                          isArrived ? 'before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-gold-400 before:opacity-70' : ''
+                        }`}>
+                          <p className="text-sm font-bold text-navy-700 tabular-nums">{formatTime(appt.appointment_time)}</p>
+                          <p className="text-xs text-slate-500">{appt.duration_minutes || 30}m</p>
+                        </td>
+                        {/* Patient */}
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-navy-700 text-sm">
                             {appt.patient_last_name ? `${appt.patient_last_name}, ${appt.patient_first_name}` : `Patient #${appt.patient_id}`}
                           </p>
-                          <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-                          {appt.visit_type && (
-                            <span className="text-xs text-gray-400 capitalize">{appt.visit_type.replace(/-/g, ' ')}</span>
+                          {appt.chief_complaint && (
+                            <p className="text-xs text-slate-600 mt-0.5 max-w-[220px] truncate">{appt.chief_complaint}</p>
                           )}
-                        </div>
-                        {appt.chief_complaint && (
-                          <p className="text-xs text-gray-500 mt-0.5 truncate">{appt.chief_complaint}</p>
-                        )}
-                      </div>
-
-                      {/* Actions column */}
-                      <div className="flex-shrink-0 flex items-center gap-1.5 flex-wrap justify-end">
-                        {appt.status === 'scheduled' || appt.status === 'confirmed' ? (
-                          <>
-                            {appt.status === 'scheduled' && (
+                        </td>
+                        {/* Status */}
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className={`inline-block w-2 h-2 rounded-full ${dotColor}`} aria-hidden="true" />
+                            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                          </span>
+                        </td>
+                        {/* Visit type */}
+                        <td className="whitespace-nowrap px-4 py-3">
+                          {appt.appointment_type ? (
+                            <span className="text-xs text-slate-600 capitalize">{formatAppointmentType(appt.appointment_type)}</span>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
+                        </td>
+                        {/* Actions */}
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                            {appt.status === 'scheduled' || appt.status === 'confirmed' ? (
+                              <>
+                                {appt.status === 'scheduled' && (
+                                  <button
+                                    onClick={() => handleStatusChange(appt.id, 'confirmed')}
+                                    disabled={isUpdating}
+                                    className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-navy-50 text-navy-700 border border-navy-100 rounded-lg hover:bg-navy-100 active:bg-navy-100 transition-colors disabled:opacity-50 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
+                                    Confirm
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleCheckin(appt)}
+                                  disabled={isUpdating}
+                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-success-50 text-success-700 border border-success-100 rounded-lg hover:bg-success-100 active:bg-success-100 transition-colors disabled:opacity-50 font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-success-500 focus-visible:ring-offset-1"
+                                >
+                                  <LogIn className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
+                                  Check In
+                                </button>
+                                <button
+                                  onClick={() => handleStatusChange(appt.id, 'no-show')}
+                                  disabled={isUpdating}
+                                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-danger-500 text-white rounded-lg hover:bg-danger-600 active:bg-danger-600 transition-colors disabled:opacity-50 font-semibold shadow-mc focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500 focus-visible:ring-offset-1"
+                                >
+                                  <CalendarX className="w-3.5 h-3.5" strokeWidth={2.25} aria-hidden="true" />
+                                  No-Show
+                                </button>
+                              </>
+                            ) : appt.status === 'arrived' && appt.encounter_id ? (
                               <button
-                                onClick={() => handleStatusChange(appt.id, 'confirmed')}
-                                disabled={isUpdating}
-                                className="text-xs px-2.5 py-1.5 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                                onClick={() => navigate('/checkin/' + appt.encounter_id)}
+                                className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 active:bg-ivory-200 transition-colors font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"
                               >
-                                Confirm
+                                Open Encounter
+                              </button>
+                            ) : null}
+                            {appt.status !== 'completed' && appt.status !== 'no-show' && appt.status !== 'cancelled' && (
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(appt.id)}
+                                disabled={isUpdating}
+                                aria-label={`Cancel appointment for ${appt.patient_last_name ? `${appt.patient_first_name} ${appt.patient_last_name}` : `patient ${appt.patient_id}`} at ${formatTime(appt.appointment_time)}`}
+                                className="text-xs px-2 py-1.5 text-slate-400 hover:text-danger-600 transition-colors disabled:opacity-50 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-danger-500 focus-visible:ring-offset-1"
+                                title="Cancel appointment"
+                              >
+                                &times;
                               </button>
                             )}
-                            <button
-                              onClick={() => handleCheckin(appt)}
-                              disabled={isUpdating}
-                              className="text-xs px-2.5 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50 font-medium"
-                            >
-                              Check In
-                            </button>
-                            <button
-                              onClick={() => handleStatusChange(appt.id, 'no-show')}
-                              disabled={isUpdating}
-                              className="text-xs px-2.5 py-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
-                            >
-                              No-Show
-                            </button>
-                          </>
-                        ) : appt.status === 'arrived' && appt.encounter_id ? (
-                          <button
-                            onClick={() => navigate('/checkin/' + appt.encounter_id)}
-                            className="text-xs px-2.5 py-1.5 bg-purple-50 text-purple-700 rounded-lg hover:bg-purple-100 transition-colors font-medium"
-                          >
-                            Open Encounter
-                          </button>
-                        ) : null}
-                        {appt.status !== 'completed' && appt.status !== 'no-show' && appt.status !== 'cancelled' && (
-                          <button
-                            onClick={() => handleDelete(appt.id)}
-                            disabled={isUpdating}
-                            className="text-xs px-2 py-1.5 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50"
-                            title="Cancel appointment"
-                          >
-                            &times;
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </CardBody>
-                </Card>
-              );
-            })}
-        </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );

@@ -1,15 +1,28 @@
 /**
  * MJR-EHR AI Client Module
- * Provides clinical data extraction via pattern matching (mock mode)
- * or Claude API (api mode).
- * Enhanced with ROS extraction, PE findings, HPI generation,
- * and improved SOAP note generation.
+ *
+ * Provides clinical data extraction via deterministic pattern matching.
+ *
+ * SYNTHETIC-ONLY BASELINE: this module has no external-AI runtime. The
+ * Anthropic SDK, the API client, and the `_claude*` request paths were
+ * removed, so there is no code path from this process to a third-party
+ * inference endpoint. `AI_MODE=api` is refused at load time rather than
+ * silently degraded, so a misconfiguration fails loudly instead of
+ * appearing to work. See docs/SYNTHETIC_ONLY_BASELINE.md.
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
-
 const AI_MODE = process.env.AI_MODE || 'mock';
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+// Fail closed at require() time. This runs before any route is mounted, so an
+// operator who sets AI_MODE=api gets a startup crash, not a running server that
+// quietly serves mock output while claiming to be in API mode.
+if (AI_MODE !== 'mock') {
+  throw new Error(
+    `[ai-client] AI_MODE='${AI_MODE}' is not supported. This build is a ` +
+    'synthetic-only local demo with no external-AI runtime; the only ' +
+    "accepted value is 'mock'. Unset AI_MODE or set AI_MODE=mock."
+  );
+}
 
 function normalizeTranscriptText(text = '') {
   return text
@@ -30,57 +43,17 @@ function toMedicationDisplayName(value) {
     .join(' ');
 }
 
-function validateExtractionResponse(parsed) {
-  if (typeof parsed !== 'object' || parsed === null) return false;
-  // Ensure no unexpected database-mutation fields
-  const dangerousKeys = ['patient_id', 'encounter_id', 'id', 'user_id', 'role'];
-  for (const key of dangerousKeys) {
-    if (key in parsed) delete parsed[key]; // Strip dangerous fields
-  }
-  return true;
-}
-
+// Always 'mock'. Retained as a function rather than a constant because callers
+// and tests treat it as the mode oracle; the AI_MODE guard above guarantees the
+// return value.
 function getMode() {
-  return ANTHROPIC_API_KEY && AI_MODE === 'api' ? 'api' : 'mock';
+  return 'mock';
 }
 
+// Retained so existing callers keep a single place to ask "is external AI on?".
+// It is now a compile-time false: there is no API client to enable.
 function isClaudeEnabled() {
-  return getMode() === 'api';
-}
-
-// Lazy singleton — only instantiated when API mode is active
-let _anthropicClient = null;
-function getAnthropicClient() {
-  if (!_anthropicClient) {
-    _anthropicClient = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
-  }
-  return _anthropicClient;
-}
-
-/**
- * Call Claude with a system prompt and user message.
- * Returns the text content of the response.
- * @param {string} system
- * @param {string} user
- * @param {string} model - defaults to haiku for cost efficiency
- */
-async function callClaude(system, user, model = 'claude-haiku-4-5-20251001') {
-  const client = getAnthropicClient();
-  const AI_TIMEOUT_MS = 30000; // 30 second timeout
-
-  const apiCall = client.messages.create({
-    model,
-    max_tokens: 4096,
-    system,
-    messages: [{ role: 'user', content: user }],
-  });
-
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => reject(new Error('AI request timed out after 30 seconds')), AI_TIMEOUT_MS);
-  });
-
-  const message = await Promise.race([apiCall, timeoutPromise]);
-  return message.content[0].type === 'text' ? message.content[0].text : '';
+  return false;
 }
 
 // ==========================================
@@ -628,12 +601,12 @@ function extractImagingOrders(transcript) {
 // CLINICAL DATA EXTRACTION (Combined, Enhanced)
 // ==========================================
 
-async function extractClinicalData(transcript, patient) {
-  if (isClaudeEnabled()) {
-    return _claudeExtractClinicalData(transcript, patient);
-  }
-
-  // Mock mode: pattern-matching extraction with unified count summary
+// `_patient` is retained in the signature because three call sites pass it
+// positionally, but pattern-matching extraction does not consult the patient
+// record -- only the removed external-AI path did.
+async function extractClinicalData(transcript, _patient) {
+  // Deterministic pattern-matching extraction with unified count summary.
+  // There is no alternative branch: the external-AI path was removed.
   const extracted = {
     vitals: extractVitals(transcript),
     medications: extractMedications(transcript),
@@ -666,208 +639,12 @@ async function extractClinicalData(transcript, patient) {
   };
 }
 
-async function _claudeExtractClinicalData(transcript, patient) {
-  const system = `You are a clinical documentation AI. Extract structured data from a clinical encounter transcript.
-Return ONLY valid JSON matching the schema below. Do not include any explanation or markdown.
-
-Schema:
-{
-  "vitals": {
-    "systolic_bp": number|null,
-    "diastolic_bp": number|null,
-    "heart_rate": number|null,
-    "temperature": number|null,
-    "weight": number|null,
-    "height": number|null,
-    "respiratory_rate": number|null,
-    "spo2": number|null,
-    "bmi": number|null
-  },
-  "medications": [
-    { "medication_name": string, "dose": string, "route": string, "frequency": string }
-  ],
-  "problems": [
-    { "problem_name": string, "icd10_code": string, "status": "active"|"resolved"|"chronic" }
-  ],
-  "labs": [
-    { "test_name": string, "cpt_code": string|null }
-  ],
-  "imaging": [
-    { "study_type": string, "body_part": string }
-  ],
-  "ros": {
-    "Constitutional": string|null,
-    "Cardiovascular": string|null,
-    "Respiratory": string|null,
-    "Gastrointestinal": string|null,
-    "Musculoskeletal": string|null,
-    "Neurological": string|null,
-    "Psychiatric": string|null
-  },
-  "physical_exam": {
-    "General": string|null,
-    "Cardiovascular": string|null,
-    "Respiratory": string|null,
-    "Abdomen": string|null,
-    "Extremities": string|null,
-    "Neurological": string|null
-  }
-}
-
-Rules:
-- Only extract information explicitly stated in the transcript
-- For ICD-10 codes, use the most specific appropriate code
-- For vitals, weight is in pounds and height is in inches unless clearly stated otherwise
-- Return null for fields not mentioned in the transcript`;
-
-  const patientCtx = patient
-    ? `Patient: ${patient.first_name} ${patient.last_name}, DOB: ${patient.dob}, Sex: ${patient.sex}`
-    : '';
-
-  const userMsg = `${patientCtx ? patientCtx + '\n\n' : ''}Transcript:\n${transcript}`;
-
-  try {
-    const raw = await callClaude(system, userMsg);
-    // Strip markdown code fences if present
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-    const parsed = JSON.parse(cleaned);
-
-    // Validate and sanitize: strip dangerous fields that could mutate database state
-    validateExtractionResponse(parsed);
-
-    // Normalize nulls to expected types
-    const extracted = {
-      vitals: parsed.vitals || {},
-      medications: parsed.medications || [],
-      problems: parsed.problems || [],
-      labs: parsed.labs || [],
-      imaging: parsed.imaging || [],
-      ros: parsed.ros || {},
-      physical_exam: parsed.physical_exam || {}
-    };
-
-    // Add extraction summary
-    const counts = {
-      vitals_fields: Object.values(extracted.vitals).filter(v => v !== null && v !== undefined).length,
-      medications: Array.isArray(extracted.medications) ? extracted.medications.length : 0,
-      problems: Array.isArray(extracted.problems) ? extracted.problems.length : 0,
-      lab_orders: Array.isArray(extracted.labs) ? extracted.labs.length : 0,
-      imaging_orders: Array.isArray(extracted.imaging) ? extracted.imaging.length : 0,
-      ros_items: Object.values(extracted.ros).filter(v => v !== null && v !== undefined).length,
-      exam_items: Object.values(extracted.physical_exam).filter(v => v !== null && v !== undefined).length
-    };
-
-    const totalFields = Object.values(counts).reduce((a, b) => a + b, 0);
-
-    return {
-      extracted,
-      extraction_summary: {
-        total_fields: totalFields,
-        counts
-      }
-    };
-  } catch (err) {
-    // Fallback to pattern matching if Claude fails
-    console.error('[AI] Claude extraction failed, falling back to pattern matching:', err.message);
-    const extracted = {
-      vitals: extractVitals(transcript),
-      medications: extractMedications(transcript),
-      problems: extractProblems(transcript),
-      labs: extractLabOrders(transcript),
-      imaging: extractImagingOrders(transcript),
-      ros: extractROS(transcript),
-      physical_exam: extractPhysicalExam(transcript)
-    };
-
-    const counts = {
-      vitals_fields: Object.values(extracted.vitals).filter(v => v !== null && v !== undefined).length,
-      medications: Array.isArray(extracted.medications) ? extracted.medications.length : 0,
-      problems: Array.isArray(extracted.problems) ? extracted.problems.length : 0,
-      lab_orders: Array.isArray(extracted.labs) ? extracted.labs.length : 0,
-      imaging_orders: Array.isArray(extracted.imaging) ? extracted.imaging.length : 0,
-      ros_items: Object.values(extracted.ros).filter(v => v !== null && v !== undefined).length,
-      exam_items: Object.values(extracted.physical_exam).filter(v => v !== null && v !== undefined).length
-    };
-
-    const totalFields = Object.values(counts).reduce((a, b) => a + b, 0);
-
-    return {
-      extracted,
-      extraction_summary: {
-        total_fields: totalFields,
-        counts
-      }
-    };
-  }
-}
-
 // ==========================================
 // SOAP NOTE GENERATION (Enhanced)
 // ==========================================
 
 async function generateSOAPNote(transcript, patient, vitals) {
-  if (isClaudeEnabled()) {
-    return _claudeGenerateSOAPNote(transcript, patient, vitals);
-  }
   return _mockGenerateSOAPNote(transcript, patient, vitals);
-}
-
-async function _claudeGenerateSOAPNote(transcript, patient, vitals) {
-  const patientName = patient ? `${patient.first_name} ${patient.last_name}` : 'Unknown Patient';
-  const age = patient && patient.dob ? calculateAge(patient.dob) : 'Unknown';
-  const sex = patient ? patient.sex : '';
-
-  const vitalsText = vitals && Object.keys(vitals).length > 0
-    ? Object.entries(vitals)
-        .filter(([, v]) => v !== null && v !== undefined)
-        .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`)
-        .join(', ')
-    : 'Not recorded';
-
-  const system = `You are a clinical documentation AI assisting a physician in a primary care setting.
-Generate a complete, professional SOAP note from the encounter transcript provided.
-
-Format the note exactly as follows (use plain text, no markdown):
-
-PATIENT: [name, age, sex]
-DATE: [today's date]
-
-SUBJECTIVE:
-[Chief complaint and HPI in narrative form. Include duration, severity, associated symptoms, and relevant history.]
-
-REVIEW OF SYSTEMS:
-[Systems reviewed, noting positive and negative findings]
-
-OBJECTIVE:
-Vitals: [list all available vitals]
-Physical Exam: [organized by system — General, HEENT, Cardiovascular, Respiratory, Abdomen, Extremities, Neurological as applicable]
-
-ASSESSMENT:
-[Numbered problem list with ICD-10 codes where applicable]
-
-PLAN:
-[Numbered list corresponding to each problem — medications, labs, imaging, referrals, follow-up, patient education]
-
-Rules:
-- Use standard medical abbreviations
-- Be concise but clinically complete
-- Only document what is stated or clearly implied in the transcript
-- Do not fabricate findings or orders not mentioned
-- Include ICD-10 codes for diagnoses in parentheses`;
-
-  const userMsg = `Patient: ${patientName}, Age: ${age}, Sex: ${sex}
-Vitals recorded: ${vitalsText}
-Date: ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-
-Encounter Transcript:
-${transcript}`;
-
-  try {
-    return await callClaude(system, userMsg, 'claude-sonnet-4-6');
-  } catch (err) {
-    console.error('[AI] Claude SOAP generation failed, falling back to pattern matching:', err.message);
-    return _mockGenerateSOAPNote(transcript, patient, vitals);
-  }
 }
 
 function _mockGenerateSOAPNote(transcript, patient, vitals) {
@@ -1051,6 +828,7 @@ async function lookupMedication(drugName) {
 
   // Try RxNorm for canonical identification
   try {
+    // eslint-disable-next-line global-require -- optional module, absence is non-fatal
     const rxnorm = require('./pharma/rxnorm-service');
     const enriched = await rxnorm.resolveAndEnrich(drugName);
     if (enriched) {

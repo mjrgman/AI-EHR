@@ -3,18 +3,25 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
+// Import before database initialization so production cannot open the patient
+// store unless both encryption secrets pass the fail-closed startup gate.
+require('./security/phi-encryption');
 const db = require('./database');
 const aiClient = require('./ai-client');
 const workflow = require('./workflow-engine');
 const cds = require('./cds-engine');
+const drugSafety = require('./pharma/drug-safety-service');
 const providerLearning = require('./provider-learning');
 const audit = require('./audit-logger');
 const logger = require('./utils/logger');
 const { validate, schemas } = require('./utils/validate');
 const auth = require('./security/auth');
 const rbac = require('./security/rbac');
+const { throttle } = require('./security/endpoint-throttle');
 const refreshTokens = require('./security/refresh-tokens');
 const { runMigrations } = require('./database-migrations');
+const triage = require('./triage-service');
+const { seedDecisionQueue } = require('./decision-queue-seed');
 const billing = require('./billing-engine');
 const fhirRouter = require('./fhir/router');
 const { buildSmartConfiguration } = require('./fhir/smart/smart-config');
@@ -25,16 +32,19 @@ const { buildAuthRouter } = require('./routes/auth-routes');
 const patientPortalRouter = require('./routes/patient-portal');
 const { mountLabCorpRoutes } = require('./routes/labcorp-routes');
 const { mountMediVaultRoutes } = require('./routes/medivault-routes');
+const { mountCareManagementRoutes } = require('./routes/care-management-routes');
+const { mountHedisRoutes } = require('./routes/hedis-routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '';
 const SERVER_START_TIME = Date.now();
 
 // ==========================================
 // PROCESS-LEVEL ERROR HANDLERS (must be first)
 // ==========================================
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, _promise) => {
   logger.error('Unhandled Promise Rejection', {
     reason: reason instanceof Error ? reason.message : String(reason),
     stack: reason instanceof Error ? reason.stack : undefined,
@@ -81,13 +91,14 @@ app.use(helmet({
 const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map(s => s.trim());
+const isDevelopment = (process.env.NODE_ENV || 'development') === 'development';
 
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (server-to-server, curl, mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (process.env.NODE_ENV === 'development') return callback(null, true);
+    if (isDevelopment) return callback(null, true);
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
@@ -214,13 +225,23 @@ app.get('/.well-known/jwks.json', (req, res) => {
 // SMART-on-FHIR ENDPOINTS
 // ==========================================
 
-app.post('/smart/token', tokenHandler);
-app.get('/smart/introspect', introspectHandler);
-app.post('/smart/introspect', introspectHandler);
-app.get('/smart/authorize', authorizeHandler);
-app.get('/smart/launch', auth.requireAuth, launchHandler);
-app.post('/smart/revoke', revokeHandler);
-app.post('/smart/register', registerClientHandler);
+// These run BEFORE any user identity exists, so the user-keyed limiter in
+// hipaa-middleware.js cannot cover them. Each checks a secret, and the token
+// and registration paths do bcrypt work, so they are both a guessing surface
+// and a cheap way to burn CPU. Throttled per client IP -- a weak key, but the
+// only one available pre-auth. See server/security/endpoint-throttle.js.
+const smartTokenThrottle = throttle({ name: 'smart-token', max: 20, windowMs: 60 * 1000 });
+const smartIntrospectThrottle = throttle({ name: 'smart-introspect', max: 60, windowMs: 60 * 1000 });
+const smartAuthorizeThrottle = throttle({ name: 'smart-authorize', max: 30, windowMs: 60 * 1000 });
+const smartRegisterThrottle = throttle({ name: 'smart-register', max: 5, windowMs: 60 * 60 * 1000 });
+
+app.post('/smart/token', smartTokenThrottle, tokenHandler);
+app.get('/smart/introspect', smartIntrospectThrottle, introspectHandler);
+app.post('/smart/introspect', smartIntrospectThrottle, introspectHandler);
+app.get('/smart/authorize', smartAuthorizeThrottle, authorizeHandler);
+app.get('/smart/launch', smartAuthorizeThrottle, auth.requireAuth, launchHandler);
+app.post('/smart/revoke', smartTokenThrottle, revokeHandler);
+app.post('/smart/register', smartRegisterThrottle, registerClientHandler);
 
 // ==========================================
 // FHIR R4 TRANSLATION LAYER
@@ -252,11 +273,24 @@ mountMediVaultRoutes(app, { db });
 app.use('/api', auth.requireAuth);
 
 // RBAC: resource-level access control per route group
-app.use('/api/patients', rbac.requireResourceAccess('patients'));
+// Clinical subroutes under /api/patients have their own per-route RBAC checks that
+// use the correct resource type (allergies, vitals, labs, etc.). Skip the global
+// patients guard for write operations on those subroutes so the per-route check fires.
+const PATIENT_SUBROUTES_WITH_OWN_RBAC = new Set([
+  'allergies', 'vitals', 'medications', 'labs', 'problems',
+  'lab-orders', 'imaging-orders', 'referrals', 'conditions',
+]);
+app.use('/api/patients', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const lastSeg = req.path.split('/').filter(Boolean).pop();
+    if (lastSeg && PATIENT_SUBROUTES_WITH_OWN_RBAC.has(lastSeg)) return next();
+  }
+  rbac.requireResourceAccess('patients')(req, res, next);
+});
 app.use('/api/encounters', rbac.requireResourceAccess('encounters'));
-app.use('/api/prescriptions', rbac.requireResourceAccess('medications'));
+app.use('/api/prescriptions', rbac.requireResourceAccess('prescriptions'));
 app.use('/api/medications', rbac.requireResourceAccess('medications'));
-app.use('/api/audit', rbac.requireRole('admin', 'physician'));
+app.use('/api/audit', rbac.requireRole('admin'));
 app.use('/api/billing', rbac.requireResourceAccess('billing'));
 app.use('/api/charges', rbac.requireResourceAccess('billing'));
 app.use('/api/appointments', rbac.requireResourceAccess('encounters'));
@@ -281,7 +315,26 @@ mountLabCorpRoutes(app, { db });
 // MediVault export routes are mounted above the global /api auth wall so they
 // can accept either a clinician JWT or a matching patient-portal session.
 //   GET /api/medivault/export/:patientId  → FHIR R4 Bundle (collection)
-// audit-logger PHI_ROUTES still captures each export as a vault_export READ.
+// audit-logger PHI_ROUTES also captures each export as a central vault_export event.
+
+// Care Management engine routes (Phase 2 of primary-care deepening).
+// mountCareManagementRoutes registers:
+//   GET  /api/care-management/codes              → CPT/HCPCS catalog
+//   POST /api/care-management/eligibility        → per-program eligibility
+//   POST /api/care-management/billable           → monthly billable code computation
+//   POST /api/care-management/conflict-check     → stacking conflict pre-flight
+// Inherits /api/* auth pipeline. PHI inputs come from request body so the
+// caller is responsible for validating they have access to the patient first.
+mountCareManagementRoutes(app, { db });
+
+// HEDIS quality-measure adapter routes (Phase 6 of primary-care deepening).
+// mountHedisRoutes registers:
+//   GET  /api/quality/hedis/measures             → measure-ID list
+//   POST /api/quality/hedis/evaluate/:measureId  → single-measure eval for a patient
+//   POST /api/quality/hedis/all                  → all-measure eval for a patient
+// Inherits /api/* auth pipeline. PHI inputs come via request body — clinician
+// must already have access to the patient before calling.
+mountHedisRoutes(app, { db });
 
 // ==========================================
 // PATIENT ENDPOINTS
@@ -360,6 +413,9 @@ app.post('/api/patients', validate(schemas.createPatient), async (req, res) => {
     };
 
     const result = await db.createPatient(patientData);
+    // Attribute the audit row to the patient just created. The id does not
+    // exist until this point, so the audit middleware cannot derive it.
+    req.auditPatientId = result?.id ?? null;
     res.status(201).json(result);
   } catch (error) {
     console.error('Error creating patient:', error);
@@ -378,7 +434,7 @@ app.post('/api/patients/extract-from-speech', async (req, res) => {
     const trimmed = sanitizeString(transcript, 10000);
 
     // Use AI to extract patient demographics
-    const extracted = await aiClient.extractClinicalData(trimmed, {});
+    const _extracted = await aiClient.extractClinicalData(trimmed, {});
 
     // Pattern matching for demographics
     const nameMatch = trimmed.match(/(?:name is|patient|called)\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)/i);
@@ -531,6 +587,9 @@ app.get('/api/encounters/:id', async (req, res) => {
     const encounter = await db.getEncounterById(id);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
 
+    // :id identifies an encounter, not a patient. Hand the audit middleware the
+    // subject we already loaded rather than making it re-query.
+    req.auditPatientId = encounter.patient_id ?? null;
     res.json(filterEncounterForRole(req, encounter));
   } catch (error) {
     console.error('Error fetching encounter:', error);
@@ -599,6 +658,13 @@ app.patch('/api/encounters/:id', async (req, res) => {
     if (req.body.duration_minutes !== undefined) updates.duration_minutes = parseInt(req.body.duration_minutes, 10) || null;
 
     const result = await db.updateEncounter(id, updates);
+
+    // :id identifies an encounter. Prefer the patient_id the caller supplied;
+    // otherwise resolve it so the audit row is attributed to a patient rather
+    // than left blank.
+    req.auditPatientId = validateId(req.body.patient_id)
+      || (await db.getEncounterById(id))?.patient_id
+      || null;
 
     // If transcript was updated, run CDS evaluation
     let cdsSuggestions = [];
@@ -734,6 +800,39 @@ app.post('/api/prescriptions', async (req, res) => {
       status: req.body.status || 'signed'
     };
 
+    // Drug-safety screening at sign time (warn-and-allow policy: the prescription is
+    // never blocked, but interaction / boxed-warning / allergy-contraindication alerts
+    // and a fail-closed screening-unavailable flag are surfaced to the prescriber).
+    let safety = null;
+    try {
+      const [allMeds, allergies] = await Promise.all([
+        db.getPatientMedications(patientId),
+        db.getPatientAllergies(patientId)
+      ]);
+      const activeMeds = (allMeds || []).filter(m => m.status === 'active');
+      const check = await drugSafety.fullSafetyCheck(rxData.medication_name, activeMeds, allergies || []);
+      safety = {
+        alerts: check.alerts,
+        interactionScreeningUnavailable: check.interactionScreeningUnavailable,
+        boxedWarning: check.boxedWarning
+      };
+    } catch (safetyErr) {
+      // Fail closed: a failed screen must NOT read as "no interactions found."
+      console.error('Drug-safety screening error (non-fatal, fail-closed):', safetyErr.message);
+      safety = {
+        alerts: [{
+          type: 'interaction_screening_unavailable',
+          severity: 'warning',
+          title: `Interaction check unavailable: ${rxData.medication_name}`,
+          description: 'Automated drug-safety screening could not be completed. Verify interactions, boxed warnings, and allergies manually.',
+          source: 'drug-safety-service',
+          unavailable: true
+        }],
+        interactionScreeningUnavailable: true,
+        boxedWarning: { hasBoxedWarning: false, warning: null }
+      };
+    }
+
     const result = await db.createPrescription(rxData);
 
     // Also add to medications list if requested
@@ -771,7 +870,7 @@ app.post('/api/prescriptions', async (req, res) => {
       console.error('Provider learning error (non-fatal):', learnErr.message);
     }
 
-    res.status(201).json(result);
+    res.status(201).json({ ...result, safety });
   } catch (error) {
     console.error('Error creating prescription:', error);
     res.status(500).json({ error: 'Failed to create prescription' });
@@ -794,6 +893,13 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
     const medications = aiClient.extractMedications(transcript);
     const prescriptions = [];
 
+    // Fetch patient meds + allergies once for the warn-and-allow safety screen below.
+    const [allMeds, allergies] = await Promise.all([
+      db.getPatientMedications(patientId),
+      db.getPatientAllergies(patientId)
+    ]);
+    const activeMeds = (allMeds || []).filter(m => m.status === 'active');
+
     for (const med of medications) {
       const isNew = transcript.toLowerCase().includes('start') &&
                     transcript.toLowerCase().includes(med.name.toLowerCase());
@@ -815,8 +921,33 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
           status: 'signed'
         };
 
+        // Warn-and-allow drug-safety screen (never blocks the script; fails closed).
+        let safety = null;
+        try {
+          const check = await drugSafety.fullSafetyCheck(rxData.medication_name, activeMeds, allergies || []);
+          safety = {
+            alerts: check.alerts,
+            interactionScreeningUnavailable: check.interactionScreeningUnavailable,
+            boxedWarning: check.boxedWarning
+          };
+        } catch (safetyErr) {
+          console.error('Drug-safety screening error (non-fatal, fail-closed):', safetyErr.message);
+          safety = {
+            alerts: [{
+              type: 'interaction_screening_unavailable',
+              severity: 'warning',
+              title: `Interaction check unavailable: ${rxData.medication_name}`,
+              description: 'Automated drug-safety screening could not be completed. Verify interactions, boxed warnings, and allergies manually.',
+              source: 'drug-safety-service',
+              unavailable: true
+            }],
+            interactionScreeningUnavailable: true,
+            boxedWarning: { hasBoxedWarning: false, warning: null }
+          };
+        }
+
         const result = await db.createPrescription(rxData);
-        prescriptions.push({ ...rxData, id: result.id });
+        prescriptions.push({ ...rxData, id: result.id, safety });
       }
     }
 
@@ -1303,7 +1434,14 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
     res.json({ ...result, cds_suggestions: cdsSuggestions });
   } catch (error) {
     if (error.message.includes('Invalid transition')) {
+      // Bad/illegal target state for the current state — client error.
       return res.status(400).json({ error: error.message });
+    }
+    if (error.message.includes('cannot transition')) {
+      // Role not permitted for this transition — authorization failure, not a
+      // server fault. Returning 403 (not 500) keeps the encounter from being
+      // stranded behind an opaque server error (UR-005).
+      return res.status(403).json({ error: error.message });
     }
     console.error('Error transitioning workflow:', error);
     res.status(500).json({ error: 'Failed to transition workflow' });
@@ -1358,7 +1496,10 @@ app.post('/api/cds/evaluate', async (req, res) => {
       context.providerName, context.problems
     );
 
-    const ruleSuggestions = await cds.evaluatePatientContext(encounterId, patientId, context);
+    let ruleSuggestions = await cds.evaluatePatientContext(encounterId, patientId, context);
+    if (ruleSuggestions.length === 0) {
+      ruleSuggestions = await db.getEncounterSuggestions(encounterId, 'pending');
+    }
 
     // Persist provider suggestions too
     const savedProvSuggestions = [];
@@ -1508,6 +1649,297 @@ app.post('/api/cds/suggestions/:id/defer', async (req, res) => {
 });
 
 // ==========================================
+// DECISION QUEUE ENDPOINTS (Provider Decision Queue + AI Triage)
+// ==========================================
+//
+// Two-tier clinical AI surface:
+//   - Upstream TRIAGE (top tier, sonnet) sorts the patient to a level of care
+//     via the AHRQ Emergency Severity Index (ESI, 5-level acuity).
+//   - A MID-tier (haiku) one-paragraph patient summary + a TOP-tier decision
+//     tree of >= 4 one-click options are generated on read for pending items
+//     and persisted (cached) so the demo is deterministic and offline-capable.
+//   - The provider's chosen action (or dictated free text) is routed to the
+//     MEDICAL-ASSISTANT close-out queue and transitions the encounter to
+//     'orders-pending' (the MA-actionable workflow state).
+//
+// RBAC: GET/decide are provider-only (physician/NP); MA close-out is gated to
+// ma + physician/NP. We use requireRole here (not requireResourceAccess)
+// because decision_queue is a feature surface, not a base RBAC resource type,
+// and MA needs POST access that the resource-action matrix would deny.
+
+const PROVIDER_DECISION_ROLES = ['physician', 'nurse_practitioner'];
+const MA_CLOSEOUT_ROLES = ['ma', 'physician', 'nurse_practitioner'];
+
+// Build the patient record passed to the triage/summary/decision functions.
+async function buildDecisionRecord(item) {
+  const patient = await db.getPatientById(item.patient_id);
+  const problems = await db.getPatientProblems(item.patient_id);
+  const vitalsRows = await db.dbAll(
+    'SELECT * FROM vitals WHERE encounter_id = ? ORDER BY recorded_date DESC LIMIT 1',
+    [item.encounter_id]
+  );
+  const vitals = vitalsRows[0] || {};
+  return {
+    first_name: patient?.first_name,
+    last_name: patient?.last_name,
+    sex: patient?.sex,
+    dob: patient?.dob,
+    age: patient ? db.calculateAge(patient.dob) : null,
+    chief_complaint: item.chief_complaint,
+    vitals,
+    problems: (problems || []).filter(p => p.status === 'active' || p.status === 'chronic'),
+  };
+}
+
+// Shape a decision_queue row for the API response (parse JSON options).
+function serializeDecisionItem(row) {
+  let options = [];
+  try {
+    options = row.decision_options ? JSON.parse(row.decision_options) : [];
+  } catch { options = []; }
+  // EMERGENCY BYPASS: ESI 1-2 are emergent (AHRQ ESI v4 — level 1 = immediate
+  // life-saving intervention; level 2 = high-risk, cannot wait). These bypass
+  // the routine deliberative path: they pin to the top, render with critical
+  // styling, and route to immediate handling rather than routine MA close-out.
+  const is_emergency = triage.isEmergency(row.esi_level);
+  // An EMERGENCY ESCALATION is recorded when a provider takes a 911/ED action.
+  // The MA close-out then shows "confirm 911/ED handoff" rather than a routine
+  // task. Derived from the recorded decision_key (preferred) and falls back to
+  // the acuity flag for any decided emergency item.
+  const emergency_escalated =
+    triage.EMERGENCY_DECISION_KEYS.includes(row.decision_key) ||
+    (is_emergency && row.status !== 'pending');
+  return {
+    id: row.id,
+    encounter_id: row.encounter_id,
+    patient_id: row.patient_id,
+    status: row.status,
+    is_emergency,
+    emergency_escalated,
+    patient: {
+      first_name: row.first_name,
+      last_name: row.last_name,
+      mrn: row.mrn,
+      dob: row.dob,
+      sex: row.sex,
+      age: row.dob ? db.calculateAge(row.dob) : null,
+    },
+    chief_complaint: row.chief_complaint,
+    triage: {
+      esi_level: row.esi_level,
+      level_of_care: row.level_of_care,
+      rationale: row.triage_rationale,
+      model: row.triage_model,
+    },
+    summary: row.ai_summary,
+    summary_model: row.summary_model,
+    options,
+    decision_model: row.decision_model,
+    decision: {
+      key: row.decision_key,
+      label: row.decision_label,
+      text: row.decision_text,
+      decided_by: row.decided_by,
+      decided_at: row.decided_at,
+    },
+    ma_status: row.ma_status,
+    closed_by: row.closed_by,
+    closed_at: row.closed_at,
+    created_at: row.created_at,
+  };
+}
+
+// GET /api/decisions — provider queue (pending + decided), sickest-first.
+// For pending items lacking cached AI output, generate triage (top), summary
+// (mid), and the decision tree (top) on read and persist them.
+app.get('/api/decisions', rbac.requireRole(...PROVIDER_DECISION_ROLES), async (req, res) => {
+  try {
+    const items = await db.getProviderDecisionQueue();
+
+    for (const item of items) {
+      const needsGeneration = item.status === 'pending' && (!item.ai_summary || !item.decision_options);
+      if (!needsGeneration) continue;
+
+      const record = await buildDecisionRecord(item);
+      const triageResult = await triage.triagePatient(record);
+      const summaryResult = await triage.summarizePatient(record);
+      const decisionResult = await triage.buildDecisionOptions(record, triageResult);
+
+      await db.updateDecisionQueueAI(item.id, {
+        esi_level: triageResult.esi_level,
+        level_of_care: triageResult.level_of_care,
+        triage_rationale: triageResult.rationale,
+        triage_model: triageResult.model,
+        ai_summary: summaryResult.summary,
+        summary_model: summaryResult.model,
+        decision_options: decisionResult.options,
+        decision_model: decisionResult.model,
+      });
+
+      // Reflect the freshly-generated values onto the row we return now.
+      item.esi_level = triageResult.esi_level;
+      item.level_of_care = triageResult.level_of_care;
+      item.triage_rationale = triageResult.rationale;
+      item.triage_model = triageResult.model;
+      item.ai_summary = summaryResult.summary;
+      item.summary_model = summaryResult.model;
+      item.decision_options = JSON.stringify(decisionResult.options);
+      item.decision_model = decisionResult.model;
+    }
+
+    // Re-sort sickest-first now that pending items have an esi_level.
+    items.sort((a, b) => {
+      const statusRank = (s) => (s === 'pending' ? 0 : 1);
+      if (statusRank(a.status) !== statusRank(b.status)) return statusRank(a.status) - statusRank(b.status);
+      return (a.esi_level || 99) - (b.esi_level || 99);
+    });
+
+    // EMERGENCY BYPASS: count emergent (ESI 1-2) items so the UI can surface a
+    // top-of-page critical banner. The esi-asc sort above already pins these
+    // first; emergency cards render with critical styling and a one-click
+    // "Call 911 / Send to ED now" headline action.
+    const serialized = items.map(serializeDecisionItem);
+    const emergency_count = serialized.filter(i => i.is_emergency).length;
+
+    res.json({
+      mode: aiClient.getMode(),
+      count: items.length,
+      emergency_count,
+      items: serialized,
+    });
+  } catch (error) {
+    logger.error('Error fetching decision queue', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch decision queue' });
+  }
+});
+
+// POST /api/decisions/:id/decide — provider records a decision.
+// Body: { decision_key } (chosen one-click option) OR { decision_text }
+// (dictated custom decision). Sets status='decided', ma_status='awaiting',
+// transitions the encounter workflow to 'orders-pending', and returns the row.
+app.post('/api/decisions/:id/decide', rbac.requireRole(...PROVIDER_DECISION_ROLES), async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid decision ID' });
+
+    const decisionKey = req.body.decision_key ? sanitizeString(req.body.decision_key, 100) : null;
+    const decisionText = req.body.decision_text ? sanitizeString(req.body.decision_text, 2000) : null;
+    if (!decisionKey && !decisionText) {
+      return res.status(400).json({ error: 'Provide either decision_key (a one-click option) or decision_text (a dictated decision)' });
+    }
+
+    const item = await db.getDecisionQueueItemById(id);
+    if (!item) return res.status(404).json({ error: 'Decision item not found' });
+    if (item.status !== 'pending') {
+      return res.status(409).json({ error: `Decision already ${item.status}` });
+    }
+
+    // Resolve the human label for the chosen option from cached options.
+    let decisionLabel = decisionText ? 'Dictated decision' : decisionKey;
+    if (decisionKey && item.decision_options) {
+      try {
+        const opts = JSON.parse(item.decision_options);
+        const match = opts.find(o => o.key === decisionKey);
+        if (match) decisionLabel = match.label;
+      } catch { /* leave label as key */ }
+    }
+
+    // EMERGENCY BYPASS: a 911/ED action is an emergency escalation, not a
+    // routine disposition. Record an unambiguous emergency disposition label so
+    // the MA close-out worklist shows "EMERGENCY — confirm 911/ED handoff"
+    // rather than a routine task. (AHRQ ESI v4 — ESI 1-2 are emergent.)
+    const isEmergencyAction = triage.EMERGENCY_DECISION_KEYS.includes(decisionKey);
+    if (isEmergencyAction) {
+      decisionLabel = '911 activated / ED transfer';
+    }
+
+    const decidedBy = req.user?.name || req.user?.username || process.env.PROVIDER_NAME || 'Provider';
+    const result = await db.recordDecision(id, {
+      decision_key: decisionKey,
+      decision_label: decisionLabel,
+      decision_text: decisionText,
+      decided_by: decidedBy,
+    });
+    if (result.changes === 0) {
+      return res.status(409).json({ error: 'Decision could not be recorded (already decided)' });
+    }
+
+    // Route to the MA queue by advancing the encounter workflow to
+    // 'orders-pending' (the MA-actionable state). Non-fatal if the workflow is
+    // not in a transitionable state — the decision itself is already recorded.
+    let workflowTransition = null;
+    try {
+      const userRole = req.user?.role || null;
+      workflowTransition = await workflow.transitionState(item.encounter_id, 'orders-pending', {}, userRole);
+    } catch (wfErr) {
+      logger.warn('Decision workflow transition skipped (non-fatal)', { encounter_id: item.encounter_id, error: wfErr.message });
+    }
+
+    const updated = await db.getDecisionQueueItemByEncounter(item.encounter_id);
+    const enriched = await db.getProviderDecisionQueue();
+    const joined = enriched.find(r => r.id === updated.id) || { ...updated };
+    res.json({ ...serializeDecisionItem(joined), workflow_transition: workflowTransition });
+  } catch (error) {
+    logger.error('Error recording decision', { error: error.message });
+    res.status(500).json({ error: 'Failed to record decision' });
+  }
+});
+
+// GET /api/decisions/ma/closeouts — MA worklist: decided items awaiting close.
+app.get('/api/decisions/ma/closeouts', rbac.requireRole(...MA_CLOSEOUT_ROLES), async (req, res) => {
+  try {
+    const items = await db.getMaCloseouts();
+    res.json({ count: items.length, items: items.map(serializeDecisionItem) });
+  } catch (error) {
+    logger.error('Error fetching MA close-outs', { error: error.message });
+    res.status(500).json({ error: 'Failed to fetch MA close-outs' });
+  }
+});
+
+// POST /api/decisions/:id/close — MA (or provider) closes out a decided item.
+// Sets status='closed', ma_status='closed', records closed_by/closed_at, and
+// advances the encounter workflow forward when legal (non-fatal otherwise).
+app.post('/api/decisions/:id/close', rbac.requireRole(...MA_CLOSEOUT_ROLES), async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid decision ID' });
+
+    const item = await db.getDecisionQueueItemById(id);
+    if (!item) return res.status(404).json({ error: 'Decision item not found' });
+    if (item.status === 'closed') {
+      return res.status(409).json({ error: 'Decision already closed' });
+    }
+    if (item.status !== 'decided') {
+      return res.status(409).json({ error: 'Decision must be decided by a provider before close-out' });
+    }
+
+    const closedBy = req.user?.name || req.user?.username || 'MA';
+    const result = await db.closeDecision(id, { closed_by: closedBy });
+    if (result.changes === 0) {
+      return res.status(409).json({ error: 'Decision could not be closed' });
+    }
+
+    // Advance the encounter forward (orders-pending -> documentation) when the
+    // workflow is in that state. Non-fatal: the close-out itself is recorded.
+    try {
+      const wf = await workflow.getCurrentState(item.encounter_id);
+      if (wf.current_state === 'orders-pending') {
+        const userRole = req.user?.role || null;
+        await workflow.transitionState(item.encounter_id, 'documentation', {}, userRole);
+      }
+    } catch (wfErr) {
+      logger.warn('Close-out workflow transition skipped (non-fatal)', { encounter_id: item.encounter_id, error: wfErr.message });
+    }
+
+    const updated = await db.getDecisionQueueItemById(id);
+    res.json(serializeDecisionItem(updated));
+  } catch (error) {
+    logger.error('Error closing decision', { error: error.message });
+    res.status(500).json({ error: 'Failed to close decision' });
+  }
+});
+
+// ==========================================
 // PROVIDER LEARNING ENDPOINTS
 // ==========================================
 
@@ -1641,6 +2073,9 @@ app.get('/api/encounters/:id/orders', requireAnyResourceAccess('lab_orders', 'im
   try {
     const id = validateId(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    // Attribute the audit row to the encounter's patient; :id is not one.
+    req.auditPatientId = (await db.getEncounterById(id))?.patient_id ?? null;
 
     const [labOrders, imagingOrders, referrals, prescriptions] = await Promise.all([
       db.dbAll('SELECT * FROM lab_orders WHERE encounter_id = ? ORDER BY order_date DESC', [id]),
@@ -1831,7 +2266,7 @@ app.get('/api/audit/stats', async (req, res) => {
   }
 });
 
-app.get('/api/audit/sessions', async (req, res) => {
+app.get('/api/audit/sessions', rbac.requireRole('admin'), async (req, res) => {
   try {
     const result = await audit.getAuditSessions({
       page: parseInt(req.query.page, 10) || 1,
@@ -1862,7 +2297,7 @@ app.get('/api/audit/patient/:id', async (req, res) => {
   }
 });
 
-app.get('/api/audit/export', async (req, res) => {
+app.get('/api/audit/export', rbac.requireRole('admin'), async (req, res) => {
   try {
     const result = await audit.queryAuditLogs({
       page: 1,
@@ -1889,10 +2324,19 @@ app.get('/api/audit/export', async (req, res) => {
 // GLOBAL ERROR HANDLER (must be after all routes)
 // ==========================================
 
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   // CORS errors
   if (err.message && err.message.startsWith('CORS:')) {
     return res.status(403).json({ error: 'Forbidden: CORS policy violation' });
+  }
+
+  if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400 && 'body' in err)) {
+    logger.warn('Malformed JSON request rejected', {
+      method: req.method,
+      path: req.path,
+      ip: req.ip,
+    });
+    return res.status(400).json({ error: 'Malformed JSON request body' });
   }
 
   logger.error('Unhandled Express error', {
@@ -2190,6 +2634,68 @@ app.get('/api/insurance/carriers', (req, res) => {
 });
 
 // ==========================================
+// STAFF PORTAL INBOX (B1 — portal-originated work for clinical staff)
+// ==========================================
+
+// GET /api/staff/portal-messages
+// Returns portal-originated messages (refill requests, appointment requests,
+// secure messages) for staff review. Accessible to front_desk, ma, physician, nurse_practitioner.
+// Billing and admin do NOT have access to clinical portal messages.
+app.get('/api/staff/portal-messages',
+  rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'front_desk'),
+  async (req, res) => {
+    try {
+      const { status, message_type, patient_id } = req.query;
+      let query = `
+        SELECT pm.id, pm.patient_id, pm.message_type, pm.subject, pm.content,
+               pm.status, pm.tier, pm.created_at, pm.sent_at,
+               p.first_name, p.last_name, p.mrn
+        FROM patient_messages pm
+        JOIN patients p ON pm.patient_id = p.id
+        WHERE 1=1`;
+      const params = [];
+      if (status) { query += ' AND pm.status = ?'; params.push(status); }
+      if (message_type) { query += ' AND pm.message_type = ?'; params.push(message_type); }
+      if (patient_id) {
+        const pid = validateId(patient_id);
+        if (pid) { query += ' AND pm.patient_id = ?'; params.push(pid); }
+      }
+      query += ' ORDER BY pm.created_at DESC LIMIT 200';
+      const messages = await db.dbAll(query, params);
+      res.json({ messages, count: messages.length });
+    } catch (err) {
+      logger.error('Error fetching staff portal messages', { error: err.message });
+      res.status(500).json({ error: 'Failed to fetch portal messages' });
+    }
+  }
+);
+
+// PATCH /api/staff/portal-messages/:id — mark message as read/actioned
+app.patch('/api/staff/portal-messages/:id',
+  rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'ma', 'front_desk'),
+  async (req, res) => {
+    try {
+      const id = validateId(req.params.id);
+      if (!id) return res.status(400).json({ error: 'Invalid message ID' });
+      const { status } = req.body;
+      const allowed = ['pending', 'read', 'actioned', 'resolved'];
+      if (!status || !allowed.includes(status)) {
+        return res.status(400).json({ error: `status must be one of: ${allowed.join(', ')}` });
+      }
+      await db.dbRun(
+        `UPDATE patient_messages SET status = ? WHERE id = ?`,
+        [status, id]
+      );
+      const updated = await db.dbGet('SELECT * FROM patient_messages WHERE id = ?', [id]);
+      res.json(updated);
+    } catch (err) {
+      logger.error('Error updating portal message', { error: err.message });
+      res.status(500).json({ error: 'Failed to update message' });
+    }
+  }
+);
+
+// ==========================================
 // SERVE REACT APP (catch-all must be last)
 // ==========================================
 
@@ -2217,16 +2723,24 @@ async function initializeServerState() {
     await refreshTokens.init(db);
 
     try {
+      await seedDecisionQueue(db);
+    } catch (err) {
+      logger.warn('Decision queue seed on startup failed (non-fatal)', { error: err.message });
+    }
+
+    try {
       await providerLearning.decayPreferences();
     } catch (err) {
       logger.warn('Preference decay on startup failed (non-fatal)', { error: err.message });
     }
 
     try {
+      // eslint-disable-next-line global-require -- startup wiring, failure is non-fatal
       const { MessageBus } = require('./agents/message-bus');
       const messageBus = new MessageBus(db);
       messageBus.wireCATCDataFlows();
 
+      // eslint-disable-next-line global-require -- startup wiring, failure is non-fatal
       const eventBus = require('./integrations/event-bus');
       const EVENT_MAP = {
         'NOTE_SIGNED': 'note.signed',
@@ -2288,14 +2802,16 @@ async function startServer() {
 
   await initializeServerState();
 
-  serverInstance = app.listen(PORT, () => {
+  const listenArgs = HOST ? [PORT, HOST] : [PORT];
+  serverInstance = app.listen(...listenArgs, () => {
     logger.info('Server started', {
       port: PORT,
+      host: HOST || 'default',
       ai_mode: aiClient.getMode(),
       claude_enabled: aiClient.isClaudeEnabled(),
       node_env: process.env.NODE_ENV || 'development',
     });
-    console.log('[MJR-EHR] Server running on http://localhost:' + PORT);
+    console.log('[MJR-EHR] Server running on http://' + (HOST || 'localhost') + ':' + PORT);
   });
 
   serverInstance.on('close', () => {

@@ -3,26 +3,44 @@ import { useNavigate } from 'react-router-dom';
 import api, { safeLog } from '../api/client';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
-import Badge from '../components/common/Badge';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import Modal from '../components/common/Modal';
 import { useToast } from '../components/common/Toast';
 import QueueDashboard from '../components/workflow/QueueDashboard';
+import StatTile from '../components/workflow/StatTile';
 import { useAuth } from '../context/AuthContext';
+import { avatarTone, getInitials } from '../components/common/avatarColor';
+import { Hourglass, DoorOpen, Stethoscope, CheckCircle2, Users, ClipboardList, UserPlus, Search } from 'lucide-react';
 
+// Queue summary cards. The `key` for each card MUST be a canonical workflow
+// engine state (hyphenated vocab from server/workflow-engine.js STATES, mirrored
+// by WorkflowTracker's STATE_CONFIG). The /dashboard endpoint builds
+// `queue_counts` keyed by `wf.current_state`, so any divergent key (the old
+// `waiting`/`with_provider`) silently reads 0. The unit test in
+// test/unit/dashboard-queue-config.test.js asserts every key below is a member
+// of the canonical STATE_CONFIG key set (single source of truth).
+//
+// `icon`/`tone` are presentation-only Measured Canon props consumed by the
+// StatTile primitive (lucide-react icon + on-brand state color). `key` + `label`
+// are unchanged (the test parses `key:` and asserts the four canonical states +
+// four-card count). `tone` is disciplined: gold marks the single live attention
+// beat (Waiting), navy carries in-flight authority, success marks complete.
 const QUEUE_CONFIG = [
-  { key: 'waiting', label: 'Waiting', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-200', icon: '\u23F3' },
-  { key: 'roomed', label: 'Roomed', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', icon: '\uD83D\uDEAA' },
-  { key: 'with_provider', label: 'With Provider', color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', icon: '\uD83D\uDC68\u200D\u2695\uFE0F' },
-  { key: 'signed', label: 'Signed', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', icon: '\u2705' },
+  { key: 'checked-in', label: 'Waiting', tone: 'gold', icon: Hourglass },
+  { key: 'roomed', label: 'Roomed', tone: 'slate', icon: DoorOpen },
+  { key: 'provider-examining', label: 'With Provider', tone: 'navy', icon: Stethoscope },
+  { key: 'signed', label: 'Signed', tone: 'success', icon: CheckCircle2 },
 ];
 
 const NEW_PATIENT_FIELDS = [
   { name: 'first_name', label: 'First Name', type: 'text', required: true, placeholder: 'First name' },
   { name: 'last_name', label: 'Last Name', type: 'text', required: true, placeholder: 'Last name' },
   { name: 'dob', label: 'Date of Birth', type: 'date', required: true },
-  { name: 'sex', label: 'Sex', type: 'select', required: true, options: ['Male', 'Female', 'Other'] },
-  { name: 'mrn', label: 'MRN', type: 'text', required: false, placeholder: 'Auto-generated if blank' },
+  { name: 'sex', label: 'Sex', type: 'select', required: true, options: [
+    { value: 'M', label: 'Male' },
+    { value: 'F', label: 'Female' },
+    { value: 'Other', label: 'Other' },
+  ] },
   { name: 'phone', label: 'Phone', type: 'tel', required: false, placeholder: '(555) 123-4567' },
   { name: 'insurance_carrier', label: 'Insurance Carrier', type: 'text', required: false, placeholder: 'Insurance carrier name' },
 ];
@@ -43,33 +61,10 @@ function formatDate(date) {
   }).format(date);
 }
 
-function getInitials(first, last) {
-  return `${(first || '')[0] || ''}${(last || '')[0] || ''}`.toUpperCase();
-}
-
-const AVATAR_COLORS = [
-  'bg-blue-500',
-  'bg-emerald-500',
-  'bg-purple-500',
-  'bg-rose-500',
-  'bg-amber-500',
-  'bg-cyan-500',
-  'bg-indigo-500',
-  'bg-teal-500',
-];
-
-function avatarColor(name) {
-  let hash = 0;
-  for (const ch of (name || '')) {
-    hash = ch.charCodeAt(0) + ((hash << 5) - hash);
-  }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
-
 export default function DashboardPage() {
   const navigate = useNavigate();
   const toast = useToast();
-  const { currentRole, providerName } = useAuth();
+  const { providerName } = useAuth();
 
   const [patients, setPatients] = useState([]);
   const [dashboard, setDashboard] = useState(null);
@@ -169,71 +164,81 @@ export default function DashboardPage() {
   const today = new Date();
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-10">
-      {/* ── Summary Header ── */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4 sm:px-6 animate-fade-in">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {getGreeting()}, {providerName || 'Doctor'}
-              </h1>
-              <p className="text-sm text-gray-500 mt-0.5">{formatDate(today)}</p>
-            </div>
-            <div className="flex items-center gap-3 text-sm">
-              <span className="flex items-center gap-1.5 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full font-medium">
-                <span className="text-base">{'\uD83D\uDC65'}</span>
-                {dashboard?.patient_count ?? patients.length} Patients
-              </span>
-              <span className="flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1.5 rounded-full font-medium">
-                <span className="text-base">{'\uD83D\uDCCB'}</span>
-                {dashboard?.active_encounters ?? 0} Active Encounters
-              </span>
-            </div>
+    <div className="pb-24">
+      <div className="mc-page mc-reveal-stagger space-y-6">
+        {/* Branded greeting header — a gold hairline crowns the surface, matching
+            the AuditPage reference treatment (signature, presentation-only). */}
+        <header className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
+          <div>
+            <p className="mc-section-label">{formatDate(today)}</p>
+            <h1 className="mc-page-title">
+              {getGreeting()}, {providerName || 'Doctor'}
+            </h1>
           </div>
-        </div>
-      </div>
+          <div className="flex flex-wrap items-center gap-2.5 text-sm">
+            <span className="inline-flex items-center gap-2 rounded-full border border-navy-100 bg-navy-50 px-3.5 py-1.5 font-medium text-navy-700 shadow-mc">
+              <Users size={15} strokeWidth={2.25} className="text-navy-600" aria-hidden="true" />
+              {dashboard?.patient_count ?? patients.length} Patients
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full border border-success-100 bg-success-50 px-3.5 py-1.5 font-medium text-success-700 shadow-mc">
+              <ClipboardList size={15} strokeWidth={2.25} className="text-success-600" aria-hidden="true" />
+              {dashboard?.active_encounters ?? 0} Active Encounters
+            </span>
+          </div>
+        </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {/* ── Queue Count Summary Cards ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-slide-up">
+        {/* Queue count summary cards — redesigned KPI tiles (lucide icon in a
+            tinted chip, large serif number, no arbitrary dots). Gold tone on
+            "Waiting" is the dashboard's single live attention beat. */}
+        <div className="mc-reveal-stagger grid grid-cols-2 gap-4 sm:grid-cols-4">
           {QUEUE_CONFIG.map((q) => (
-            <div
+            <StatTile
               key={q.key}
-              className={`${q.bg} ${q.border} border rounded-xl p-4 text-center transition-shadow hover:shadow-md`}
-            >
-              <div className="text-2xl mb-1">{q.icon}</div>
-              <div className={`text-2xl font-bold ${q.color}`}>
-                {queueCounts[q.key] ?? 0}
-              </div>
-              <div className={`text-xs font-medium ${q.color} mt-0.5`}>
-                {q.label}
-              </div>
-            </div>
+              icon={q.icon}
+              label={q.label}
+              tone={q.tone}
+              value={queueCounts[q.key] ?? 0}
+            />
           ))}
         </div>
 
-        {/* ── Main Grid: 1 col mobile, 2 cols desktop ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column -- Patient List */}
-          <div className="animate-slide-up">
-            <Card>
+        {/* Main grid: 1 col mobile, 2 cols desktop */}
+        <div className="mc-reveal-stagger grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Left column -- Patient list */}
+          <div>
+            <Card className="relative">
+              {/* Signature moment: a refined gold key-line crowning the roster. */}
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[2px] bg-gradient-to-r from-gold-500/0 via-gold-500/80 to-gold-500/0"
+              />
               <CardHeader>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <h2 className="section-header m-0">Patients</h2>
+                  <div className="min-w-0">
+                    <p className="mc-section-label">Roster · {filteredPatients.length}</p>
+                    <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Patients</h2>
+                  </div>
                   <TouchButton
+                    type="button"
                     variant="primary"
                     size="sm"
-                    icon="+"
+                    icon={<UserPlus size={16} strokeWidth={2.25} />}
                     onClick={() => setShowNewPatient(true)}
                   >
                     Add New Patient
                   </TouchButton>
                 </div>
-                <div className="mt-3">
+                <div className="relative mt-3">
+                  <Search
+                    size={16}
+                    strokeWidth={2}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    aria-hidden="true"
+                  />
                   <input
                     type="text"
-                    className="input-clinical w-full"
+                    className="input-clinical w-full pl-9"
                     placeholder="Search by name or MRN..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -242,28 +247,57 @@ export default function DashboardPage() {
               </CardHeader>
               <CardBody>
                 {filteredPatients.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">
-                    {searchQuery
-                      ? 'No patients match your search.'
-                      : 'No patients found.'}
-                  </p>
+                  <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-navy-50 text-navy-300 ring-1 ring-navy-100">
+                      <Users size={22} strokeWidth={2} aria-hidden="true" />
+                    </span>
+                    <p className="text-sm font-medium text-slate-600">
+                      {searchQuery
+                        ? 'No patients match your search.'
+                        : 'No patients yet.'}
+                    </p>
+                    <p className="max-w-[15rem] text-xs leading-5 text-slate-500">
+                      {searchQuery
+                        ? 'Try a different name or MRN, or clear the search.'
+                        : 'Add a patient to begin building the roster.'}
+                    </p>
+                    {searchQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery('')}
+                        className="rounded-lg px-2 py-1 text-xs font-semibold text-navy-600 transition-colors hover:text-navy-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500"
+                      >
+                        Clear search
+                      </button>
+                    ) : (
+                      <TouchButton
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<UserPlus size={15} strokeWidth={2.25} />}
+                        onClick={() => setShowNewPatient(true)}
+                      >
+                        Add New Patient
+                      </TouchButton>
+                    )}
+                  </div>
                 ) : (
-                  <div className="divide-y divide-gray-100">
+                  <div className="divide-y divide-slate-100">
                     {filteredPatients.map((patient) => {
                       const fullName = `${patient.first_name} ${patient.last_name}`;
                       const initials = getInitials(patient.first_name, patient.last_name);
-                      const bgColor = avatarColor(fullName);
+                      const tone = avatarTone(fullName);
 
                       return (
                         <div
                           key={patient.id}
-                          className="flex items-center gap-3 py-3 px-1 hover:bg-gray-50 rounded-lg transition-colors group"
+                          className="mc-row group flex items-center gap-3 py-3 hover:shadow-mc"
                         >
                           {/* Avatar */}
                           <button
                             type="button"
                             onClick={() => navigate(`/patient/${patient.id}`)}
-                            className={`${bgColor} w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm shrink-0 cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-blue-400 transition-shadow border-0`}
+                            className={`${tone.bg} ${tone.text} w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm shrink-0 cursor-pointer shadow-mc ring-1 ring-white/10 hover:ring-2 hover:ring-offset-1 hover:ring-navy-400 transition-all duration-150 group-hover:scale-105 active:scale-95 border-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1`}
                             title={`View ${fullName}`}
                           >
                             {initials}
@@ -275,19 +309,20 @@ export default function DashboardPage() {
                             onClick={() => navigate(`/patient/${patient.id}`)}
                             className="flex-1 min-w-0 text-left cursor-pointer bg-transparent border-0 p-0"
                           >
-                            <div className="font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                            <div className="font-medium text-navy-700 truncate group-hover:text-navy-600 transition-colors">
                               {fullName}
                             </div>
-                            <div className="text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+                            <div className="text-xs text-slate-600 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                               {patient.mrn && <span>MRN: {patient.mrn}</span>}
                               {patient.dob && <span>DOB: {patient.dob}</span>}
                               {patient.sex && <span>{patient.sex}</span>}
                             </div>
                           </button>
 
-                          {/* New Visit Button */}
+                          {/* New Visit — a PRIMARY action, navy filled (not
+                              success-green; green is reserved for complete states). */}
                           <TouchButton
-                            variant="success"
+                            variant="primary"
                             size="sm"
                             loading={startingVisit === patient.id}
                             disabled={startingVisit !== null}
@@ -307,11 +342,14 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* Right Column -- Active Encounters */}
-          <div className="animate-slide-up">
+          {/* Right column -- Active encounters */}
+          <div>
             <Card>
               <CardHeader>
-                <h2 className="section-header m-0">Active Encounters</h2>
+                <div className="min-w-0">
+                  <p className="mc-section-label">In Flight · {dashboard?.active_encounters ?? 0}</p>
+                  <h2 className="font-display text-base font-semibold tracking-tight text-navy-700 m-0">Active Encounters</h2>
+                </div>
               </CardHeader>
               <CardBody>
                 <QueueDashboard />
@@ -321,23 +359,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── System Status Bar ── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-800 text-gray-300 text-xs px-4 py-2 flex items-center justify-between z-30">
-        <div className="flex items-center gap-3">
-          <Badge variant="success" dot>System Online</Badge>
-          <span className="text-gray-500">|</span>
-          <span>Role: {currentRole || 'Provider'}</span>
-          <span className="text-gray-500">|</span>
-          <span>CDS Engine: Active</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span>{formatDate(today)}</span>
-          <span className="text-gray-500">|</span>
-          <span>MJR EHR v1.0</span>
-        </div>
-      </div>
+      {/* Status bar removed — AppShell footer serves this role globally. */}
 
-      {/* ── New Patient Modal ── */}
+      {/* New patient modal */}
       <Modal
         isOpen={showNewPatient}
         onClose={() => {
@@ -354,7 +378,7 @@ export default function DashboardPage() {
                 <label className="label-clinical">
                   {field.label}
                   {field.required && (
-                    <span className="text-red-500 ml-0.5">*</span>
+                    <span className="text-danger-500 ml-0.5">*</span>
                   )}
                 </label>
 
@@ -369,8 +393,8 @@ export default function DashboardPage() {
                   >
                     <option value="">Select...</option>
                     {field.options.map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
                       </option>
                     ))}
                   </select>
@@ -390,7 +414,7 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
             <TouchButton
               variant="ghost"
               type="button"

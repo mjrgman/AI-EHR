@@ -19,6 +19,8 @@
  */
 
 const { BaseAgent } = require('./base-agent');
+const hccV28 = require('../coding/hcc-v28');
+const g2211 = require('../coding/g2211');
 
 class CodingAgent extends BaseAgent {
   constructor(options = {}) {
@@ -30,23 +32,12 @@ class CodingAgent extends BaseAgent {
       ...options
     });
 
-    // HCC-relevant ICD-10 prefixes (CMS-HCC v28 — partial list for primary care)
-    this.hccCodes = new Map([
-      ['E10', { hcc: 19, description: 'Diabetes Type 1' }],
-      ['E11', { hcc: 19, description: 'Diabetes Type 2' }],
-      ['I50', { hcc: 85, description: 'Heart Failure' }],
-      ['J44', { hcc: 111, description: 'COPD' }],
-      ['N18.3', { hcc: 138, description: 'CKD Stage 3' }],
-      ['N18.4', { hcc: 137, description: 'CKD Stage 4' }],
-      ['N18.5', { hcc: 136, description: 'CKD Stage 5' }],
-      ['I48', { hcc: 96, description: 'Atrial Fibrillation' }],
-      ['F32', { hcc: 155, description: 'Major Depressive Disorder' }],
-      ['F33', { hcc: 155, description: 'Recurrent Major Depression' }],
-      ['I25', { hcc: 87, description: 'Chronic Ischemic Heart Disease' }],
-      ['G62', { hcc: 75, description: 'Peripheral Neuropathy' }],
-      ['E66', { hcc: 48, description: 'Morbid Obesity' }],  // E66.01 specifically
-      ['I10', { hcc: null, description: 'Hypertension (not HCC-relevant, but common)' }],
-    ]);
+    // HCC mappings now resolved through server/coding/hcc-v28.js.
+    // CY 2026 = 100% V28 (final phase-in year). The legacy V24 hardcoded Map
+    // was removed — see docs/research/PRIMARY_CARE_DEEPENING_RESEARCH_2026-05-03.md §2
+    // for the V24→V28 transition rationale.
+    this.hccLookup = hccV28.lookupHCC;
+    this.hccBuildReport = hccV28.buildHCCReport;
 
     // E&M CPT code mapping
     this.emCodes = {
@@ -99,8 +90,12 @@ class CodingAgent extends BaseAgent {
     // 3. Map and validate ICD-10 codes
     const icd10Codes = this._mapICD10Codes(context, scribeResult);
 
-    // 4. Flag HCC-relevant codes
+    // 4. Flag HCC-relevant codes (V28 — CY 2026 final phase-in year)
     const hccFlags = this._flagHCCCodes(icd10Codes);
+    const hccReport = this._buildHCCReport(icd10Codes, encounter.transcript || '');
+
+    // 4b. G2211 visit-complexity add-on detection (CY 2026 includes home/residence E/M)
+    const g2211Result = g2211.detectG2211Eligibility(context, cptCode);
 
     // 5. Assess documentation completeness
     const completeness = this._assessDocumentationCompleteness(scribeResult, context);
@@ -121,6 +116,8 @@ class CodingAgent extends BaseAgent {
       upcodingWarning,
       icd10Codes,
       hccFlags,
+      hccReport,
+      g2211: g2211Result,
       completenessScore: completeness.score,
       completeness,
       modifiers,
@@ -189,7 +186,6 @@ class CodingAgent extends BaseAgent {
 
     // --- Element 3: Risk ---
     const urgentAlerts = (cdsResult.suggestions || []).filter(s => s.category === 'urgent').length;
-    const prescribedControlled = false; // Would need DEA schedule data
     const hasDrugInteraction = (cdsResult.suggestions || []).some(s => s.suggestion_type === 'interaction_alert');
 
     let riskLevel = 1;
@@ -293,25 +289,40 @@ class CodingAgent extends BaseAgent {
   }
 
   /**
-   * Flag HCC-relevant codes for risk adjustment.
+   * Flag HCC-relevant codes for risk adjustment using CMS-HCC V28 (CY 2026).
+   *
+   * Per docs/research/PRIMARY_CARE_DEEPENING_RESEARCH_2026-05-03.md §2,
+   * 2026 is the final year of the V24→V28 phase-in (100% V28). The legacy
+   * V24 hardcoded Map was removed in favor of server/coding/hcc-v28.js,
+   * which loads the seed table and supports prefix fallback + MEAT checks.
    */
   _flagHCCCodes(icd10Codes) {
     const flags = [];
     for (const dx of icd10Codes) {
-      for (const [prefix, hccInfo] of this.hccCodes) {
-        if (dx.code && dx.code.startsWith(prefix) && hccInfo.hcc !== null) {
-          flags.push({
-            code: dx.code,
-            description: dx.description,
-            hccCategory: hccInfo.hcc,
-            hccDescription: hccInfo.description,
-            message: `HCC ${hccInfo.hcc}: ${hccInfo.description} — ensure documentation supports this diagnosis for risk adjustment`
-          });
-          break;
-        }
-      }
+      if (!dx.code) continue;
+      const mapping = this.hccLookup(dx.code);
+      if (!mapping || !mapping.is_payment_hcc) continue;
+      flags.push({
+        code: dx.code,
+        description: dx.description,
+        hccVersion: 'V28',
+        hccCategory: mapping.hcc_v28_number,
+        hccDescription: mapping.hcc_v28_label,
+        matchType: mapping.match_type,
+        message: `V28 HCC ${mapping.hcc_v28_number}: ${mapping.hcc_v28_label} — ensure documentation supports this diagnosis for risk adjustment (CY 2026 = 100% V28).`
+      });
     }
     return flags;
+  }
+
+  /**
+   * Build the per-encounter HCC capture report (V28 + MEAT documentation check).
+   * Surfaces payment vs non-payment HCCs, unmapped codes, and MEAT failures
+   * that put a payment HCC at risk of audit denial.
+   */
+  _buildHCCReport(icd10Codes, encounterText) {
+    const codes = (icd10Codes || []).map(dx => dx.code).filter(Boolean);
+    return this.hccBuildReport(codes, encounterText || '');
   }
 
   /**
@@ -346,7 +357,7 @@ class CodingAgent extends BaseAgent {
   /**
    * Check for applicable modifiers.
    */
-  _checkModifiers(context, scribeResult, cdsResult) {
+  _checkModifiers(context, _scribeResult, _cdsResult) {
     const modifiers = [];
 
     // Modifier 25: Significant, separately identifiable E&M service

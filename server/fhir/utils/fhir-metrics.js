@@ -11,6 +11,8 @@
  *   key = `${method}:${resourceType}`
  */
 
+const { sendFhir } = require('./fhir-response');
+
 const metricsMap = new Map();
 let serverStartTime = Date.now();
 
@@ -110,7 +112,6 @@ function resetMetrics() {
  * Returns a FHIR Parameters resource with current route metrics.
  */
 async function statsHandler(req, res) {
-  const { sendFhir } = require('./fhir-response');
   const snapshot = getSnapshot();
 
   const parameters = {

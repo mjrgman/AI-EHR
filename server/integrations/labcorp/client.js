@@ -30,9 +30,24 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const parser = require('./parser');
+const oauth = require('./oauth');
 
 const LABCORP_MODE = process.env.LABCORP_MODE || 'mock';
 const LABCORP_TIMEOUT_MS = parseInt(process.env.LABCORP_TIMEOUT_MS || '30000', 10);
+
+// SYNTHETIC-ONLY BASELINE: fail closed at require() time. `api` mode would
+// carry orders and results for the demo's fictional patients to a real
+// laboratory, so it is refused here rather than left as an env flag away from
+// firing. This runs before any route is mounted, so a misconfigured operator
+// gets a startup crash instead of a server that looks live.
+// See docs/SYNTHETIC_ONLY_BASELINE.md.
+if (LABCORP_MODE !== 'mock') {
+  throw new Error(
+    `[labcorp] LABCORP_MODE='${LABCORP_MODE}' is not supported. This build is a ` +
+    'synthetic-only local demo with no live laboratory integration; the only ' +
+    "accepted value is 'mock'. Unset LABCORP_MODE or set LABCORP_MODE=mock."
+  );
+}
 
 const MOCK_DIR = path.join(__dirname, 'mock-responses');
 
@@ -74,6 +89,16 @@ class LabCorpClient {
     userId = null,
     timeoutMs = LABCORP_TIMEOUT_MS,
   } = {}) {
+    // Second gate, independent of the module-level env check. Callers such as
+    // server/routes/labcorp-routes.js construct a client from a caller-supplied
+    // `mode`, so the env guard alone would not stop an in-process instance from
+    // being built in api mode. Refuse it here too.
+    if (mode !== 'mock') {
+      throw new Error(
+        `[labcorp] LabCorpClient mode='${mode}' is not supported. This build is a ` +
+        "synthetic-only local demo; the only accepted mode is 'mock'."
+      );
+    }
     this.mode = mode;
     this.pendingOrders = new Map(); // in-memory tracking (Phase 2b will persist to DB)
     // API-mode wiring — all null-safe so mock mode needs none of them.
@@ -330,7 +355,6 @@ class LabCorpClient {
       throw new Error(`LabCorp ${label}: baseUrl required for API mode`);
     }
 
-    const oauth = require('./oauth');
     let tokens = await oauth.getTokens(this.db, this.userId);
     if (!tokens) {
       throw new Error(`LabCorp ${label}: not authorized — no tokens stored for user ${this.userId}. Run the OAuth2 flow first.`);

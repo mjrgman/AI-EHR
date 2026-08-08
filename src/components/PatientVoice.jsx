@@ -23,27 +23,29 @@ function VerifyForm({ onVerify, isProcessing, error, speechSupported, onVoiceVer
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 to-white px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-10">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 mb-4">
-            <svg className="w-8 h-8 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <div className="flex min-h-screen items-center justify-center bg-ivory-200 px-4">
+      <div className="mc-reveal w-full max-w-md">
+        <div className="mb-10 text-center">
+          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full border border-navy-100 bg-navy-50">
+            <svg className="h-8 w-8 text-navy-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome</h1>
-          <p className="text-xl text-gray-600">Please verify your identity to continue</p>
+          <h1 className="mb-2 font-display text-3xl font-semibold text-navy-700">Welcome</h1>
+          <p className="text-xl text-slate-600">Please verify your identity to continue</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-8 space-y-5">
+        <form onSubmit={handleSubmit} className="relative space-y-5 overflow-hidden rounded-2xl border border-slate-100 bg-offWhite-100 p-8 shadow-mc-lg">
+          {/* Signature moment — gold hairline crowns the welcome card */}
+          <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
           <div>
-            <label htmlFor="pv-first" className="block text-lg font-medium text-gray-700 mb-1">First Name</label>
+            <label htmlFor="pv-first" className="mb-1 block text-lg font-medium text-slate-700">First Name</label>
             <input
               id="pv-first"
               type="text"
               value={firstName}
               onChange={e => setFirstName(e.target.value)}
-              className="w-full min-h-[48px] text-xl px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+              className="min-h-[48px] w-full rounded-xl border-2 border-slate-200 bg-ivory-100 px-4 py-3 text-xl text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-100"
               placeholder="John"
               autoComplete="given-name"
               required
@@ -51,13 +53,13 @@ function VerifyForm({ onVerify, isProcessing, error, speechSupported, onVoiceVer
           </div>
 
           <div>
-            <label htmlFor="pv-last" className="block text-lg font-medium text-gray-700 mb-1">Last Name</label>
+            <label htmlFor="pv-last" className="mb-1 block text-lg font-medium text-slate-700">Last Name</label>
             <input
               id="pv-last"
               type="text"
               value={lastName}
               onChange={e => setLastName(e.target.value)}
-              className="w-full min-h-[48px] text-xl px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+              className="min-h-[48px] w-full rounded-xl border-2 border-slate-200 bg-ivory-100 px-4 py-3 text-xl text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-100"
               placeholder="Smith"
               autoComplete="family-name"
               required
@@ -65,34 +67,34 @@ function VerifyForm({ onVerify, isProcessing, error, speechSupported, onVoiceVer
           </div>
 
           <div>
-            <label htmlFor="pv-dob" className="block text-lg font-medium text-gray-700 mb-1">Date of Birth</label>
+            <label htmlFor="pv-dob" className="mb-1 block text-lg font-medium text-slate-700">Date of Birth</label>
             <input
               id="pv-dob"
               type="date"
               value={dob}
               onChange={e => setDob(e.target.value)}
-              className="w-full min-h-[48px] text-xl px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+              className="min-h-[48px] w-full rounded-xl border-2 border-slate-200 bg-ivory-100 px-4 py-3 text-xl text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-100"
               required
             />
           </div>
 
           <div>
-            <label htmlFor="pv-mrn" className="block text-lg font-medium text-gray-700 mb-1">
-              MRN <span className="text-base text-gray-400 font-normal">(optional)</span>
+            <label htmlFor="pv-mrn" className="mb-1 block text-lg font-medium text-slate-700">
+              MRN <span className="text-base font-normal text-slate-500">(optional)</span>
             </label>
             <input
               id="pv-mrn"
               type="text"
               value={mrn}
               onChange={e => setMrn(e.target.value)}
-              className="w-full min-h-[48px] text-xl px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+              className="min-h-[48px] w-full rounded-xl border-2 border-slate-200 bg-ivory-100 px-4 py-3 text-xl text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-100"
               placeholder="e.g. 123456"
               autoComplete="off"
             />
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-lg" role="alert">
+            <div className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-lg font-medium text-danger-700" role="alert">
               {error}
             </div>
           )}
@@ -100,21 +102,21 @@ function VerifyForm({ onVerify, isProcessing, error, speechSupported, onVoiceVer
           <button
             type="submit"
             disabled={isProcessing || !firstName.trim() || !lastName.trim() || !dob}
-            className="w-full min-h-[56px] bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xl font-semibold rounded-xl transition-colors duration-150"
+            className="mc-btn-fill mc-btn-navy min-h-[56px] w-full rounded-xl bg-navy-600 text-xl font-semibold text-white transition-all duration-150 hover:bg-navy-700 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
           >
             {isProcessing ? 'Verifying...' : 'Verify Identity'}
           </button>
         </form>
 
         {speechSupported && (
-          <div className="text-center mt-8">
-            <p className="text-lg text-gray-500 mb-4">Or tap the microphone and say your name and date of birth</p>
+          <div className="mt-8 text-center">
+            <p className="mb-4 text-lg text-slate-500">Or tap the microphone and say your name and date of birth</p>
             <button
               onClick={onVoiceVerify}
-              className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-100 hover:bg-blue-200 active:scale-95 transition-all"
+              className="inline-flex h-16 w-16 items-center justify-center rounded-full border border-navy-100 bg-navy-50 transition-all hover:bg-navy-100 active:scale-95"
               aria-label="Verify with voice"
             >
-              <MicIcon className="w-7 h-7 text-blue-600" />
+              <MicIcon className="h-7 w-7 text-navy-600" />
             </button>
           </div>
         )}
@@ -139,16 +141,18 @@ function ConversationView({
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-blue-50 to-white">
+    <div className="flex min-h-screen flex-col bg-ivory-200">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white/80 backdrop-blur border-b border-gray-100">
+      <header className="relative flex items-center justify-between border-b border-slate-100 bg-offWhite-100/80 px-6 py-4 backdrop-blur">
+        {/* Signature moment — gold hairline crowns the conversation header */}
+        <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold-500/70 to-transparent" aria-hidden="true" />
         <div>
-          <p className="text-lg text-gray-500">Hello,</p>
-          <p className="text-2xl font-bold text-gray-900">{patientName}</p>
+          <p className="text-lg text-slate-500">Hello,</p>
+          <p className="font-display text-2xl font-semibold text-navy-700">{patientName}</p>
         </div>
         <button
           onClick={onEndSession}
-          className="min-h-[48px] px-5 py-2 text-lg font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors"
+          className="min-h-[48px] rounded-xl border border-danger-100 bg-danger-50 px-5 py-2 text-lg font-medium text-danger-600 transition-colors hover:bg-danger-100"
         >
           End Session
         </button>
@@ -162,13 +166,13 @@ function ConversationView({
             onClick={onMicToggle}
             disabled={isProcessing}
             className={`
-              w-24 h-24 rounded-full flex items-center justify-center transition-all duration-200
-              focus:outline-none focus:ring-4 focus:ring-blue-300
+              flex h-24 w-24 items-center justify-center rounded-full transition-all duration-200
+              focus:outline-none focus:ring-4 focus:ring-gold-300
               ${isListening
-                ? 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-200 animate-pulse-mic'
+                ? 'animate-pulse-mic bg-danger-500 shadow-mc-lg hover:bg-danger-600'
                 : isProcessing
-                  ? 'bg-gray-400 cursor-wait'
-                  : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 active:scale-95'
+                  ? 'cursor-wait bg-slate-400'
+                  : 'bg-navy-600 shadow-mc-lg hover:bg-navy-700 active:scale-95'
               }
             `}
             aria-label={isListening ? 'Stop listening' : 'Start listening'}
@@ -184,7 +188,7 @@ function ConversationView({
           </button>
         ) : null}
 
-        <p className="mt-4 text-xl text-gray-500">
+        <p className="mt-4 text-xl text-slate-500">
           {isProcessing
             ? 'Processing...'
             : isListening
@@ -197,40 +201,40 @@ function ConversationView({
 
         {/* Transcript display */}
         {transcript && (
-          <div className="mt-6 w-full bg-white rounded-2xl shadow p-6">
-            <p className="text-sm font-medium text-gray-400 uppercase tracking-wide mb-1">You said</p>
-            <p className="text-xl text-gray-800">{transcript}</p>
+          <div className="mt-6 w-full rounded-2xl border border-slate-100 bg-offWhite-100 p-6 shadow-mc">
+            <p className="mb-1 text-sm font-medium uppercase tracking-wide text-slate-500">You said</p>
+            <p className="text-xl text-navy-700">{transcript}</p>
           </div>
         )}
 
         {/* Response display */}
         {response && (
-          <div className="mt-4 w-full bg-blue-50 border border-blue-100 rounded-2xl p-6">
-            <p className="text-sm font-medium text-blue-400 uppercase tracking-wide mb-1">Response</p>
-            <p className="text-xl text-gray-900">{response}</p>
+          <div className="mt-4 w-full rounded-2xl border border-navy-100 bg-navy-50 p-6">
+            <p className="mb-1 text-sm font-medium uppercase tracking-wide text-gold-700">Response</p>
+            <p className="text-xl text-navy-700">{response}</p>
           </div>
         )}
 
         {/* Error display */}
         {error && (
-          <div className="mt-4 w-full bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-lg" role="alert">
+          <div className="mt-4 w-full rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-lg font-medium text-danger-700" role="alert">
             {error}
           </div>
         )}
 
         {/* Text input fallback (always present, primary when speech not supported) */}
-        <form onSubmit={handleTextSubmit} className="mt-6 w-full flex gap-3">
+        <form onSubmit={handleTextSubmit} className="mt-6 flex w-full gap-3">
           <input
             type="text"
             value={typedText}
             onChange={e => setTypedText(e.target.value)}
             placeholder="Type your question here..."
-            className="flex-1 min-h-[48px] text-xl px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition"
+            className="min-h-[48px] flex-1 rounded-xl border-2 border-slate-200 bg-offWhite-100 px-4 py-3 text-xl text-navy-700 outline-none transition focus:border-gold-400 focus:ring-2 focus:ring-gold-100"
           />
           <button
             type="submit"
             disabled={!typedText.trim() || isProcessing}
-            className="min-h-[48px] px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-xl font-semibold rounded-xl transition-colors"
+            className="mc-btn-fill mc-btn-navy min-h-[48px] rounded-xl bg-navy-600 px-6 py-3 text-xl font-semibold text-white transition-all hover:bg-navy-700 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45 disabled:saturate-50 disabled:shadow-none disabled:hover:bg-navy-600 disabled:active:scale-100"
           >
             Send
           </button>
@@ -238,15 +242,15 @@ function ConversationView({
       </main>
 
       {/* Quick actions */}
-      <div className="px-6 pb-8 max-w-2xl mx-auto w-full">
-        <p className="text-lg font-medium text-gray-500 mb-3 text-center">Quick Actions</p>
-        <div className="grid grid-cols-2 gap-3">
+      <div className="mx-auto w-full max-w-2xl px-6 pb-8">
+        <p className="mb-3 text-center text-lg font-medium text-slate-500">Quick Actions</p>
+        <div className="mc-reveal-stagger grid grid-cols-2 gap-3">
           {QUICK_ACTIONS.map(action => (
             <button
               key={action.label}
               onClick={() => onQuickAction(action.phrase)}
               disabled={isProcessing}
-              className="min-h-[56px] bg-white hover:bg-gray-50 disabled:opacity-50 border-2 border-gray-200 rounded-xl px-4 py-3 text-xl font-medium text-gray-700 transition-colors active:scale-[0.98]"
+              className="min-h-[56px] rounded-xl border-2 border-slate-200 bg-offWhite-100 px-4 py-3 text-xl font-medium text-navy-700 transition-colors hover:bg-ivory-200 hover:border-gold-300 disabled:opacity-50 active:scale-[0.98]"
             >
               {action.label}
             </button>
@@ -275,8 +279,8 @@ if (typeof document !== 'undefined' && !document.getElementById(PULSE_STYLE_ID))
   style.id = PULSE_STYLE_ID;
   style.textContent = `
     @keyframes pulse-mic {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-      50% { box-shadow: 0 0 0 16px rgba(239, 68, 68, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(161, 50, 42, 0.5); }
+      50% { box-shadow: 0 0 0 16px rgba(161, 50, 42, 0); }
     }
     .animate-pulse-mic { animation: pulse-mic 1.5s ease-in-out infinite; }
   `;

@@ -11,6 +11,25 @@
 
 const db = require('../database');
 
+// P1-2 (sec-portal-weak-verify-05) — mandatory non-public second factor.
+//
+// Name + DOB are both semi-public (directories, obituaries, public records),
+// so name+DOB alone MUST NOT establish a portal session in ANY environment.
+// We require the MRN — a non-public identifier the patient receives directly
+// from the practice — as a mandatory third factor for portal identity proofing.
+//
+// Anti-enumeration: every failed verify (missing factor, no matching patient,
+// or wrong MRN) returns the SAME null result after the SAME small constant
+// delay, so an attacker cannot distinguish "this name+DOB exists but MRN was
+// wrong" from "no such patient" by response content or timing. The caller
+// (routes/patient-portal.js) maps null to a single generic 401 and owns the
+// IP rate-limiting / lockout. Fail closed on any uncertainty.
+const VERIFY_CONSTANT_DELAY_MS = 250;
+
+function constantDelay() {
+  return new Promise((resolve) => setTimeout(resolve, VERIFY_CONSTANT_DELAY_MS));
+}
+
 const INTENT_PATTERNS = [
   {
     // request_appointment must come BEFORE check_appointments — both match on
@@ -308,25 +327,42 @@ async function processVoiceIntent(patientId, transcript) {
 }
 
 async function verifyPatient(firstName, lastName, dob, mrn) {
-  if (!firstName || !lastName || !dob) return null;
+  // Constant delay on EVERY path (including early rejects) so timing does not
+  // leak which factor failed or whether a name+DOB pair exists.
+  await constantDelay();
+
+  // MRN is a mandatory non-public second factor in ALL environments. A missing
+  // first/last/dob OR a missing MRN is a generic verification failure — never
+  // reveal which field was absent.
+  if (!firstName || !lastName || !dob || !mrn) return null;
+
+  const mrnInput = String(mrn).trim();
+  if (!mrnInput) return null;
 
   const patients = await db.getAllPatients();
+  let match = null;
   for (const patient of patients) {
     const nameMatch = patient.first_name?.toLowerCase() === firstName.toLowerCase()
       && patient.last_name?.toLowerCase() === lastName.toLowerCase();
     const dobMatch = patient.dob === dob;
-    const mrnMatch = !mrn || patient.mrn === mrn;
+    // MRN must match exactly (after trim). Name + DOB alone never suffice.
+    const mrnMatch = patient.mrn != null && String(patient.mrn).trim() === mrnInput;
 
     if (nameMatch && dobMatch && mrnMatch) {
-      return {
-        id: patient.id,
-        mrn: patient.mrn,
-        name: `${patient.first_name} ${patient.last_name}`.trim()
-      };
+      // Do not early-return: a constant-time-ish scan over all rows avoids
+      // leaking via loop-exit timing for small patient sets. Keep the first
+      // full match.
+      if (!match) {
+        match = {
+          id: patient.id,
+          mrn: patient.mrn,
+          name: `${patient.first_name} ${patient.last_name}`.trim()
+        };
+      }
     }
   }
 
-  return null;
+  return match;
 }
 
 module.exports = {

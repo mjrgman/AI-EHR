@@ -1,7 +1,7 @@
 {
   "name": "mjr-ehr-interactive",
   "version": "1.0.0",
-  "description": "Agentic EHR with a 9-module clinical workflow runtime",
+  "description": "Agentic EHR with a 14-module clinical workflow runtime (11 encounter + 3 patient-data governance modules)",
   "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
@@ -11,7 +11,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node test/run-tests.js",
-    "test:unit": "node --test test/unit/*.test.js",
+    "test:http-hardening": "node scripts/http-hardening-smoke.js",
+    "test:unit": "node --test --test-concurrency=1 test/unit/*.test.js",
     "lint": "eslint server src --ext .js,.jsx,.mjs",
     "setup": "node scripts/setup.js",
     "create-user": "node scripts/create-user.js"
@@ -26,8 +27,12 @@
   ],
   "author": "MJR Health Systems",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0 <25",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@10.9.8",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.18.2",
@@ -59,6 +64,6 @@
     "path-to-regexp": "^0.1.12",
     "picomatch": ">=2.3.2",
     "rollup": ">=4.59.0",
-    "esbuild": ">=0.25.0"
+    "esbuild": "^0.25.12"
   }
 }

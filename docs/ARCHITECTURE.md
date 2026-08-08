@@ -9,21 +9,24 @@ between them.
 
 ## The one-paragraph pitch
 
-Agentic EHR is a nine-module clinical workflow runtime — nine specialized
-agents with defined autonomy tiers, handoffs, and safety boundaries,
-assembled behind a single orchestrator. Instead of clicking through
-templates, physicians speak. The system listens, extracts structured
-clinical data, runs it through a clinical decision support engine, layers
-specialty-medicine rules on top, and surfaces draft orders and notes for
-physician approval. Nothing ever auto-executes: every dosing change, every
-prescription, every order is draft-only until a Tier 3 physician approves.
+Agentic EHR is a 14-module clinical workflow runtime — 11 encounter
+modules + 3 patient-data governance modules — with defined autonomy
+tiers, handoffs, and safety boundaries, assembled behind a single
+orchestrator. Instead of clicking through templates, physicians speak.
+The system listens, extracts structured clinical data, runs it through
+a clinical decision support engine, layers specialty-medicine rules on
+top, and surfaces draft orders and notes for physician approval. Nothing
+ever auto-executes: every dosing change, every prescription, every order
+is draft-only until a Tier 3 physician approves.
 
 ---
 
-## The 9 CATC modules
+## The 14 CATC modules
 
 CATC = **Clinical Agent Tracking & Coordination**. Every module declares
 its tier, its human counterpart, and its primary handoff.
+
+### Encounter modules (11) — what happens in a visit
 
 ```
 ┌────────────────┬────────────────┬─────────┬──────────────────────────────┐
@@ -39,14 +42,29 @@ its tier, its human counterpart, and its primary handoff.
 │ Orders         │ Clinical exec  │    3    │ Physician                    │
 │ Coding         │ Revenue / doc  │    2    │ Billing, Physician           │
 │ Quality        │ Oversight      │    2    │ Physician, Admin             │
+│ AWV            │ Preventive     │    2    │ Physician, Coding, Quality   │
 └────────────────┴────────────────┴─────────┴──────────────────────────────┘
 ```
 
-The tenth module — **Domain Logic** — is the specialty-medicine overlay
-added in Phase 1. It depends on CDS (`dependsOn: ['cds']`), which means
-the orchestrator guarantees CDS runs first and Domain Logic can only
-*add* to CDS — never override or suppress a CDS alert. This is the
-structural implementation of "standard of care is the guardrail."
+### Patient-data governance modules (3) — what data flows to and from the patient
+
+```
+┌────────────────┬─────────────────────────┬─────────┬──────────────────────────┐
+│ Module         │ Workflow band           │  Tier   │ Primary handoff          │
+├────────────────┼─────────────────────────┼─────────┼──────────────────────────┤
+│ PatientLink    │ Patient communication   │    2    │ Physician, Patient App   │
+│ Patient App    │ Patient-facing portal   │    1    │ PatientLink, MA, Triage  │
+│ MediVault      │ Patient data governance │    3    │ Physician, PatientLink   │
+└────────────────┴─────────────────────────┴─────────┴──────────────────────────┘
+```
+
+**Domain Logic** is the specialty-medicine overlay added in Phase 1. It depends on CDS (`dependsOn: ['cds']`), which means the orchestrator guarantees CDS runs first and Domain Logic can only *add* to CDS — never override or suppress a CDS alert. This is the structural implementation of "standard of care is the guardrail."
+
+**MediVault** is the patient-data-governance Tier 3 module added in Phase 3c. Its EHR-of-record vs vault-of-record boundary is documented separately in `MEDIVAULT_BOUNDARY.md`.
+
+**Annual Wellness Visit** is the preventive-visit Tier 2 module added to the encounter layer. It detects AWV encounter type, checks CMS component completeness, and hands billing support to Coding and Quality for clinician review.
+
+**The canonical 14-module roster** lives in `server/agents/module-registry.js` (`MODULE_ORDER` array). Documentation tables here, in `../MODULE_CATALOG.md`, and in `../VISION.md` are kept in sync with that registry.
 
 ---
 
@@ -104,7 +122,7 @@ PATCH /api/encounters/:id   — transcript landed in DB
       ↓
 [Physician clicks "Extract Data"]
       ↓
-POST /api/ai/extract-data   — ai-client.js pattern matching or Claude API
+POST /api/ai/extract-data   — ai-client.js deterministic pattern matching
       ↓
 [CDS auto-triggers via message bus]
       ↓
@@ -151,24 +169,24 @@ using typed events. Key event types:
 
 ## Integrations
 
-### Claude API (optional, via `ai-client.js`)
+### Clinical extraction (`ai-client.js`) — no external AI
 
-The AI client is a lazy-singleton wrapper with a 30-second `Promise.race`
-timeout. In `AI_MODE=mock` (the default), it runs pattern-matching
-regex-based extractors. In `AI_MODE=api`, it hits the Anthropic Claude
-API using `ANTHROPIC_API_KEY`.
+`ai-client.js` runs deterministic pattern-matching extractors for vitals,
+medications, problems, orders, ROS, physical exam and SOAP notes.
 
-No PHI is ever sent to Claude without an explicit config opt-in. Mock mode
-is the default precisely so contributors can run the full test suite
-offline.
+There is **no external-AI mode**. The Anthropic SDK, the API client and the
+`_claude*` request paths were removed; `AI_MODE` accepts only `mock` and the
+module throws at `require()` time otherwise. Nothing in this process can
+reach a third-party inference endpoint, so the question of what data would
+be sent does not arise.
 
 ### LabCorp (Phases 2a-2c)
 
 The LabCorp integration (`server/integrations/labcorp/`) follows the same
-lazy-singleton pattern. In `LABCORP_MODE=mock`, it reads PDF/XML fixtures
-from `mock-responses/`. In `LABCORP_MODE=api`, it goes through OAuth2
-against the LabCorp developer portal. OAuth tokens are stored encrypted
-in the `labcorp_tokens` table. The parser output feeds into
+lazy-singleton pattern and reads PDF/XML fixtures from `mock-responses/`.
+`LABCORP_MODE=api` is refused at load time and a non-mock client cannot be
+constructed, so the OAuth2 scaffold and the `labcorp_tokens` table are
+present but unreachable. The parser output feeds into
 `LabSynthesisAgent`, which emits `LAB_SYNTHESIS_READY` for CDS and Domain
 Logic to consume.
 
@@ -197,7 +215,7 @@ row with the caller's identity, and the global audit-logger writes an
 | AI (optional) | Anthropic Claude via `ai-client.js` |
 | Lab integration | LabCorp API (Phase 2) |
 | Container | Dockerfile + docker-compose |
-| Tests | Custom harness, 250+ scenarios |
+| Tests | 308+ scenarios |
 
 ---
 

@@ -9,8 +9,6 @@ const crypto = require('crypto');
 const db = require('./database');
 
 const SESSION_HEADER = 'x-audit-session-id';
-const USER_HEADER = 'x-audit-user';
-const ROLE_HEADER = 'x-audit-role';
 
 // ==========================================
 // PHI ROUTE CLASSIFICATION MAP
@@ -22,7 +20,7 @@ const PHI_ROUTES = {
   // --- Patient endpoints (all PHI) ---
   'GET /api/patients':                    { resource_type: 'patient', action: 'READ', phi: true, phiFields: ['dob','phone','email','address','insurance_id','insurance_carrier'] },
   'GET /api/patients/:id':                { resource_type: 'patient', action: 'READ', phi: true, phiFields: ['dob','phone','email','address','insurance_id','insurance_carrier','problems','medications','allergies','labs','vitals'], extractPatientId: (req) => req.params.id },
-  'POST /api/patients':                   { resource_type: 'patient', action: 'CREATE', phi: true, phiFields: ['dob','phone','email','address','insurance_id'] },
+  'POST /api/patients':                   { resource_type: 'patient', action: 'CREATE', phi: true, phiFields: ['dob','phone','email','address','insurance_id'], extractPatientId: patientIdFromContextOrBody },
   'POST /api/patients/extract-from-speech': { resource_type: 'patient', action: 'CREATE', phi: true, phiFields: ['transcript'] },
   'POST /api/patients/:id/problems':      { resource_type: 'problem', action: 'CREATE', phi: true, phiFields: ['problem_name','icd10_code'], extractPatientId: (req) => req.params.id },
   'GET /api/patients/:id/medications':    { resource_type: 'medication', action: 'READ', phi: true, phiFields: ['medication_name','dose'], extractPatientId: (req) => req.params.id },
@@ -35,10 +33,10 @@ const PHI_ROUTES = {
 
   // --- Encounter endpoints (PHI) ---
   'GET /api/encounters':                  { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'] },
-  'GET /api/encounters/:id':              { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'] },
+  'GET /api/encounters/:id':              { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'], extractPatientId: patientIdFromContextOrBody },
   'POST /api/encounters':                 { resource_type: 'encounter', action: 'CREATE', phi: true, phiFields: ['chief_complaint'], extractPatientId: (req) => req.body.patient_id },
-  'PATCH /api/encounters/:id':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['transcript','soap_note','chief_complaint'] },
-  'GET /api/encounters/:id/orders':       { resource_type: 'encounter_orders', action: 'READ', phi: true, phiFields: ['orders_summary'] },
+  'PATCH /api/encounters/:id':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['transcript','soap_note','chief_complaint'], extractPatientId: patientIdFromContextOrBody },
+  'GET /api/encounters/:id/orders':       { resource_type: 'encounter_orders', action: 'READ', phi: true, phiFields: ['orders_summary'], extractPatientId: patientIdFromContextOrBody },
 
   // --- Vitals (PHI) ---
   'POST /api/vitals':                     { resource_type: 'vitals', action: 'CREATE', phi: true, phiFields: ['systolic_bp','diastolic_bp','heart_rate','weight'], extractPatientId: (req) => req.body.patient_id },
@@ -63,11 +61,11 @@ const PHI_ROUTES = {
 
   // --- AI endpoints (PHI - processes clinical data) ---
   'POST /api/ai/extract-data':            { resource_type: 'ai_extraction', action: 'CREATE', phi: true, phiFields: ['transcript'] },
-  'POST /api/ai/generate-note':           { resource_type: 'ai_note', action: 'CREATE', phi: true, phiFields: ['transcript'] },
+  'POST /api/ai/generate-note':           { resource_type: 'ai_note', action: 'CREATE', phi: true, phiFields: ['transcript'], extractPatientId: patientIdFromContextOrBody },
   'GET /api/ai/status':                   { resource_type: 'system', action: 'READ', phi: false },
 
   // --- CDS endpoints (suggestions are clinical but not direct PHI) ---
-  'POST /api/cds/evaluate':               { resource_type: 'cds_evaluation', action: 'CREATE', phi: true, phiFields: ['clinical_context'] },
+  'POST /api/cds/evaluate':               { resource_type: 'cds_evaluation', action: 'CREATE', phi: true, phiFields: ['clinical_context'], extractPatientId: patientIdFromContextOrBody },
   'GET /api/cds/suggestions/:id':         { resource_type: 'cds_suggestion', action: 'READ', phi: false },
   'POST /api/cds/suggestions/:id/accept': { resource_type: 'cds_suggestion', action: 'UPDATE', phi: false },
   'POST /api/cds/suggestions/:id/reject': { resource_type: 'cds_suggestion', action: 'UPDATE', phi: false },
@@ -88,16 +86,47 @@ const PHI_ROUTES = {
   // --- Dashboard (aggregated, contains patient list) ---
   'GET /api/dashboard':                           { resource_type: 'dashboard', action: 'READ', phi: true, phiFields: ['patient_list'] },
 
-  // --- Patient portal: appointment booking (added with the scheduling-DB refactor) ---
-  // These are the only patient-portal routes currently registered. The wider
-  // gap — every other /api/patient-portal/* endpoint is currently un-audited —
-  // is tracked in CLAUDE.md plan §"Pre-existing gaps" and gets its own PR.
+  // --- Patient portal (all PHI-bearing portal routes mapped) ---
+  // Every /api/patient-portal/* route that touches patient data is classified
+  // below. The two non-PHI portal routes — POST /logout (revokes the session,
+  // returns a static message; runs before requirePortalSession so no
+  // req.portalPatient) and GET /visit-prep (static checklist, no patient data)
+  // — are intentionally NOT in this map; they fall through to the generic
+  // unclassified-route audit entry (phi_accessed:false) in auditMiddleware,
+  // so portal coverage is complete and no PHI access goes unaudited.
   // extractPatientId reads req.portalPatient.id, set by requirePortalSession.
   // The middleware runs the callback inside res.on('finish'), by which point
   // req.portalPatient has been populated by the route handler chain.
+  'POST /api/patient-portal/verify': {
+    resource_type: 'portal_identity',
+    action: 'VERIFY',
+    phi: true,
+    phiFields: ['first_name', 'last_name', 'dob', 'mrn']
+  },
+  'GET /api/patient-portal/session': {
+    resource_type: 'portal_session',
+    action: 'READ',
+    phi: true,
+    phiFields: ['patient_profile'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'GET /api/patient-portal/appointments': {
+    resource_type: 'appointment',
+    action: 'READ',
+    phi: true,
+    phiFields: ['appointment_date', 'provider_name', 'chief_complaint'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/appointments/checkin': {
+    resource_type: 'appointment',
+    action: 'UPDATE',
+    phi: true,
+    phiFields: ['appointment_id', 'checkin_status'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
   'POST /api/patient-portal/appointments/find-slots': {
     resource_type: 'appointment',
-    action: 'access',
+    action: 'READ',
     phi: true,
     phiFields: ['appointment_date', 'provider_name'],
     extractPatientId: (req) => req.portalPatient?.id
@@ -109,6 +138,55 @@ const PHI_ROUTES = {
     phiFields: ['appointment_date', 'provider_name', 'chief_complaint', 'reason'],
     extractPatientId: (req) => req.portalPatient?.id
   },
+  'GET /api/patient-portal/medications': {
+    resource_type: 'medication',
+    action: 'READ',
+    phi: true,
+    phiFields: ['medication_name', 'dose', 'frequency'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'GET /api/patient-portal/labs': {
+    resource_type: 'lab_result',
+    action: 'READ',
+    phi: true,
+    phiFields: ['test_name', 'result_value', 'interpretation'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'GET /api/patient-portal/messages': {
+    resource_type: 'portal_message',
+    action: 'READ',
+    phi: true,
+    phiFields: ['subject', 'message'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/message': {
+    resource_type: 'portal_message',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['subject', 'message'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/refill-request': {
+    resource_type: 'refill_request',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['medication_name', 'notes'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/symptom-triage': {
+    resource_type: 'triage',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['symptoms', 'severity', 'onset', 'notes'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
+  'POST /api/patient-portal/voice-intent': {
+    resource_type: 'portal_voice_intent',
+    action: 'CREATE',
+    phi: true,
+    phiFields: ['transcript'],
+    extractPatientId: (req) => req.portalPatient?.id
+  },
 
   // --- MediVault patient export (Phase 3c) ---
   // This endpoint ships the patient's full clinical record as a FHIR Bundle.
@@ -117,10 +195,168 @@ const PHI_ROUTES = {
   // row the route itself writes. Two logs, two purposes: audit_log answers
   // "who hit this endpoint when", vault_access_log answers "how many times
   // has this specific patient's data been exported".
-  'GET /api/medivault/export/:patientId':         { resource_type: 'vault_export', action: 'READ', phi: true, phiFields: ['fhir_bundle'], extractPatientId: (req) => req.params.patientId },
+  'GET /api/medivault/export/:patientId':         { resource_type: 'vault_export', action: 'EXPORT', phi: true, phiFields: ['fhir_bundle'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- FHIR R4 reads (central audit surface) ---
+  'GET /fhir/R4/Patient':               { resource_type: 'fhir.Patient', action: 'READ', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Patient/:id':           { resource_type: 'fhir.Patient', action: 'READ', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Encounter':             { resource_type: 'fhir.Encounter', action: 'READ', phi: true, phiFields: ['encounter'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Encounter/:id':         { resource_type: 'fhir.Encounter', action: 'READ', phi: true, phiFields: ['encounter'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Condition':             { resource_type: 'fhir.Condition', action: 'READ', phi: true, phiFields: ['conditions'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Observation':           { resource_type: 'fhir.Observation', action: 'READ', phi: true, phiFields: ['observations'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/AllergyIntolerance':    { resource_type: 'fhir.AllergyIntolerance', action: 'READ', phi: true, phiFields: ['allergies'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/MedicationRequest':     { resource_type: 'fhir.MedicationRequest', action: 'READ', phi: true, phiFields: ['medications'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Appointment':           { resource_type: 'fhir.Appointment', action: 'READ', phi: true, phiFields: ['appointments'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /fhir/R4/Practitioner/:id':      { resource_type: 'fhir.Practitioner', action: 'READ', phi: false },
+
+  // --- FHIR R4 writes ---
+  // Reads were classified above; writes were not, so a POST that creates a
+  // patient record produced an 'unknown' audit row with no patient ID.
+  'POST /fhir/R4/Patient':              { resource_type: 'fhir.Patient', action: 'CREATE', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'PUT /fhir/R4/Patient/:id':           { resource_type: 'fhir.Patient', action: 'UPDATE', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/Condition':            { resource_type: 'fhir.Condition', action: 'CREATE', phi: true, phiFields: ['conditions'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/Observation':          { resource_type: 'fhir.Observation', action: 'CREATE', phi: true, phiFields: ['observations'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/AllergyIntolerance':   { resource_type: 'fhir.AllergyIntolerance', action: 'CREATE', phi: true, phiFields: ['allergies'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/Bundle':               { resource_type: 'fhir.Bundle', action: 'CREATE', phi: true, phiFields: ['bundle'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Scheduling and appointments ---
+  'GET /api/schedule':                            { resource_type: 'appointment', action: 'READ', phi: true, phiFields: ['patient_name', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/appointments/:id':                    { resource_type: 'appointment', action: 'READ', phi: true, phiFields: ['patient_name', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/appointments':                       { resource_type: 'appointment', action: 'CREATE', phi: true, phiFields: ['patient_id', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'PATCH /api/appointments/:id':                  { resource_type: 'appointment', action: 'UPDATE', phi: true, phiFields: ['status', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'DELETE /api/appointments/:id':                 { resource_type: 'appointment', action: 'DELETE', phi: true, phiFields: ['patient_id', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/patients/:id/appointments':           { resource_type: 'appointment', action: 'READ', phi: true, phiFields: ['reason'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Provider decision queue ---
+  'GET /api/decisions':                           { resource_type: 'decision_queue', action: 'READ', phi: true, phiFields: ['patient_name', 'summary'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/decisions/ma/closeouts':              { resource_type: 'decision_queue', action: 'READ', phi: true, phiFields: ['patient_name', 'summary'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/decisions/:id/decide':               { resource_type: 'decision_queue', action: 'UPDATE', phi: true, phiFields: ['decision', 'rationale'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/decisions/:id/close':                { resource_type: 'decision_queue', action: 'UPDATE', phi: true, phiFields: ['closeout_note'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Care management ---
+  'POST /api/care-management/eligibility':        { resource_type: 'care_management', action: 'READ', phi: true, phiFields: ['problems', 'encounters'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/care-management/billable':           { resource_type: 'care_management', action: 'READ', phi: true, phiFields: ['problems', 'time_logged'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/care-management/conflict-check':     { resource_type: 'care_management', action: 'READ', phi: true, phiFields: ['enrollments'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Quality / HEDIS (evaluates a patient's clinical record) ---
+  'POST /api/quality/hedis/evaluate/:measureId':  { resource_type: 'hedis_evaluation', action: 'READ', phi: true, phiFields: ['measure_result'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/quality/hedis/all':                  { resource_type: 'hedis_evaluation', action: 'READ', phi: true, phiFields: ['measure_result'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Charges and coding (carry diagnosis context) ---
+  'GET /api/encounters/:id/charge':               { resource_type: 'charge', action: 'READ', phi: true, phiFields: ['icd10_codes', 'cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/encounters/:id/charge':              { resource_type: 'charge', action: 'CREATE', phi: true, phiFields: ['icd10_codes', 'cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/encounters/:id/cpt-suggestions':      { resource_type: 'charge', action: 'READ', phi: true, phiFields: ['cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/encounters/:id/checkout':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['checkout_summary'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/billing/charges':                     { resource_type: 'charge', action: 'READ', phi: true, phiFields: ['icd10_codes', 'cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Insurance eligibility (synthetic, but patient-scoped) ---
+  'POST /api/insurance/verify-eligibility':       { resource_type: 'insurance', action: 'READ', phi: true, phiFields: ['member_id', 'coverage'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Staff view of patient portal messages ---
+  'GET /api/staff/portal-messages':               { resource_type: 'portal_message', action: 'READ', phi: true, phiFields: ['subject', 'message'], extractPatientId: patientIdFromPathOrQuery },
+  'PATCH /api/staff/portal-messages/:id':         { resource_type: 'portal_message', action: 'UPDATE', phi: true, phiFields: ['status'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Patient portal visit prep ---
+  'GET /api/patient-portal/visit-prep':           { resource_type: 'visit_prep', action: 'READ', phi: true, phiFields: ['problems', 'medications'], extractPatientId: (req) => req.portalPatient?.id },
+
+  // --- Lab order transmission ---
+  'POST /api/orders/:id/submit-to-labcorp':       { resource_type: 'lab_order', action: 'UPDATE', phi: true, phiFields: ['test_name', 'indication'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Audit surface itself ---
+  // Reading the audit trail discloses who accessed which patient. That is a
+  // PHI disclosure in its own right and must be audited, not exempt.
+  'GET /api/audit/logs':                          { resource_type: 'audit', action: 'READ', phi: true, phiFields: ['audit_trail'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/audit/patient/:id':                   { resource_type: 'audit', action: 'READ', phi: true, phiFields: ['audit_trail'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/audit/export':                        { resource_type: 'audit', action: 'EXPORT', phi: true, phiFields: ['audit_trail'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/audit/sessions':                      { resource_type: 'audit', action: 'READ', phi: false },
+  'GET /api/audit/stats':                         { resource_type: 'audit', action: 'READ', phi: false },
 
   // --- System ---
   'GET /api/health':                              { resource_type: 'system', action: 'READ', phi: false },
+};
+
+/**
+ * Routes deliberately classified as carrying no PHI.
+ *
+ * This list exists so `test/unit/audit-route-coverage.test.js` can fail when a
+ * route is in NEITHER table. Before it, an unclassified PHI route logged as
+ * resource_type='unknown' with phi_accessed=false and no patient ID -- silently
+ * wrong, and nothing caught the drift.
+ *
+ * Adding a route here is a claim that it cannot disclose patient data. State
+ * why. If you are unsure, classify it in PHI_ROUTES instead: over-auditing is
+ * recoverable, under-auditing is not.
+ */
+/**
+ * Actions whose audit record must be durable BEFORE the operation completes.
+ *
+ * The ordinary path writes after the response, fire-and-forget. That is a fine
+ * trade for a routine read: losing one row costs detail. It is the wrong trade
+ * when the operation hands over a whole record, changes a prescription, or
+ * signs a note -- there, an unrecorded event is the thing accountability is
+ * supposed to prevent.
+ *
+ * Keyed on `action` rather than route so a new export or signing route inherits
+ * the behavior without anyone remembering to opt in.
+ *
+ * Deliberately NOT here: plain READ. Making every read block on a synchronous
+ * audit write would trade a silent gap for an availability failure across the
+ * whole API, which is a worse bargain than the one being fixed.
+ */
+const DURABLE_AUDIT_ACTIONS = new Set(['EXPORT', 'SIGN', 'PRESCRIBE']);
+
+const NON_PHI_ROUTES = {
+  // Authentication -- credentials and tokens, never clinical content.
+  'POST /api/auth/login':      'credential exchange; no patient data in request or response',
+  'POST /api/auth/refresh':    'token rotation only',
+  'POST /api/auth/logout':     'session teardown only',
+  'POST /api/auth/logout-all': 'session teardown only',
+  'GET /api/auth/me':          'returns the authenticated CLINICIAN identity, not a patient',
+  'POST /api/patient-portal/logout': 'portal session teardown; no record access',
+
+  // Reference data -- static lookups with no patient in scope.
+  'GET /api/insurance/carriers':      'static carrier list, not patient-scoped',
+  'GET /api/care-management/codes':   'CPT code reference table',
+  'GET /api/quality/hedis/measures':  'measure definitions, not results',
+
+  // Integration configuration -- reports which env vars are set, never values.
+  'GET /api/integrations/labcorp/status':         'config presence booleans only',
+  'POST /api/integrations/labcorp/oauth/start':   'OAuth state issuance; no patient context',
+  'GET /api/integrations/labcorp/oauth/callback': 'OAuth code exchange; no patient context',
+
+  // Webhook administration -- delivery config, not payloads.
+  'GET /api/webhooks/':        'webhook registration list',
+  'POST /api/webhooks/':       'webhook registration',
+  'DELETE /api/webhooks/:id':  'webhook removal',
+  'GET /api/webhooks/:id/log': 'delivery status log; records outcome, not payload',
+
+  // FHIR metadata -- server capability, no patient data.
+  'GET /fhir/R4/metadata': 'CapabilityStatement',
+  // Registered with an escaped '$' because Express treats it as a path
+  // metacharacter; the key must match the registered path exactly.
+  'GET /fhir/R4/\\$stats': 'aggregate resource counts, no identifiers',
+};
+
+/**
+ * PHI routes that cannot attribute an access to a single patient, with the
+ * reason. Every other phi:true route must supply `extractPatientId`.
+ *
+ * This is a known-gaps register, not an exemption to be grown casually. A PHI
+ * row with no patient ID still records who called what and when, but it cannot
+ * answer "who accessed THIS patient's record" -- which is the question an
+ * access log mainly exists to answer.
+ *
+ * Collection endpoints are legitimately here: `GET /api/patients` returns many
+ * patients, so no single ID applies. The others are recorded honestly as
+ * unresolved rather than quietly passing.
+ */
+const PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION = {
+  'GET /api/patients':                    'collection endpoint; returns many patients, no single subject',
+  'GET /api/encounters':                  'collection endpoint; spans patients',
+  'GET /api/dashboard':                   'aggregate counts across the practice',
+  'POST /api/patients/extract-from-speech': 'transcript parsing; no patient is referenced',
+  'POST /api/ai/extract-data':            'transcript parsing; no patient is referenced',
+  'POST /api/patient-portal/verify':      'identity proofing runs before a portal session exists',
 };
 
 // ==========================================
@@ -160,12 +396,65 @@ function methodToAction(method) {
   return map[method] || method;
 }
 
-function resolveUserIdentity(req) {
+/**
+ * Patient id for routes where the subject is not in the path or query.
+ *
+ * Three sources, in order of trust:
+ *   1. `req.auditPatientId` — set by the handler once the patient is actually
+ *      known. This is the only way to attribute a route whose path carries an
+ *      ENCOUNTER id, or a create whose patient id does not exist until after
+ *      the insert. The handler already has the row; re-querying here would be
+ *      a second read of data it just fetched.
+ *   2. the request body — for routes that take an explicit patient_id.
+ *   3. the path/query extractor, as a fallback.
+ *
+ * The middleware calls this synchronously inside `res.on('finish')`, which is
+ * why option 1 exists: an async lookup at that point cannot be awaited safely.
+ */
+function patientIdFromContextOrBody(req) {
+  if (req.auditPatientId) return req.auditPatientId;
+  const body = req.body || {};
+  if (body.patient_id) return body.patient_id;
+  if (body.patient && body.patient.id) return body.patient.id;
+  return patientIdFromPathOrQuery(req);
+}
+
+function patientIdFromPathOrQuery(req) {
+  if (req.auditPatientId) return req.auditPatientId;
+  if (req.fhirPatientId) return req.fhirPatientId;
+  if (req.query?.patient) return req.query.patient;
+  if (req.query?._id) return req.query._id;
+  const path = (req.originalUrl || req.url || '').split('?')[0];
+  const patientMatch = path.match(/\/fhir\/R4\/Patient\/(\d+)$/);
+  if (patientMatch) return patientMatch[1];
+  const exportMatch = path.match(/\/api\/medivault\/export\/(\d+)$/);
+  return exportMatch ? exportMatch[1] : null;
+}
+
+function resolveAuditIdentity(req) {
   // Only trust authenticated identity — never request body fields
-  return req.user?.username
-    || req.user?.sub
-    || req.headers[USER_HEADER]
-    || 'anonymous';
+  if (req.user?.username || req.user?.sub) {
+    return {
+      userIdentity: req.user.username || String(req.user.sub),
+      userRole: req.user.role || 'unknown',
+    };
+  }
+
+  if (req.session?.userId || req.session?.userRole) {
+    return {
+      userIdentity: req.session.userId || 'session',
+      userRole: req.session.userRole || 'unknown',
+    };
+  }
+
+  if (req.portalPatient?.id) {
+    return {
+      userIdentity: `portal-patient:${req.portalPatient.id}`,
+      userRole: 'patient_portal',
+    };
+  }
+
+  return { userIdentity: 'anonymous', userRole: 'unknown' };
 }
 
 function extractResourceId(req) {
@@ -179,7 +468,9 @@ function scrubAndTruncateBody(body, maxLen) {
   // Remove PHI and sensitive fields from audit log body summaries
   const PHI_SCRUB_FIELDS = [
     'transcript', 'soap_note', 'first_name', 'last_name', 'dob',
-    'phone', 'email', 'insurance_id', 'address_line1', 'ssn'
+    'mrn', 'phone', 'email', 'insurance_id', 'address_line1', 'ssn',
+    'subject', 'message', 'medication_name', 'notes', 'symptoms', 'onset',
+    'chief_complaint', 'reason'
   ];
   for (const field of PHI_SCRUB_FIELDS) {
     if (field in scrubbed) scrubbed[field] = '[REDACTED]';
@@ -220,16 +511,106 @@ async function insertAuditLog(data) {
       session_id, user_identity, user_role, action, resource_type, resource_id,
       description, request_method, request_path, request_body_summary, response_status,
       phi_accessed, phi_fields_accessed, patient_id,
-      ip_address, user_agent, duration_ms, error_message
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ip_address, user_agent, duration_ms, error_message,
+      receipt_id, outcome_recorded
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `, [
     data.session_id, data.user_identity, data.user_role, data.action,
     data.resource_type, data.resource_id, data.description,
     data.request_method, data.request_path, data.request_body_summary,
     data.response_status, data.phi_accessed ? 1 : 0, data.phi_fields_accessed,
     data.patient_id, data.ip_address, data.user_agent, data.duration_ms,
-    data.error_message
+    data.error_message,
+    data.receipt_id || null,
+    data.outcome_recorded === undefined ? 1 : (data.outcome_recorded ? 1 : 0)
   ]);
+}
+
+/**
+ * Write the audit INTENT for a high-consequence route, before the handler runs.
+ *
+ * The ordinary audit path writes inside `res.on('finish')` as fire-and-forget,
+ * so the row lands after the response and a failure is invisible to everyone:
+ * the caller already has the data and nothing records that the disclosure
+ * happened. For an operation like exporting a patient's whole record, that is
+ * the wrong trade.
+ *
+ * This writes first. If it fails, the caller is refused and no PHI leaves the
+ * process. The row is marked `outcome_recorded = 0` until the response
+ * completes, so a row that never gets its outcome is a *detectable* gap rather
+ * than an absence -- see `findOrphanedAuditIntents`.
+ *
+ * Returns the receipt id, or throws so the caller can fail closed.
+ */
+async function writeAuditIntent({ req, sessionId, config, requestPath, maxBodySummaryLength }) {
+  const receiptId = crypto.randomUUID();
+  const { userIdentity, userRole } = resolveAuditIdentity(req);
+
+  let patientId = null;
+  if (config.extractPatientId) {
+    patientId = parseInt(config.extractPatientId(req), 10) || null;
+  }
+
+  const result = await insertAuditLog({
+    session_id: sessionId,
+    user_identity: userIdentity,
+    user_role: userRole,
+    action: config.action || methodToAction(req.method),
+    resource_type: config.resource_type,
+    resource_id: extractResourceId(req),
+    description: buildDescription(config, req),
+    request_method: req.method,
+    request_path: requestPath,
+    request_body_summary: scrubAndTruncateBody(req.body, maxBodySummaryLength),
+    response_status: null,          // not known yet -- that is the point
+    phi_accessed: config.phi,
+    phi_fields_accessed: config.phi && config.phiFields ? JSON.stringify(config.phiFields) : null,
+    patient_id: patientId,
+    ip_address: req.ip,
+    user_agent: truncate(req.headers['user-agent'], 200),
+    duration_ms: null,
+    error_message: null,
+    receipt_id: receiptId,
+    outcome_recorded: 0,
+  });
+
+  return { receiptId, rowId: result?.lastID ?? null };
+}
+
+/**
+ * Record the outcome against an intent row written by writeAuditIntent.
+ * Best-effort by design: the disclosure is already durably recorded, so a
+ * failure here degrades detail, not accountability. An un-updated row stays
+ * queryable as an orphan.
+ */
+async function recordAuditOutcome(receiptId, { status, durationMs, errorMessage }) {
+  return db.dbRun(
+    `UPDATE audit_log
+        SET response_status = ?, duration_ms = ?, error_message = ?, outcome_recorded = 1
+      WHERE receipt_id = ?`,
+    [status, durationMs, errorMessage, receiptId]
+  );
+}
+
+/**
+ * Audit intents whose outcome was never recorded.
+ *
+ * A non-empty result means responses completed without their audit row being
+ * closed out -- a process crash mid-request, or a database problem. This is the
+ * operational surface for "audit degraded"; it is the reason intents are worth
+ * writing rather than simply making the existing write synchronous.
+ */
+async function findOrphanedAuditIntents({ olderThanMinutes = 5, limit = 100 } = {}) {
+  return db.dbAll(
+    `SELECT id, receipt_id, user_identity, action, resource_type, patient_id,
+            request_method, request_path, timestamp
+       FROM audit_log
+      WHERE outcome_recorded = 0
+        AND timestamp <= datetime('now', ?)
+      ORDER BY timestamp DESC
+      LIMIT ?`,
+    [`-${parseInt(olderThanMinutes, 10) || 5} minutes`, parseInt(limit, 10) || 100]
+  );
 }
 
 async function upsertSession(sessionId, userIdentity, userRole, ip, userAgent) {
@@ -256,7 +637,25 @@ function auditMiddleware(options = {}) {
     maxBodySummaryLength = 500,
   } = options;
 
-  return (req, res, next) => {
+  // Async because the durable path awaits its audit write before the handler
+  // runs. Express 4 does not route rejections from async middleware, so the
+  // body is wrapped below -- an unrouted rejection here would hang the request
+  // rather than fail it.
+  return async (req, res, next) => {
+    try {
+      return await runAuditMiddleware(req, res, next, { excludePaths, maxBodySummaryLength });
+    } catch (err) {
+      console.error('[AUDIT] middleware error:', err.message);
+      // Auditing must not take the request down when it is not the durable
+      // path; the durable path returns its own 503 before reaching here.
+      if (!res.headersSent) return next();
+      return undefined;
+    }
+  };
+}
+
+function runAuditMiddleware(req, res, next, { excludePaths, maxBodySummaryLength }) {
+  return (async () => {
     // Use originalUrl (never mutated by sub-routers) instead of req.path,
     // because Express's `app.use('/api/patient-portal', router)` rewrites
     // req.path to the path INSIDE the router. Without this, audit_log
@@ -264,8 +663,9 @@ function auditMiddleware(options = {}) {
     // can't pair them with the full PHI_ROUTES keys.
     const requestPath = (req.originalUrl || req.url || '').split('?')[0];
 
-    // Skip non-API routes (static files, SPA catch-all)
-    if (!requestPath.startsWith('/api/')) return next();
+    // Skip non-clinical routes (static files, SPA catch-all). FHIR reads and
+    // API routes share this one central audit pipeline.
+    if (!requestPath.startsWith('/api/') && !requestPath.startsWith('/fhir/R4/')) return next();
 
     // Skip excluded paths
     if (excludePaths.includes(requestPath)) return next();
@@ -283,12 +683,8 @@ function auditMiddleware(options = {}) {
       res.setHeader('X-Audit-Session-Id', sessionId);
     }
 
-    // Resolve user identity
-    const userIdentity = resolveUserIdentity(req);
-    const userRole = req.headers[ROLE_HEADER] || 'unknown';
-
     // Attach audit context to request for downstream use
-    req.auditContext = { sessionId, userIdentity, userRole, startTime };
+    req.auditContext = { sessionId, startTime };
 
     // Capture response body for error extraction
     let capturedBody = null;
@@ -299,12 +695,51 @@ function auditMiddleware(options = {}) {
     };
 
     // Log after response completes
+    // ── Durable path: write the audit BEFORE the handler, for the operations
+    // where losing the record is worse than refusing the request. ──
+    const preMatch = matchRoute(req.method, requestPath);
+    if (preMatch && DURABLE_AUDIT_ACTIONS.has(preMatch.config.action)) {
+      let intent;
+      try {
+        intent = await writeAuditIntent({
+          req, sessionId, config: preMatch.config, requestPath, maxBodySummaryLength,
+        });
+      } catch (err) {
+        console.error('[AUDIT] durable audit intent failed; refusing the operation:', err.message);
+        return res.status(503).json({
+          error: 'audit_unavailable',
+          error_description:
+            'This operation could not be recorded in the access log and was refused. '
+            + 'No data was disclosed. Retry shortly.',
+        });
+      }
+
+      // The caller gets a receipt they can quote when asking "was this logged?".
+      res.setHeader('X-Audit-Receipt', intent.receiptId);
+      req.auditReceiptId = intent.receiptId;
+
+      res.on('finish', () => {
+        // Best-effort by design: the disclosure is already durably recorded.
+        recordAuditOutcome(intent.receiptId, {
+          status: res.statusCode,
+          durationMs: Date.now() - startTime,
+          errorMessage: res.statusCode >= 400 ? extractErrorMessage(capturedBody) : null,
+        }).catch((err) => {
+          console.error('[AUDIT] outcome not recorded for receipt', intent.receiptId, '-', err.message);
+        });
+      });
+
+      return next();
+    }
+
     res.on('finish', () => {
       const duration = Date.now() - startTime;
 
       // Fire-and-forget: audit logging must never block responses
       (async () => {
         try {
+          const { userIdentity, userRole } = resolveAuditIdentity(req);
+
           // Upsert session
           await upsertSession(sessionId, userIdentity, userRole, req.ip, req.headers['user-agent']);
 
@@ -367,8 +802,8 @@ function auditMiddleware(options = {}) {
       })();
     });
 
-    next();
-  };
+    return next();
+  })();
 }
 
 // ==========================================
@@ -450,6 +885,13 @@ module.exports = {
   getAuditStats,
   getAuditSessions,
   PHI_ROUTES,
+  NON_PHI_ROUTES,
+  PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION,
+  DURABLE_AUDIT_ACTIONS,
+  writeAuditIntent,
+  recordAuditOutcome,
+  findOrphanedAuditIntents,
   matchRoute,
   SESSION_HEADER,
+  resolveAuditIdentity,
 };

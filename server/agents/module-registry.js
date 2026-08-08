@@ -17,6 +17,7 @@ const MODULE_ORDER = [
   'orders',
   'coding',
   'quality',
+  'awv',
   'patient_link',
   'patient_app',
   'medivault'
@@ -142,6 +143,18 @@ const MODULE_REGISTRY = Object.freeze({
     primaryOutputs: ['quality gaps', 'measure status', 'compliance checks'],
     primaryHandoff: 'physician, ma, or quality operations',
     patientControlBoundary: 'Flags gaps and oversight concerns; does not auto-order care or override clinician judgment.'
+  }),
+  awv: Object.freeze({
+    key: 'awv',
+    displayName: 'Annual Wellness Visit',
+    workflowBand: 'preventive_visit',
+    humanCounterpart: 'physician (with MA pre-visit prep)',
+    autonomyTier: 2,
+    summary: 'Detects AWV encounter type, enforces required CMS components per MM6775421 + MM13486 (SDOH HRA), generates G0438/G0439 + add-ons (G2211, ACP 99497/98, 99483 cognitive, G0136 SDOH).',
+    primaryInputs: ['encounter context', 'transcript', 'prior AWV records (12-month eligibility)', 'patient age'],
+    primaryOutputs: ['eligibility status', 'AWV type', 'component checklist', 'missing-required list', 'billable CPT', 'add-on opportunities'],
+    primaryHandoff: 'physician (sign), coding agent (bill), quality agent (record AWV measure satisfaction)',
+    patientControlBoundary: 'Recommendation-only checklist; physician approves component completeness and signs the encounter before billing.'
   }),
   patient_link: Object.freeze({
     key: 'patient_link',

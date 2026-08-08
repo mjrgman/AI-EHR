@@ -11,8 +11,14 @@ const PHI_FIELDS = ['first_name', 'last_name', 'dob', 'phone', 'email', 'address
 
 function encryptPatientData(data) {
   try {
+    // eslint-disable-next-line global-require -- optional module; falls back to plaintext
     const phiEncryption = require('./security/phi-encryption');
-    if (!process.env.PHI_ENCRYPTION_KEY) return data; // Skip if no key
+    if (!process.env.PHI_ENCRYPTION_KEY) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('PHI_ENCRYPTION_KEY is required; refusing plaintext patient storage');
+      }
+      return data; // synthetic-only development compatibility
+    }
     const encrypted = { ...data };
     for (const field of PHI_FIELDS) {
       if (encrypted[field]) {
@@ -21,7 +27,8 @@ function encryptPatientData(data) {
     }
     return encrypted;
   } catch (err) {
-    console.warn('[DB] PHI encryption unavailable, storing plaintext:', err.message);
+    if (process.env.NODE_ENV === 'production') throw err;
+    console.warn('[DB] PHI encryption unavailable in synthetic development mode:', err.message);
     return data;
   }
 }
@@ -29,21 +36,29 @@ function encryptPatientData(data) {
 function decryptPatientData(data) {
   if (!data) return data;
   try {
+    // eslint-disable-next-line global-require -- optional module; falls back to plaintext
     const phiEncryption = require('./security/phi-encryption');
-    if (!process.env.PHI_ENCRYPTION_KEY) return data; // Skip if no key
+    if (!process.env.PHI_ENCRYPTION_KEY) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('PHI_ENCRYPTION_KEY is required; refusing unprotected patient reads');
+      }
+      return data; // synthetic-only development compatibility
+    }
     const decrypted = { ...data };
     for (const field of PHI_FIELDS) {
       if (decrypted[field]) {
         try {
           decrypted[field] = phiEncryption.decrypt(decrypted[field]);
         } catch (e) {
+          if (process.env.NODE_ENV === 'production') throw e;
           // Field may already be plaintext — leave as-is
         }
       }
     }
     return decrypted;
   } catch (err) {
-    console.warn('[DB] PHI decryption unavailable, returning as-is:', err.message);
+    if (process.env.NODE_ENV === 'production') throw err;
+    console.warn('[DB] PHI decryption unavailable in synthetic development mode:', err.message);
     return data;
   }
 }
@@ -367,7 +382,13 @@ function initializeDatabase() {
         user_agent TEXT,
         timestamp DATETIME DEFAULT (datetime('now')),
         duration_ms INTEGER,
-        error_message TEXT
+        error_message TEXT,
+        -- Durable-audit support. receipt_id is the caller-visible correlation
+        -- id returned as X-Audit-Receipt; outcome_recorded=0 marks an intent
+        -- written before the operation whose result was never recorded, which
+        -- is a detectable gap rather than a silent absence.
+        receipt_id TEXT,
+        outcome_recorded INTEGER DEFAULT 1
       )`);
 
       db.run(`CREATE TABLE IF NOT EXISTS audit_sessions (
@@ -399,13 +420,13 @@ function initializeDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         patient_id INTEGER NOT NULL,
         message_type TEXT NOT NULL CHECK(message_type IN (
-          'general','refill_notification','lab_result','triage'
+          'general','refill_notification','lab_result','triage','appointment_request'
         )) DEFAULT 'general',
         subject TEXT,
         content TEXT NOT NULL,
         plain_language_content TEXT,
         status TEXT NOT NULL CHECK(status IN (
-          'draft','submitted','physician_review','approved','sent','read','closed'
+          'draft','submitted','pending','physician_review','approved','sent','read','closed','actioned','resolved'
         )) DEFAULT 'draft',
         tier INTEGER NOT NULL DEFAULT 2,
         sent_at DATETIME,
@@ -449,9 +470,15 @@ function initializeDatabase() {
           'procedure','telehealth','referral','urgent'
         )),
         chief_complaint TEXT,
+        -- 'requested' is the entry state for a patient-initiated booking: the
+        -- patient has asked for a slot, staff have not accepted it. It is NOT
+        -- on the schedule. Storing such a request as 'scheduled' told the
+        -- patient their appointment existed when no one had agreed to it.
+        -- Staff move it to 'scheduled' (and then 'confirmed') from the
+        -- clinician schedule view.
         status TEXT NOT NULL CHECK(status IN (
-          'scheduled','confirmed','checked-in','no-show',
-          'cancelled','completed','rescheduled'
+          'requested','scheduled','confirmed','checked-in','no-show',
+          'cancelled','completed','rescheduled','declined'
         )) DEFAULT 'scheduled',
         encounter_id INTEGER,
         notes TEXT,
@@ -569,6 +596,80 @@ function initializeDatabase() {
 }
 
 // ==========================================
+// SCHEMA MIGRATIONS
+// ==========================================
+
+/**
+ * migratePatientMessages — widens the patient_messages CHECK constraints to
+ * include 'appointment_request' (message_type) and 'pending'/'actioned'/'resolved'
+ * (status). Uses the SQLite rename-recreate-copy pattern since ALTER TABLE
+ * cannot modify CHECK constraints.
+ *
+ * Safe to call on an already-migrated DB: the PRAGMA table_info check skips
+ * the migration if the live schema already allows appointment_request inserts.
+ */
+async function migratePatientMessages() {
+  // Quick probe: try to insert a dry-run row with the new type/status.
+  // If it fails with SQLITE_CONSTRAINT we need to migrate; otherwise skip.
+  // Probe by inspecting the sqlite_master schema text — no row insert needed.
+  // We check whether the CREATE TABLE statement for patient_messages already
+  // includes 'appointment_request' in its message_type CHECK.
+  const schemaRow = await dbGet(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='patient_messages'"
+  );
+  if (!schemaRow) return; // table doesn't exist yet — initializeDatabase will create it
+  if (schemaRow.sql && schemaRow.sql.includes('appointment_request')) {
+    // Schema already widened — no migration needed
+    return;
+  }
+
+  console.log('[DB migration] Widening patient_messages constraints (appointment_request + pending/actioned/resolved)...');
+  await dbRun('PRAGMA foreign_keys = OFF');
+  try {
+    await dbRun('BEGIN TRANSACTION');
+    // 1. Rename old table
+    await dbRun('ALTER TABLE patient_messages RENAME TO patient_messages_old');
+    // 2. Create new table with widened constraints, preserving all live columns
+    await dbRun(`CREATE TABLE patient_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL,
+      encounter_id INTEGER,
+      message_type TEXT NOT NULL CHECK(message_type IN (
+        'general','refill_notification','lab_result','triage','appointment_request'
+      )) DEFAULT 'general',
+      subject TEXT,
+      content TEXT NOT NULL,
+      plain_language_content TEXT,
+      status TEXT NOT NULL CHECK(status IN (
+        'draft','submitted','pending','physician_review','approved','sent','read','closed','actioned','resolved'
+      )) DEFAULT 'draft',
+      tier INTEGER NOT NULL DEFAULT 2,
+      sent_at DATETIME,
+      reviewed_by TEXT,
+      reviewed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+    )`);
+    // 3. Copy all existing rows (all live columns are preserved in new table)
+    await dbRun(`INSERT INTO patient_messages
+      (id, patient_id, encounter_id, message_type, subject, content,
+       plain_language_content, status, tier, sent_at, reviewed_by, reviewed_at, created_at)
+      SELECT id, patient_id, encounter_id, message_type, subject, content,
+             plain_language_content, status, tier, sent_at, reviewed_by, reviewed_at, created_at
+      FROM patient_messages_old`);
+    // 4. Drop old table
+    await dbRun('DROP TABLE patient_messages_old');
+    await dbRun('COMMIT');
+    console.log('[DB migration] patient_messages migration complete.');
+  } catch (err) {
+    await dbRun('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    await dbRun('PRAGMA foreign_keys = ON');
+  }
+}
+
+// ==========================================
 // HELPERS
 // ==========================================
 
@@ -594,536 +695,532 @@ function calculateAge(dob) {
 // ==========================================
 
 async function loadClinicalRules() {
-    try {
-      const existing = await dbGet('SELECT COUNT(*) as count FROM clinical_rules');
-      if (existing.count > 0) {
-        console.log('Clinical rules already loaded');
-        return;
-      }
+  const existing = await dbGet('SELECT COUNT(*) as count FROM clinical_rules');
+  if (existing.count > 0) {
+    console.log('Clinical rules already loaded');
+    return;
+  }
 
-      console.log('Loading clinical rules...');
+  console.log('Loading clinical rules...');
 
-      const rules = [
-        // --- VITAL ALERTS ---
-        {
-          rule_name: 'hypertension_stage2',
-          rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({
-            or: [
-              { field: 'systolic_bp', operator: '>=', value: 140 },
-              { field: 'diastolic_bp', operator: '>=', value: 90 }
-            ]
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Stage 2 Hypertension Detected',
-            description: 'BP exceeds Stage 2 threshold (>=140/90). Consider antihypertensive adjustment.',
-            category: 'urgent',
-            actions: [
-              { type: 'medication_adjustment', description: 'Increase Lisinopril from 20mg to 40mg daily', payload: { medication_name: 'Lisinopril', dose: '40mg', route: 'PO', frequency: 'daily' }},
-              { type: 'create_lab_order', description: 'Order BMP to assess renal function', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }}
-            ]
-          }),
-          priority: 10,
-          evidence_source: 'AHA/ACC 2017 HTN Guidelines'
-        },
-        {
-          rule_name: 'hypertensive_crisis',
-          rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({
-            or: [
-              { field: 'systolic_bp', operator: '>=', value: 180 },
-              { field: 'diastolic_bp', operator: '>=', value: 120 }
-            ]
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'HYPERTENSIVE CRISIS',
-            description: 'BP >= 180/120. Immediate intervention required. Assess for end-organ damage.',
-            category: 'urgent',
-            actions: [
-              { type: 'vital_alert', description: 'Recheck BP in 5 minutes. Consider IV antihypertensive.' }
-            ]
-          }),
-          priority: 1,
-          evidence_source: 'AHA/ACC 2017 HTN Guidelines'
-        },
-        {
-          rule_name: 'tachycardia',
-          rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({ field: 'heart_rate', operator: '>', value: 100 }),
-          suggested_actions: JSON.stringify({
-            title: 'Tachycardia Detected',
-            description: 'Heart rate > 100 bpm. Consider EKG and evaluate for underlying cause.',
-            category: 'routine',
-            actions: [
-              { type: 'create_imaging_order', description: 'Order 12-lead EKG', payload: { study_type: 'EKG', body_part: 'Chest', cpt_code: '93000' }},
-              { type: 'create_lab_order', description: 'Check TSH', payload: { test_name: 'TSH', cpt_code: '84443', priority: 'routine' }}
-            ]
-          }),
-          priority: 20,
-          evidence_source: 'ACC/AHA Arrhythmia Guidelines'
-        },
-        {
-          rule_name: 'bradycardia',
-          rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({ field: 'heart_rate', operator: '<', value: 50 }),
-          suggested_actions: JSON.stringify({
-            title: 'Bradycardia Detected',
-            description: 'Heart rate < 50 bpm. Review medications (beta-blockers, CCBs). Consider EKG.',
-            category: 'urgent',
-            actions: [
-              { type: 'create_imaging_order', description: 'Order 12-lead EKG', payload: { study_type: 'EKG', body_part: 'Chest', cpt_code: '93000' }}
-            ]
-          }),
-          priority: 15,
-          evidence_source: 'ACC/AHA Arrhythmia Guidelines'
-        },
-        {
-          rule_name: 'hypoxia',
-          rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({ field: 'spo2', operator: '<', value: 95 }),
-          suggested_actions: JSON.stringify({
-            title: 'Hypoxia - Low Oxygen Saturation (SpO2 < 95%)',
-            description: 'Oxygen saturation below normal threshold (< 95%). Evaluate for respiratory compromise. Apply supplemental O2 if SpO2 < 92%.',
-            category: 'urgent',
-            actions: [
-              { type: 'create_imaging_order', description: 'Order Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046' }}
-            ]
-          }),
-          priority: 5,
-          evidence_source: 'BTS Oxygen Guidelines; ATS Normal SpO2 Reference'
-        },
-        {
-          rule_name: 'fever_low_grade',
-          rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({ field: 'temperature', operator: '>', value: 99.5 }),
-          suggested_actions: JSON.stringify({
-            title: 'Low-Grade Fever Advisory',
-            description: 'Temperature 99.5–100.4°F. Monitor for progression to true fever (> 100.4°F). Consider viral etiology. Reassess in 30 minutes.',
-            category: 'routine',
-            actions: []
-          }),
-          priority: 20,
-          evidence_source: 'IDSA Fever Definition Guidelines'
-        },
-        {
-          rule_name: 'fever',
-          rule_type: 'vital_alert',
-          trigger_condition: JSON.stringify({ field: 'temperature', operator: '>', value: 100.4 }),
-          suggested_actions: JSON.stringify({
-            title: 'Fever Detected',
-            description: 'Temperature > 100.4 F. Evaluate for infectious etiology.',
-            category: 'routine',
-            actions: [
-              { type: 'create_lab_order', description: 'Order CBC with differential', payload: { test_name: 'Complete Blood Count', cpt_code: '85025', priority: 'urgent' }},
-              { type: 'create_lab_order', description: 'Order Urinalysis', payload: { test_name: 'Urinalysis', cpt_code: '81003', priority: 'urgent' }}
-            ]
-          }),
-          priority: 15,
-          evidence_source: 'IDSA Fever Workup Guidelines'
-        },
+  const rules = [
+    // --- VITAL ALERTS ---
+    {
+      rule_name: 'hypertension_stage2',
+      rule_type: 'vital_alert',
+      trigger_condition: JSON.stringify({
+        or: [
+          { field: 'systolic_bp', operator: '>=', value: 140 },
+          { field: 'diastolic_bp', operator: '>=', value: 90 }
+        ]
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Stage 2 Hypertension Detected',
+        description: 'BP exceeds Stage 2 threshold (>=140/90). Consider antihypertensive adjustment.',
+        category: 'urgent',
+        actions: [
+          { type: 'medication_adjustment', description: 'Increase Lisinopril from 20mg to 40mg daily', payload: { medication_name: 'Lisinopril', dose: '40mg', route: 'PO', frequency: 'daily' }},
+          { type: 'create_lab_order', description: 'Order BMP to assess renal function', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }}
+        ]
+      }),
+      priority: 10,
+      evidence_source: 'AHA/ACC 2017 HTN Guidelines'
+    },
+    {
+      rule_name: 'hypertensive_crisis',
+      rule_type: 'vital_alert',
+      trigger_condition: JSON.stringify({
+        or: [
+          { field: 'systolic_bp', operator: '>=', value: 180 },
+          { field: 'diastolic_bp', operator: '>=', value: 120 }
+        ]
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'HYPERTENSIVE CRISIS',
+        description: 'BP >= 180/120. Immediate intervention required. Assess for end-organ damage.',
+        category: 'urgent',
+        actions: [
+          { type: 'vital_alert', description: 'Recheck BP in 5 minutes. Consider IV antihypertensive.' }
+        ]
+      }),
+      priority: 1,
+      evidence_source: 'AHA/ACC 2017 HTN Guidelines'
+    },
+    {
+      rule_name: 'tachycardia',
+      rule_type: 'vital_alert',
+      trigger_condition: JSON.stringify({ field: 'heart_rate', operator: '>', value: 100 }),
+      suggested_actions: JSON.stringify({
+        title: 'Tachycardia Detected',
+        description: 'Heart rate > 100 bpm. Consider EKG and evaluate for underlying cause.',
+        category: 'routine',
+        actions: [
+          { type: 'create_imaging_order', description: 'Order 12-lead EKG', payload: { study_type: 'EKG', body_part: 'Chest', cpt_code: '93000' }},
+          { type: 'create_lab_order', description: 'Check TSH', payload: { test_name: 'TSH', cpt_code: '84443', priority: 'routine' }}
+        ]
+      }),
+      priority: 20,
+      evidence_source: 'ACC/AHA Arrhythmia Guidelines'
+    },
+    {
+      rule_name: 'bradycardia',
+      rule_type: 'vital_alert',
+      trigger_condition: JSON.stringify({ field: 'heart_rate', operator: '<', value: 50 }),
+      suggested_actions: JSON.stringify({
+        title: 'Bradycardia Detected',
+        description: 'Heart rate < 50 bpm. Review medications (beta-blockers, CCBs). Consider EKG.',
+        category: 'urgent',
+        actions: [
+          { type: 'create_imaging_order', description: 'Order 12-lead EKG', payload: { study_type: 'EKG', body_part: 'Chest', cpt_code: '93000' }}
+        ]
+      }),
+      priority: 15,
+      evidence_source: 'ACC/AHA Arrhythmia Guidelines'
+    },
+    {
+      rule_name: 'hypoxia',
+      rule_type: 'vital_alert',
+      trigger_condition: JSON.stringify({ field: 'spo2', operator: '<', value: 95 }),
+      suggested_actions: JSON.stringify({
+        title: 'Hypoxia - Low Oxygen Saturation (SpO2 < 95%)',
+        description: 'Oxygen saturation below normal threshold (< 95%). Evaluate for respiratory compromise. Apply supplemental O2 if SpO2 < 92%.',
+        category: 'urgent',
+        actions: [
+          { type: 'create_imaging_order', description: 'Order Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046' }}
+        ]
+      }),
+      priority: 5,
+      evidence_source: 'BTS Oxygen Guidelines; ATS Normal SpO2 Reference'
+    },
+    {
+      rule_name: 'fever_low_grade',
+      rule_type: 'vital_alert',
+      trigger_condition: JSON.stringify({ field: 'temperature', operator: '>', value: 99.5 }),
+      suggested_actions: JSON.stringify({
+        title: 'Low-Grade Fever Advisory',
+        description: 'Temperature 99.5–100.4°F. Monitor for progression to true fever (> 100.4°F). Consider viral etiology. Reassess in 30 minutes.',
+        category: 'routine',
+        actions: []
+      }),
+      priority: 20,
+      evidence_source: 'IDSA Fever Definition Guidelines'
+    },
+    {
+      rule_name: 'fever',
+      rule_type: 'vital_alert',
+      trigger_condition: JSON.stringify({ field: 'temperature', operator: '>', value: 100.4 }),
+      suggested_actions: JSON.stringify({
+        title: 'Fever Detected',
+        description: 'Temperature > 100.4 F. Evaluate for infectious etiology.',
+        category: 'routine',
+        actions: [
+          { type: 'create_lab_order', description: 'Order CBC with differential', payload: { test_name: 'Complete Blood Count', cpt_code: '85025', priority: 'urgent' }},
+          { type: 'create_lab_order', description: 'Order Urinalysis', payload: { test_name: 'Urinalysis', cpt_code: '81003', priority: 'urgent' }}
+        ]
+      }),
+      priority: 15,
+      evidence_source: 'IDSA Fever Workup Guidelines'
+    },
 
-        // --- LAB ALERTS ---
-        {
-          rule_name: 'a1c_above_target',
-          rule_type: 'lab_alert',
-          trigger_condition: JSON.stringify({
-            test_name: 'Hemoglobin A1C',
-            operator: '>=', value: 7.0,
-            requires_problem_prefix: 'E11'
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'A1C Above Target',
-            description: 'A1C >= 7.0% in diabetic patient. Consider medication escalation.',
-            category: 'routine',
-            actions: [
-              { type: 'create_prescription', description: 'Consider adding GLP-1 agonist (Ozempic/Semaglutide)', payload: { medication_name: 'Semaglutide (Ozempic)', generic_name: 'Semaglutide', dose: '0.25mg', route: 'SC', frequency: 'weekly', quantity: 4, refills: 0, instructions: 'Inject 0.25mg SC once weekly. Titrate to 0.5mg after 4 weeks.', indication: 'Type 2 Diabetes Mellitus', icd10_codes: 'E11.9' }},
-              { type: 'create_referral', description: 'Endocrinology referral if A1C > 9.0', payload: { specialty: 'Endocrinology', reason: 'Uncontrolled Type 2 Diabetes', urgency: 'routine' }}
-            ]
-          }),
-          priority: 20,
-          evidence_source: 'ADA Standards of Care 2024'
-        },
-        {
-          rule_name: 'egfr_declining',
-          rule_type: 'lab_alert',
-          trigger_condition: JSON.stringify({
-            test_name: 'eGFR',
-            operator: '<', value: 60
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Declining Kidney Function (eGFR < 60)',
-            description: 'eGFR indicates CKD Stage 3+. Monitor closely, consider nephrology referral.',
-            category: 'routine',
-            actions: [
-              { type: 'create_referral', description: 'Nephrology referral', payload: { specialty: 'Nephrology', reason: 'CKD Stage 3 - declining eGFR', urgency: 'routine' }},
-              { type: 'create_lab_order', description: 'Order UACR', payload: { test_name: 'Urine Microalbumin', cpt_code: '82043', priority: 'routine' }}
-            ]
-          }),
-          priority: 25,
-          evidence_source: 'KDIGO CKD Guidelines 2024'
-        },
-        {
-          rule_name: 'elevated_creatinine',
-          rule_type: 'lab_alert',
-          trigger_condition: JSON.stringify({
-            test_name: 'Creatinine',
-            operator: '>', value: 1.2
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Elevated Creatinine',
-            description: 'Creatinine above reference range. Follow up with BMP. Review nephrotoxic medications.',
-            category: 'routine',
-            actions: [
-              { type: 'create_lab_order', description: 'Follow-up BMP', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }}
-            ]
-          }),
-          priority: 30,
-          evidence_source: 'KDIGO Guidelines'
-        },
-        {
-          rule_name: 'elevated_microalbumin',
-          rule_type: 'lab_alert',
-          trigger_condition: JSON.stringify({
-            test_name: 'Urine Microalbumin',
-            operator: '>', value: 30
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Elevated Microalbumin (UACR > 30)',
-            description: 'Albumin in urine indicates kidney damage. Maximize ACE/ARB therapy.',
-            category: 'routine',
-            actions: [
-              { type: 'medication_adjustment', description: 'Maximize ACE inhibitor / ARB dose', payload: { medication_name: 'Lisinopril', dose: '40mg', route: 'PO', frequency: 'daily' }}
-            ]
-          }),
-          priority: 25,
-          evidence_source: 'ADA/KDIGO Diabetic Kidney Disease Guidelines'
-        },
+    // --- LAB ALERTS ---
+    {
+      rule_name: 'a1c_above_target',
+      rule_type: 'lab_alert',
+      trigger_condition: JSON.stringify({
+        test_name: 'Hemoglobin A1C',
+        operator: '>=', value: 7.0,
+        requires_problem_prefix: 'E11'
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'A1C Above Target',
+        description: 'A1C >= 7.0% in diabetic patient. Consider medication escalation.',
+        category: 'routine',
+        actions: [
+          { type: 'create_prescription', description: 'Consider adding GLP-1 agonist (Ozempic/Semaglutide)', payload: { medication_name: 'Semaglutide (Ozempic)', generic_name: 'Semaglutide', dose: '0.25mg', route: 'SC', frequency: 'weekly', quantity: 4, refills: 0, instructions: 'Inject 0.25mg SC once weekly. Titrate to 0.5mg after 4 weeks.', indication: 'Type 2 Diabetes Mellitus', icd10_codes: 'E11.9' }},
+          { type: 'create_referral', description: 'Endocrinology referral if A1C > 9.0', payload: { specialty: 'Endocrinology', reason: 'Uncontrolled Type 2 Diabetes', urgency: 'routine' }}
+        ]
+      }),
+      priority: 20,
+      evidence_source: 'ADA Standards of Care 2024'
+    },
+    {
+      rule_name: 'egfr_declining',
+      rule_type: 'lab_alert',
+      trigger_condition: JSON.stringify({
+        test_name: 'eGFR',
+        operator: '<', value: 60
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Declining Kidney Function (eGFR < 60)',
+        description: 'eGFR indicates CKD Stage 3+. Monitor closely, consider nephrology referral.',
+        category: 'routine',
+        actions: [
+          { type: 'create_referral', description: 'Nephrology referral', payload: { specialty: 'Nephrology', reason: 'CKD Stage 3 - declining eGFR', urgency: 'routine' }},
+          { type: 'create_lab_order', description: 'Order UACR', payload: { test_name: 'Urine Microalbumin', cpt_code: '82043', priority: 'routine' }}
+        ]
+      }),
+      priority: 25,
+      evidence_source: 'KDIGO CKD Guidelines 2024'
+    },
+    {
+      rule_name: 'elevated_creatinine',
+      rule_type: 'lab_alert',
+      trigger_condition: JSON.stringify({
+        test_name: 'Creatinine',
+        operator: '>', value: 1.2
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Elevated Creatinine',
+        description: 'Creatinine above reference range. Follow up with BMP. Review nephrotoxic medications.',
+        category: 'routine',
+        actions: [
+          { type: 'create_lab_order', description: 'Follow-up BMP', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }}
+        ]
+      }),
+      priority: 30,
+      evidence_source: 'KDIGO Guidelines'
+    },
+    {
+      rule_name: 'elevated_microalbumin',
+      rule_type: 'lab_alert',
+      trigger_condition: JSON.stringify({
+        test_name: 'Urine Microalbumin',
+        operator: '>', value: 30
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Elevated Microalbumin (UACR > 30)',
+        description: 'Albumin in urine indicates kidney damage. Maximize ACE/ARB therapy.',
+        category: 'routine',
+        actions: [
+          { type: 'medication_adjustment', description: 'Maximize ACE inhibitor / ARB dose', payload: { medication_name: 'Lisinopril', dose: '40mg', route: 'PO', frequency: 'daily' }}
+        ]
+      }),
+      priority: 25,
+      evidence_source: 'ADA/KDIGO Diabetic Kidney Disease Guidelines'
+    },
 
-        // --- DRUG-ALLERGY RULES ---
-        {
-          rule_name: 'penicillin_allergy_cephalosporin',
-          rule_type: 'drug_allergy',
-          trigger_condition: JSON.stringify({
-            allergen: 'Penicillin',
-            drug_classes: ['Cephalexin', 'Cefazolin', 'Ceftriaxone', 'Cephalosporin']
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Penicillin Allergy - Cephalosporin Warning',
-            description: 'Patient has Penicillin allergy. ~2% cross-reactivity risk with cephalosporins. Use with caution.',
-            category: 'urgent',
-            actions: []
-          }),
-          priority: 5,
-          evidence_source: 'AAAAI Drug Allergy Practice Parameter'
-        },
-        {
-          rule_name: 'penicillin_allergy_amoxicillin',
-          rule_type: 'drug_allergy',
-          trigger_condition: JSON.stringify({
-            allergen: 'Penicillin',
-            blocked_drugs: ['Amoxicillin', 'Augmentin', 'Ampicillin', 'Penicillin', 'Piperacillin']
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'BLOCKED: Penicillin-Class Drug with Known Allergy',
-            description: 'Patient has documented Penicillin allergy. This medication is CONTRAINDICATED.',
-            category: 'urgent',
-            actions: []
-          }),
-          priority: 1,
-          evidence_source: 'AAAAI Drug Allergy Practice Parameter'
-        },
-        {
-          rule_name: 'sulfa_allergy_check',
-          rule_type: 'drug_allergy',
-          trigger_condition: JSON.stringify({
-            allergen: 'Sulfa',
-            blocked_drugs: ['Sulfamethoxazole', 'Bactrim', 'Septra', 'Sulfasalazine']
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'BLOCKED: Sulfa Drug with Known Allergy',
-            description: 'Patient has documented Sulfa allergy. This medication is CONTRAINDICATED.',
-            category: 'urgent',
-            actions: []
-          }),
-          priority: 1,
-          evidence_source: 'AAAAI Drug Allergy Practice Parameter'
-        },
+    // --- DRUG-ALLERGY RULES ---
+    {
+      rule_name: 'penicillin_allergy_cephalosporin',
+      rule_type: 'drug_allergy',
+      trigger_condition: JSON.stringify({
+        allergen: 'Penicillin',
+        drug_classes: ['Cephalexin', 'Cefazolin', 'Ceftriaxone', 'Cephalosporin']
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Penicillin Allergy - Cephalosporin Warning',
+        description: 'Patient has Penicillin allergy. ~2% cross-reactivity risk with cephalosporins. Use with caution.',
+        category: 'urgent',
+        actions: []
+      }),
+      priority: 5,
+      evidence_source: 'AAAAI Drug Allergy Practice Parameter'
+    },
+    {
+      rule_name: 'penicillin_allergy_amoxicillin',
+      rule_type: 'drug_allergy',
+      trigger_condition: JSON.stringify({
+        allergen: 'Penicillin',
+        blocked_drugs: ['Amoxicillin', 'Augmentin', 'Ampicillin', 'Penicillin', 'Piperacillin']
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'BLOCKED: Penicillin-Class Drug with Known Allergy',
+        description: 'Patient has documented Penicillin allergy. This medication is CONTRAINDICATED.',
+        category: 'urgent',
+        actions: []
+      }),
+      priority: 1,
+      evidence_source: 'AAAAI Drug Allergy Practice Parameter'
+    },
+    {
+      rule_name: 'sulfa_allergy_check',
+      rule_type: 'drug_allergy',
+      trigger_condition: JSON.stringify({
+        allergen: 'Sulfa',
+        blocked_drugs: ['Sulfamethoxazole', 'Bactrim', 'Septra', 'Sulfasalazine']
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'BLOCKED: Sulfa Drug with Known Allergy',
+        description: 'Patient has documented Sulfa allergy. This medication is CONTRAINDICATED.',
+        category: 'urgent',
+        actions: []
+      }),
+      priority: 1,
+      evidence_source: 'AAAAI Drug Allergy Practice Parameter'
+    },
 
-        // --- DRUG INTERACTION RULES ---
-        {
-          rule_name: 'metformin_renal_check',
-          rule_type: 'drug_interaction',
-          trigger_condition: JSON.stringify({
-            drug: 'Metformin',
-            lab_condition: { test_name: 'eGFR', operator: '<', value: 45 }
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Metformin Dose Adjustment for Renal Function',
-            description: 'Patient on Metformin with eGFR < 45. Reduce dose to 500mg BID. Discontinue if eGFR < 30.',
-            category: 'urgent',
-            actions: [
-              { type: 'dose_adjustment', description: 'Reduce Metformin to 500mg BID (eGFR 30-45) or discontinue (eGFR < 30)', payload: { medication_name: 'Metformin', dose: '500mg', frequency: 'BID' }}
-            ]
-          }),
-          priority: 10,
-          evidence_source: 'FDA Metformin Label / ADA Guidelines'
-        },
-        {
-          rule_name: 'ace_arb_potassium_monitoring',
-          rule_type: 'drug_interaction',
-          trigger_condition: JSON.stringify({
-            drug_classes: ['Lisinopril', 'Enalapril', 'Ramipril', 'Losartan', 'Valsartan', 'Irbesartan'],
-            requires_problem_prefix: 'N18'
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'ACE/ARB + CKD: Monitor Potassium',
-            description: 'Patient on ACE inhibitor/ARB with CKD. Monitor serum potassium closely.',
-            category: 'routine',
-            actions: [
-              { type: 'create_lab_order', description: 'Order BMP to check potassium', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }}
-            ]
-          }),
-          priority: 30,
-          evidence_source: 'KDIGO CKD Guidelines'
-        },
-        {
-          rule_name: 'nsaid_ckd_warning',
-          rule_type: 'drug_interaction',
-          trigger_condition: JSON.stringify({
-            drug_classes: ['Ibuprofen', 'Naproxen', 'Diclofenac', 'Meloxicam', 'Celecoxib', 'NSAID'],
-            requires_problem_prefix: 'N18'
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'NSAID Contraindicated with CKD',
-            description: 'NSAIDs can worsen kidney function in CKD patients. Avoid or use alternative analgesic.',
-            category: 'urgent',
-            actions: []
-          }),
-          priority: 10,
-          evidence_source: 'KDIGO CKD Guidelines'
-        },
-        {
-          rule_name: 'statin_dose_ckd',
-          rule_type: 'drug_interaction',
-          trigger_condition: JSON.stringify({
-            drug_classes: ['Atorvastatin', 'Rosuvastatin', 'Simvastatin'],
-            lab_condition: { test_name: 'eGFR', operator: '<', value: 30 }
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Statin Dose Review for CKD',
-            description: 'Consider lower statin dose for severe CKD (eGFR < 30). Check for myopathy risk.',
-            category: 'routine',
-            actions: []
-          }),
-          priority: 35,
-          evidence_source: 'ACC/AHA Lipid Guidelines'
-        },
+    // --- DRUG INTERACTION RULES ---
+    {
+      rule_name: 'metformin_renal_check',
+      rule_type: 'drug_interaction',
+      trigger_condition: JSON.stringify({
+        drug: 'Metformin',
+        lab_condition: { test_name: 'eGFR', operator: '<', value: 45 }
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Metformin Dose Adjustment for Renal Function',
+        description: 'Patient on Metformin with eGFR < 45. Reduce dose to 500mg BID. Discontinue if eGFR < 30.',
+        category: 'urgent',
+        actions: [
+          { type: 'dose_adjustment', description: 'Reduce Metformin to 500mg BID (eGFR 30-45) or discontinue (eGFR < 30)', payload: { medication_name: 'Metformin', dose: '500mg', frequency: 'BID' }}
+        ]
+      }),
+      priority: 10,
+      evidence_source: 'FDA Metformin Label / ADA Guidelines'
+    },
+    {
+      rule_name: 'ace_arb_potassium_monitoring',
+      rule_type: 'drug_interaction',
+      trigger_condition: JSON.stringify({
+        drug_classes: ['Lisinopril', 'Enalapril', 'Ramipril', 'Losartan', 'Valsartan', 'Irbesartan'],
+        requires_problem_prefix: 'N18'
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'ACE/ARB + CKD: Monitor Potassium',
+        description: 'Patient on ACE inhibitor/ARB with CKD. Monitor serum potassium closely.',
+        category: 'routine',
+        actions: [
+          { type: 'create_lab_order', description: 'Order BMP to check potassium', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }}
+        ]
+      }),
+      priority: 30,
+      evidence_source: 'KDIGO CKD Guidelines'
+    },
+    {
+      rule_name: 'nsaid_ckd_warning',
+      rule_type: 'drug_interaction',
+      trigger_condition: JSON.stringify({
+        drug_classes: ['Ibuprofen', 'Naproxen', 'Diclofenac', 'Meloxicam', 'Celecoxib', 'NSAID'],
+        requires_problem_prefix: 'N18'
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'NSAID Contraindicated with CKD',
+        description: 'NSAIDs can worsen kidney function in CKD patients. Avoid or use alternative analgesic.',
+        category: 'urgent',
+        actions: []
+      }),
+      priority: 10,
+      evidence_source: 'KDIGO CKD Guidelines'
+    },
+    {
+      rule_name: 'statin_dose_ckd',
+      rule_type: 'drug_interaction',
+      trigger_condition: JSON.stringify({
+        drug_classes: ['Atorvastatin', 'Rosuvastatin', 'Simvastatin'],
+        lab_condition: { test_name: 'eGFR', operator: '<', value: 30 }
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Statin Dose Review for CKD',
+        description: 'Consider lower statin dose for severe CKD (eGFR < 30). Check for myopathy risk.',
+        category: 'routine',
+        actions: []
+      }),
+      priority: 35,
+      evidence_source: 'ACC/AHA Lipid Guidelines'
+    },
 
-        // --- DIFFERENTIAL DIAGNOSIS RULES ---
-        {
-          rule_name: 'diabetes_uncontrolled_ddx',
-          rule_type: 'differential',
-          trigger_condition: JSON.stringify({
-            symptom_keywords: ['blood sugar high', 'sugars high', 'glucose elevated', 'hyperglycemia', 'sugars have been high', 'blood sugars running high'],
-            requires_problem_prefix: 'E11'
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Differential: Uncontrolled Diabetes',
-            description: 'Evaluate causes of poor glycemic control.',
-            category: 'routine',
-            differentials: [
-              { name: 'Medication non-compliance', likelihood: 'high', workup: 'Medication reconciliation' },
-              { name: 'Dietary non-adherence', likelihood: 'high', workup: 'Nutrition consult' },
-              { name: 'Medication inadequacy', likelihood: 'moderate', workup: 'A1C trend review, consider escalation' },
-              { name: 'Infection/Stress hyperglycemia', likelihood: 'moderate', workup: 'CBC, UA, CRP' },
-              { name: 'Steroid-induced', likelihood: 'low', workup: 'Medication review' },
-              { name: 'Thyroid dysfunction', likelihood: 'low', workup: 'TSH' }
-            ]
-          }),
-          priority: 40,
-          evidence_source: 'ADA Standards of Care'
-        },
-        {
-          rule_name: 'chest_pain_ddx',
-          rule_type: 'differential',
-          trigger_condition: JSON.stringify({
-            symptom_keywords: ['chest pain', 'chest pressure', 'chest tightness', 'substernal']
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Differential: Chest Pain',
-            description: 'Urgent evaluation for chest pain etiology.',
-            category: 'urgent',
-            differentials: [
-              { name: 'Acute Coronary Syndrome', code: 'I24.9', likelihood: 'high', workup: 'EKG, Troponin, BMP' },
-              { name: 'Pulmonary Embolism', code: 'I26.99', likelihood: 'moderate', workup: 'D-dimer, CT-PA' },
-              { name: 'GERD', code: 'K21.0', likelihood: 'moderate', workup: 'Trial PPI' },
-              { name: 'Musculoskeletal', code: 'M79.3', likelihood: 'moderate', workup: 'Physical exam, reproducible tenderness' },
-              { name: 'Anxiety/Panic', code: 'F41.0', likelihood: 'low', workup: 'Diagnosis of exclusion' }
-            ],
-            actions: [
-              { type: 'create_imaging_order', description: 'Stat EKG', payload: { study_type: 'EKG', body_part: 'Chest', cpt_code: '93000', priority: 'stat' }},
-              { type: 'create_lab_order', description: 'Troponin', payload: { test_name: 'Troponin', cpt_code: '84484', priority: 'stat' }},
-              { type: 'create_imaging_order', description: 'Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046', priority: 'urgent' }}
-            ]
-          }),
-          priority: 5,
-          evidence_source: 'ACC/AHA Chest Pain Guidelines 2021'
-        },
-        {
-          rule_name: 'shortness_of_breath_ddx',
-          rule_type: 'differential',
-          trigger_condition: JSON.stringify({
-            symptom_keywords: ['shortness of breath', 'short of breath', 'dyspnea', 'difficulty breathing', 'can\'t breathe', 'SOB']
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Differential: Shortness of Breath',
-            description: 'Evaluate respiratory and cardiac causes.',
-            category: 'urgent',
-            differentials: [
-              { name: 'Heart Failure Exacerbation', code: 'I50.9', likelihood: 'high', workup: 'BNP, CXR, Echo' },
-              { name: 'COPD Exacerbation', code: 'J44.1', likelihood: 'high', workup: 'CXR, ABG, PFTs' },
-              { name: 'Pneumonia', code: 'J18.9', likelihood: 'moderate', workup: 'CXR, CBC, Procalcitonin' },
-              { name: 'Pulmonary Embolism', code: 'I26.99', likelihood: 'moderate', workup: 'D-dimer, CT-PA' },
-              { name: 'Anxiety', code: 'F41.0', likelihood: 'low', workup: 'Diagnosis of exclusion' }
-            ],
-            actions: [
-              { type: 'create_imaging_order', description: 'Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046', priority: 'urgent' }},
-              { type: 'create_lab_order', description: 'BNP', payload: { test_name: 'BNP', cpt_code: '83880', priority: 'urgent' }},
-              { type: 'create_lab_order', description: 'CBC', payload: { test_name: 'Complete Blood Count', cpt_code: '85025', priority: 'urgent' }}
-            ]
-          }),
-          priority: 10,
-          evidence_source: 'ATS/ERS Dyspnea Guidelines'
-        },
+    // --- DIFFERENTIAL DIAGNOSIS RULES ---
+    {
+      rule_name: 'diabetes_uncontrolled_ddx',
+      rule_type: 'differential',
+      trigger_condition: JSON.stringify({
+        symptom_keywords: ['blood sugar high', 'sugars high', 'glucose elevated', 'hyperglycemia', 'sugars have been high', 'blood sugars running high'],
+        requires_problem_prefix: 'E11'
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Differential: Uncontrolled Diabetes',
+        description: 'Evaluate causes of poor glycemic control.',
+        category: 'routine',
+        differentials: [
+          { name: 'Medication non-compliance', likelihood: 'high', workup: 'Medication reconciliation' },
+          { name: 'Dietary non-adherence', likelihood: 'high', workup: 'Nutrition consult' },
+          { name: 'Medication inadequacy', likelihood: 'moderate', workup: 'A1C trend review, consider escalation' },
+          { name: 'Infection/Stress hyperglycemia', likelihood: 'moderate', workup: 'CBC, UA, CRP' },
+          { name: 'Steroid-induced', likelihood: 'low', workup: 'Medication review' },
+          { name: 'Thyroid dysfunction', likelihood: 'low', workup: 'TSH' }
+        ]
+      }),
+      priority: 40,
+      evidence_source: 'ADA Standards of Care'
+    },
+    {
+      rule_name: 'chest_pain_ddx',
+      rule_type: 'differential',
+      trigger_condition: JSON.stringify({
+        symptom_keywords: ['chest pain', 'chest pressure', 'chest tightness', 'substernal']
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Differential: Chest Pain',
+        description: 'Urgent evaluation for chest pain etiology.',
+        category: 'urgent',
+        differentials: [
+          { name: 'Acute Coronary Syndrome', code: 'I24.9', likelihood: 'high', workup: 'EKG, Troponin, BMP' },
+          { name: 'Pulmonary Embolism', code: 'I26.99', likelihood: 'moderate', workup: 'D-dimer, CT-PA' },
+          { name: 'GERD', code: 'K21.0', likelihood: 'moderate', workup: 'Trial PPI' },
+          { name: 'Musculoskeletal', code: 'M79.3', likelihood: 'moderate', workup: 'Physical exam, reproducible tenderness' },
+          { name: 'Anxiety/Panic', code: 'F41.0', likelihood: 'low', workup: 'Diagnosis of exclusion' }
+        ],
+        actions: [
+          { type: 'create_imaging_order', description: 'Stat EKG', payload: { study_type: 'EKG', body_part: 'Chest', cpt_code: '93000', priority: 'stat' }},
+          { type: 'create_lab_order', description: 'Troponin', payload: { test_name: 'Troponin', cpt_code: '84484', priority: 'stat' }},
+          { type: 'create_imaging_order', description: 'Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046', priority: 'urgent' }}
+        ]
+      }),
+      priority: 5,
+      evidence_source: 'ACC/AHA Chest Pain Guidelines 2021'
+    },
+    {
+      rule_name: 'shortness_of_breath_ddx',
+      rule_type: 'differential',
+      trigger_condition: JSON.stringify({
+        symptom_keywords: ['shortness of breath', 'short of breath', 'dyspnea', 'difficulty breathing', 'can\'t breathe', 'SOB']
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Differential: Shortness of Breath',
+        description: 'Evaluate respiratory and cardiac causes.',
+        category: 'urgent',
+        differentials: [
+          { name: 'Heart Failure Exacerbation', code: 'I50.9', likelihood: 'high', workup: 'BNP, CXR, Echo' },
+          { name: 'COPD Exacerbation', code: 'J44.1', likelihood: 'high', workup: 'CXR, ABG, PFTs' },
+          { name: 'Pneumonia', code: 'J18.9', likelihood: 'moderate', workup: 'CXR, CBC, Procalcitonin' },
+          { name: 'Pulmonary Embolism', code: 'I26.99', likelihood: 'moderate', workup: 'D-dimer, CT-PA' },
+          { name: 'Anxiety', code: 'F41.0', likelihood: 'low', workup: 'Diagnosis of exclusion' }
+        ],
+        actions: [
+          { type: 'create_imaging_order', description: 'Chest X-ray', payload: { study_type: 'X-ray', body_part: 'Chest', cpt_code: '71046', priority: 'urgent' }},
+          { type: 'create_lab_order', description: 'BNP', payload: { test_name: 'BNP', cpt_code: '83880', priority: 'urgent' }},
+          { type: 'create_lab_order', description: 'CBC', payload: { test_name: 'Complete Blood Count', cpt_code: '85025', priority: 'urgent' }}
+        ]
+      }),
+      priority: 10,
+      evidence_source: 'ATS/ERS Dyspnea Guidelines'
+    },
 
-        // --- PREVENTIVE CARE / SCREENING ---
-        {
-          rule_name: 'diabetes_screening',
-          rule_type: 'screening',
-          trigger_condition: JSON.stringify({
-            requires_problem_prefix: 'E11',
-            required_tests: [
-              { test_name: 'Hemoglobin A1C', interval_months: 3 },
-              { test_name: 'Urine Microalbumin', interval_months: 12 },
-              { test_name: 'Lipid Panel', interval_months: 12 }
-            ]
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Diabetes Monitoring Due',
-            description: 'Routine diabetes screening tests are due per ADA guidelines.',
-            category: 'routine',
-            actions: [
-              { type: 'create_lab_order', description: 'A1C', payload: { test_name: 'Hemoglobin A1C', cpt_code: '83036', priority: 'routine' }},
-              { type: 'create_lab_order', description: 'UACR', payload: { test_name: 'Urine Microalbumin', cpt_code: '82043', priority: 'routine' }},
-              { type: 'create_lab_order', description: 'Lipid Panel', payload: { test_name: 'Lipid Panel', cpt_code: '80061', priority: 'routine' }},
-              { type: 'create_referral', description: 'Annual eye exam', payload: { specialty: 'Ophthalmology', reason: 'Diabetic retinopathy screening', urgency: 'routine' }}
-            ]
-          }),
-          priority: 50,
-          evidence_source: 'ADA Standards of Care 2024'
-        },
-        {
-          rule_name: 'ckd_monitoring',
-          rule_type: 'screening',
-          trigger_condition: JSON.stringify({
-            requires_problem_prefix: 'N18',
-            required_tests: [
-              { test_name: 'Basic Metabolic Panel', interval_months: 3 },
-              { test_name: 'Urine Microalbumin', interval_months: 12 }
-            ]
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'CKD Monitoring Due',
-            description: 'Routine CKD monitoring labs are due per KDIGO guidelines.',
-            category: 'routine',
-            actions: [
-              { type: 'create_lab_order', description: 'BMP', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }},
-              { type: 'create_lab_order', description: 'UACR', payload: { test_name: 'Urine Microalbumin', cpt_code: '82043', priority: 'routine' }}
-            ]
-          }),
-          priority: 50,
-          evidence_source: 'KDIGO CKD Guidelines 2024'
-        },
-        {
-          rule_name: 'hypertension_monitoring',
-          rule_type: 'screening',
-          trigger_condition: JSON.stringify({
-            requires_problem_prefix: 'I10',
-            required_tests: [
-              { test_name: 'Basic Metabolic Panel', interval_months: 12 },
-              { test_name: 'Lipid Panel', interval_months: 12 }
-            ]
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Hypertension Monitoring Due',
-            description: 'Annual HTN monitoring labs are due.',
-            category: 'routine',
-            actions: [
-              { type: 'create_lab_order', description: 'BMP', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }},
-              { type: 'create_lab_order', description: 'Lipid Panel', payload: { test_name: 'Lipid Panel', cpt_code: '80061', priority: 'routine' }}
-            ]
-          }),
-          priority: 50,
-          evidence_source: 'AHA/ACC HTN Guidelines'
-        },
+    // --- PREVENTIVE CARE / SCREENING ---
+    {
+      rule_name: 'diabetes_screening',
+      rule_type: 'screening',
+      trigger_condition: JSON.stringify({
+        requires_problem_prefix: 'E11',
+        required_tests: [
+          { test_name: 'Hemoglobin A1C', interval_months: 3 },
+          { test_name: 'Urine Microalbumin', interval_months: 12 },
+          { test_name: 'Lipid Panel', interval_months: 12 }
+        ]
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Diabetes Monitoring Due',
+        description: 'Routine diabetes screening tests are due per ADA guidelines.',
+        category: 'routine',
+        actions: [
+          { type: 'create_lab_order', description: 'A1C', payload: { test_name: 'Hemoglobin A1C', cpt_code: '83036', priority: 'routine' }},
+          { type: 'create_lab_order', description: 'UACR', payload: { test_name: 'Urine Microalbumin', cpt_code: '82043', priority: 'routine' }},
+          { type: 'create_lab_order', description: 'Lipid Panel', payload: { test_name: 'Lipid Panel', cpt_code: '80061', priority: 'routine' }},
+          { type: 'create_referral', description: 'Annual eye exam', payload: { specialty: 'Ophthalmology', reason: 'Diabetic retinopathy screening', urgency: 'routine' }}
+        ]
+      }),
+      priority: 50,
+      evidence_source: 'ADA Standards of Care 2024'
+    },
+    {
+      rule_name: 'ckd_monitoring',
+      rule_type: 'screening',
+      trigger_condition: JSON.stringify({
+        requires_problem_prefix: 'N18',
+        required_tests: [
+          { test_name: 'Basic Metabolic Panel', interval_months: 3 },
+          { test_name: 'Urine Microalbumin', interval_months: 12 }
+        ]
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'CKD Monitoring Due',
+        description: 'Routine CKD monitoring labs are due per KDIGO guidelines.',
+        category: 'routine',
+        actions: [
+          { type: 'create_lab_order', description: 'BMP', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }},
+          { type: 'create_lab_order', description: 'UACR', payload: { test_name: 'Urine Microalbumin', cpt_code: '82043', priority: 'routine' }}
+        ]
+      }),
+      priority: 50,
+      evidence_source: 'KDIGO CKD Guidelines 2024'
+    },
+    {
+      rule_name: 'hypertension_monitoring',
+      rule_type: 'screening',
+      trigger_condition: JSON.stringify({
+        requires_problem_prefix: 'I10',
+        required_tests: [
+          { test_name: 'Basic Metabolic Panel', interval_months: 12 },
+          { test_name: 'Lipid Panel', interval_months: 12 }
+        ]
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Hypertension Monitoring Due',
+        description: 'Annual HTN monitoring labs are due.',
+        category: 'routine',
+        actions: [
+          { type: 'create_lab_order', description: 'BMP', payload: { test_name: 'Basic Metabolic Panel', cpt_code: '80048', priority: 'routine' }},
+          { type: 'create_lab_order', description: 'Lipid Panel', payload: { test_name: 'Lipid Panel', cpt_code: '80061', priority: 'routine' }}
+        ]
+      }),
+      priority: 50,
+      evidence_source: 'AHA/ACC HTN Guidelines'
+    },
 
-        // --- PROVIDER PREFERENCE META-RULES ---
-        {
-          rule_name: 'provider_usual_lab_orders',
-          rule_type: 'follow_up',
-          trigger_condition: JSON.stringify({ source: 'provider_preferences', action_type: 'lab_order', min_confidence: 0.7 }),
-          suggested_actions: JSON.stringify({
-            title: 'Your Usual Lab Orders',
-            description: 'Based on your practice pattern, these labs are typically ordered for this condition.',
-            category: 'routine',
-            actions: []
-          }),
-          priority: 60,
-          evidence_source: 'Provider preference learning'
-        },
-        {
-          rule_name: 'provider_usual_medications',
-          rule_type: 'follow_up',
-          trigger_condition: JSON.stringify({ source: 'provider_preferences', action_type: 'medication', min_confidence: 0.7 }),
-          suggested_actions: JSON.stringify({
-            title: 'Your Usual Medication Choice',
-            description: 'Based on your practice pattern, this medication is typically prescribed for this condition.',
-            category: 'routine',
-            actions: []
-          }),
-          priority: 60,
-          evidence_source: 'Provider preference learning'
-        },
-        {
-          rule_name: 'antibiotic_stewardship_uri',
-          rule_type: 'prescribing_advisory',
-          trigger_condition: JSON.stringify({
-            drug_classes: ['Amoxicillin', 'Azithromycin', 'Doxycycline', 'Ciprofloxacin', 'Levofloxacin', 'Cephalexin', 'Augmentin', 'Amoxicillin-Clavulanate'],
-            chief_complaint_keywords: ['sinus', 'uri', 'upper respiratory', 'cold', 'rhinitis', 'sinusitis', 'pharyngitis', 'otitis', 'cough', 'bronchitis']
-          }),
-          suggested_actions: JSON.stringify({
-            title: 'Antibiotic Stewardship — URI/Sinusitis',
-            description: 'Antibiotic prescribed for upper respiratory complaint. Per ACP/CDC guidelines, most URIs and acute sinusitis are viral. Consider watchful waiting if symptoms < 10 days without complications (fever > 102°F, purulent discharge, unilateral facial pain). If antibiotic indicated, first-line is Amoxicillin.',
-            category: 'routine',
-            actions: []
-          }),
-          priority: 35,
-          evidence_source: 'ACP/CDC Antibiotic Stewardship Guidelines 2023; IDSA Sinusitis Guidelines'
-        }
-      ];
-
-      for (const rule of rules) {
-        await dbRun(
-          `INSERT OR IGNORE INTO clinical_rules (rule_name, rule_type, trigger_condition, suggested_actions, priority, evidence_source)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [rule.rule_name, rule.rule_type, rule.trigger_condition, rule.suggested_actions, rule.priority, rule.evidence_source]
-        );
-      }
-
-      console.log(`Loaded ${rules.length} clinical rules`);
-    } catch (err) {
-      throw err;
+    // --- PROVIDER PREFERENCE META-RULES ---
+    {
+      rule_name: 'provider_usual_lab_orders',
+      rule_type: 'follow_up',
+      trigger_condition: JSON.stringify({ source: 'provider_preferences', action_type: 'lab_order', min_confidence: 0.7 }),
+      suggested_actions: JSON.stringify({
+        title: 'Your Usual Lab Orders',
+        description: 'Based on your practice pattern, these labs are typically ordered for this condition.',
+        category: 'routine',
+        actions: []
+      }),
+      priority: 60,
+      evidence_source: 'Provider preference learning'
+    },
+    {
+      rule_name: 'provider_usual_medications',
+      rule_type: 'follow_up',
+      trigger_condition: JSON.stringify({ source: 'provider_preferences', action_type: 'medication', min_confidence: 0.7 }),
+      suggested_actions: JSON.stringify({
+        title: 'Your Usual Medication Choice',
+        description: 'Based on your practice pattern, this medication is typically prescribed for this condition.',
+        category: 'routine',
+        actions: []
+      }),
+      priority: 60,
+      evidence_source: 'Provider preference learning'
+    },
+    {
+      rule_name: 'antibiotic_stewardship_uri',
+      rule_type: 'prescribing_advisory',
+      trigger_condition: JSON.stringify({
+        drug_classes: ['Amoxicillin', 'Azithromycin', 'Doxycycline', 'Ciprofloxacin', 'Levofloxacin', 'Cephalexin', 'Augmentin', 'Amoxicillin-Clavulanate'],
+        chief_complaint_keywords: ['sinus', 'uri', 'upper respiratory', 'cold', 'rhinitis', 'sinusitis', 'pharyngitis', 'otitis', 'cough', 'bronchitis']
+      }),
+      suggested_actions: JSON.stringify({
+        title: 'Antibiotic Stewardship — URI/Sinusitis',
+        description: 'Antibiotic prescribed for upper respiratory complaint. Per ACP/CDC guidelines, most URIs and acute sinusitis are viral. Consider watchful waiting if symptoms < 10 days without complications (fever > 102°F, purulent discharge, unilateral facial pain). If antibiotic indicated, first-line is Amoxicillin.',
+        category: 'routine',
+        actions: []
+      }),
+      priority: 35,
+      evidence_source: 'ACP/CDC Antibiotic Stewardship Guidelines 2023; IDSA Sinusitis Guidelines'
     }
+  ];
+
+  for (const rule of rules) {
+    await dbRun(
+      `INSERT OR IGNORE INTO clinical_rules (rule_name, rule_type, trigger_condition, suggested_actions, priority, evidence_source)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+      [rule.rule_name, rule.rule_type, rule.trigger_condition, rule.suggested_actions, rule.priority, rule.evidence_source]
+    );
+  }
+
+  console.log(`Loaded ${rules.length} clinical rules`);
 }
 
 // ==========================================
@@ -1495,6 +1592,93 @@ const db_helpers = {
 };
 
 // ==========================================
+// DECISION QUEUE HELPERS (Provider Decision Queue + AI Triage)
+// ==========================================
+
+const decision_helpers = {
+  // Create a pending decision-queue row for an encounter (idempotent on
+  // encounter_id via INSERT OR IGNORE; one row per encounter).
+  createDecisionQueueItem: (data) => {
+    const { encounter_id, patient_id } = data;
+    return dbRun(
+      `INSERT OR IGNORE INTO decision_queue (encounter_id, patient_id, status)
+       VALUES (?, ?, 'pending')`,
+      [encounter_id, patient_id]
+    ).then(() => dbGet('SELECT * FROM decision_queue WHERE encounter_id = ?', [encounter_id]));
+  },
+
+  getDecisionQueueItemById: (id) => dbGet('SELECT * FROM decision_queue WHERE id = ?', [id]),
+
+  getDecisionQueueItemByEncounter: (encounterId) =>
+    dbGet('SELECT * FROM decision_queue WHERE encounter_id = ?', [encounterId]),
+
+  // Provider view: pending + decided items joined to patient + encounter,
+  // sorted sickest-first (esi_level ascending; pending before decided).
+  getProviderDecisionQueue: () =>
+    dbAll(
+      `SELECT dq.*, p.first_name, p.last_name, p.mrn, p.dob, p.sex,
+              e.chief_complaint, e.encounter_date
+       FROM decision_queue dq
+       JOIN patients p ON dq.patient_id = p.id
+       JOIN encounters e ON dq.encounter_id = e.id
+       WHERE dq.status IN ('pending','decided')
+       ORDER BY CASE dq.status WHEN 'pending' THEN 0 ELSE 1 END,
+                COALESCE(dq.esi_level, 99) ASC,
+                dq.created_at ASC`
+    ).then(rows => decryptPatientRows(rows)),
+
+  // MA close-out worklist: decided items still awaiting MA close.
+  getMaCloseouts: () =>
+    dbAll(
+      `SELECT dq.*, p.first_name, p.last_name, p.mrn, p.dob, p.sex,
+              e.chief_complaint, e.encounter_date
+       FROM decision_queue dq
+       JOIN patients p ON dq.patient_id = p.id
+       JOIN encounters e ON dq.encounter_id = e.id
+       WHERE dq.status = 'decided' AND dq.ma_status = 'awaiting'
+       ORDER BY dq.decided_at ASC`
+    ).then(rows => decryptPatientRows(rows)),
+
+  // Persist cached triage/summary/options on read (the GET handler generates
+  // them lazily for pending rows). Only the AI-provenance columns are touched.
+  updateDecisionQueueAI: (id, ai) => {
+    const { esi_level, level_of_care, triage_rationale, triage_model,
+            ai_summary, summary_model, decision_options, decision_model } = ai;
+    return dbRun(
+      `UPDATE decision_queue SET
+         esi_level = ?, level_of_care = ?, triage_rationale = ?, triage_model = ?,
+         ai_summary = ?, summary_model = ?, decision_options = ?, decision_model = ?
+       WHERE id = ?`,
+      [esi_level, level_of_care, triage_rationale, triage_model,
+       ai_summary, summary_model,
+       typeof decision_options === 'string' ? decision_options : JSON.stringify(decision_options),
+       decision_model, id]
+    ).then(r => ({ changes: r.changes }));
+  },
+
+  // Provider records a decision (chosen option key OR dictated free text).
+  recordDecision: (id, { decision_key, decision_label, decision_text, decided_by }) =>
+    dbRun(
+      `UPDATE decision_queue SET
+         status = 'decided', ma_status = 'awaiting',
+         decision_key = ?, decision_label = ?, decision_text = ?,
+         decided_by = ?, decided_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'pending'`,
+      [decision_key || null, decision_label || null, decision_text || null, decided_by || null, id]
+    ).then(r => ({ changes: r.changes })),
+
+  // MA (or provider) closes out a decided item.
+  closeDecision: (id, { closed_by }) =>
+    dbRun(
+      `UPDATE decision_queue SET
+         status = 'closed', ma_status = 'closed',
+         closed_by = ?, closed_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND status = 'decided'`,
+      [closed_by || null, id]
+    ).then(r => ({ changes: r.changes })),
+};
+
+// ==========================================
 // SCHEDULING HELPERS
 // ==========================================
 
@@ -1559,7 +1743,7 @@ const billing_helpers = {
     dbRun(`INSERT OR IGNORE INTO charges (encounter_id, patient_id, provider_name)
            VALUES (?, ?, ?)`,
       [encounter_id, patient_id, provider_name])
-      .then(r => dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])),
+      .then(_r => dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])),
 
   getChargeByEncounter: (encounter_id) =>
     dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id]),
@@ -1605,6 +1789,7 @@ function close() {
 // ==========================================
 
 const ready = initializeDatabase()
+  .then(() => migratePatientMessages())
   .then(() => loadDemoData())
   .then(() => loadClinicalRules())
   .catch(err => console.error('Database initialization error:', err));
@@ -1613,6 +1798,7 @@ module.exports = {
   db, dbRun, dbGet, dbAll,
   ready, close,
   ...db_helpers,
+  ...decision_helpers,
   ...scheduling_helpers,
   ...billing_helpers,
   generateMRN, calculateAge

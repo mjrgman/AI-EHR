@@ -35,11 +35,13 @@ The physician talks. The MA talks. The patient calls. The agents listen, triage,
 
 ## III. Agent Architecture
 
-The system operates through **nine specialized agents**, each mapped to a real human role or clinical function in the practice. Every agent has a defined scope of authority, escalation pathways, and a learning memory. The nine agents are: Phone Triage, Front Desk, MA, Physician (pre-visit), and Scribe, CDS, Orders, Coding, Quality (encounter pipeline).
+The system is designed around **14 specialized modules** - 11 encounter modules and 3 patient-data governance modules - each mapped to a real human role or clinical function in the practice. Every module has a defined scope of authority, escalation pathways, and a learning memory. The 11 encounter modules are: Phone Triage, Front Desk, MA, Physician (pre-visit), and Scribe, CDS, Domain Logic, Orders, Coding, Quality, Annual Wellness Visit (encounter pipeline). The 3 patient-data governance modules are: PatientLink, Patient App, and MediVault.
+
+**Runtime status:** 10 of these modules are registered and run in the agent orchestrator today — Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic, Orders, Coding, and Quality. Annual Wellness Visit (`AWVAgent`), PatientLink, Patient App, and MediVault's agent pipeline are **built but not yet wired into the orchestrator** (MediVault surfaces only FHIR export today). See `MODULE_CATALOG.md` → "Runtime wiring status" for the per-module detail.
 
 ### Canonical Module Map
 
-The runtime should be understood as a 9-module clinical workflow system:
+The runtime should be understood as a 14-module clinical workflow system (11 encounter + 3 patient-data governance). The canonical roster lives in `server/agents/module-registry.js`; doc tables here are kept in sync with it.
 
 | Module | Workflow band | Tier | Human counterpart | Core job |
 |---|---|---|---|---|
@@ -49,10 +51,14 @@ The runtime should be understood as a 9-module clinical workflow system:
 | Physician | Clinical governance | 3 | Physician | Own protocols, escalation handling, and final clinical authority |
 | Scribe | Encounter capture | 3 | Ambient scribe | Draft the SOAP note and structure encounter data |
 | CDS | Encounter support | 2 | Clinical decision support | Surface alerts, care gaps, and evidence-based suggestions |
+| Domain Logic | Encounter support (specialty) | 3 | Functional-medicine / HRT / peptide specialist | Evaluate hormone, peptide, and functional-medicine patterns; propose Tier 3 dosing changes gated on physician approval |
 | Orders | Clinical execution | 3 | Ordering workflow | Assemble labs, imaging, referrals, and prescriptions for approval |
 | Coding | Revenue / documentation | 2 | Coding / billing review | Generate E&M support, ICD-10 mapping, and completeness feedback |
 | Quality | Oversight | 2 | Quality / compliance operations | Track care gaps, measures, and compliance readiness |
-| Domain Logic | Encounter support (specialty) | 3 | Functional-medicine / HRT / peptide specialist | Evaluate hormone, peptide, and functional-medicine patterns; propose Tier 3 dosing changes gated on physician approval |
+| Annual Wellness Visit | Preventive visit | 2 | Physician (with MA pre-visit prep) | Detect AWV encounter type, enforce required CMS components, and surface G0438/G0439 plus add-on opportunities |
+| PatientLink | Patient communication | 2 | Patient communication coordinator | Draft after-visit summaries, care gap outreach, lab notifications, appointment reminders at 6th-grade reading level — physician-approved before delivery |
+| Patient App | Patient-facing portal | 1 | Patient portal / kiosk | Patient-facing registration, scheduling, refill requests, lab results, secure messaging, and voice interaction — clinical content read-only |
+| MediVault | Patient data governance | 3 | Health information management | Patient-directed clinical record governance: ingest, dedup, reconcile, package by specialty, translate to plain language, monitor for red flags. See `docs/MEDIVAULT_BOUNDARY.md` for the EHR-of-record vs vault-of-record boundary |
 
 Cross-cutting rule: patient-facing and patient-data-touching workflows must remain authenticated, auditable, and explicitly governed. Tier 3 modules never finalize care actions without physician approval.
 
@@ -183,25 +189,32 @@ Cross-cutting rule: patient-facing and patient-data-touching workflows must rema
 
 ---
 
-### Agent 6: Coding/Quality Agent
+### Agent 6: Coding Agent
 
-**Role:** E&M coding, ICD-10 validation, MIPS/HEDIS quality tracking, and billing compliance.
+**Role:** E&M coding, ICD-10 validation, and billing-oriented documentation support.
 
 **Scope of Authority:**
-- Calculate E&M level from the completed note (2021 MDM-based guidelines)
-- Validate ICD-10 code specificity and accuracy
-- Flag HCC-relevant codes for risk adjustment
-- Track MIPS quality measures in real time during the encounter
-- Identify care gaps (screenings due, chronic disease monitoring overdue)
-- Score documentation completeness
-- Alert the Physician Agent to missing elements before note signing
-- Generate coding summary for billing staff
+- Calculate E&M level from the completed note (2021 MDM-based guidelines).
+- Validate ICD-10 code specificity and accuracy.
+- Flag HCC-relevant codes for risk adjustment.
+- Alert the Physician Agent to missing elements before note signing.
+- Generate coding summary for billing staff.
 
 **Runs after:** Scribe Agent and Physician Agent complete the note.
 
----
+### Agent 7: Quality Agent
 
-### Agent 7: Domain Logic Agent (Functional Medicine / HRT / Peptide)
+**Role:** Quality tracking, care-gap detection, and clinical quality telemetry.
+
+**Scope of Authority:**
+- Track MIPS/HEDIS quality measures in real time during encounter flow.
+- Identify care gaps (screenings due, chronic-disease monitoring).
+- Score documentation completeness for quality completion readiness.
+- Notify the Physician Agent to address quality gaps before visit close.
+
+**Runs after:** Scribe and Physician complete the note.
+
+### Agent 8: Domain Logic Agent (Functional Medicine / HRT / Peptide)
 
 **Role:** Specialty-medicine reasoning layer. Evaluates hormone replacement, peptide therapy, and functional-medicine patterns against clinician-authored rules that fall outside mainstream primary-care guidelines.
 
@@ -367,8 +380,9 @@ Phone Triage Agent ──→ MA Agent ──→ Physician Agent
 Patient Contact              Scribe Agent (during visit)
                                           │
                                           ▼
-                                 Coding/Quality Agent
-```
+                                 Coding Agent
+                                 Quality Agent
+``` 
 
 **Message types between agents:**
 - `TRIAGE_RESULT` — Phone Triage → MA Agent (patient call triaged)
@@ -489,23 +503,21 @@ This is not a stateless system. Every agent has persistent memory.
 - Frontend: React + Vite + Tailwind CSS
 - Backend: Node.js / Express
 - Database: SQLite (development) → PostgreSQL (production)
-- AI: Claude API (Anthropic) for clinical reasoning, with pattern-matching fallback
+- AI: none. Clinical extraction is deterministic pattern matching; there is no
+  external inference runtime in this build (see `docs/SYNTHETIC_ONLY_BASELINE.md`)
 - Voice: Web Speech API (development) → production-grade ASR (Whisper, Deepgram, or equivalent)
 
 **Agent Framework (built):**
 - Base agent class with status tracking, timing, event emission
 - Orchestrator with dependency-aware parallel execution
 - Shared patient context schema
-- Encounter runtime operational (Scribe, CDS, Orders, Coding, Quality) as the foundation of the broader 9-module system
+- Encounter runtime operational (Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic, Orders, Coding, and Quality) is the 10-agent runtime baseline. Annual Wellness Visit is built (`AWVAgent`) but not yet registered in the orchestrator.
 
-**To be built:**
-- Phone Triage Agent (voice AI integration)
-- Front Desk Agent (scheduling engine, pre-visit briefing generator)
-- MA Agent (protocol engine, refill automation, escalation logic)
-- Physician Agent (learning engine, style adaptation, order management)
-- Inter-agent message bus
-- Persistent agent memory (knowledge graph or vector store)
-- FHIR interoperability layer (for external record ingestion)
+## Build / wiring status snapshot
+
+- **Built + wired (encounter runtime today):** `phone_triage`, `front_desk`, `ma`, `physician`, `scribe`, `cds`, `domain_logic`, `orders`, `coding`, `quality`.
+- **Built, not yet wired to core encounter orchestration:** `AWVAgent`, `patient_link`, `patient_app`, and `medivault` (MediVault bus handoffs remain in `MEDIVAULT_BOUNDARY.md`).
+- **Not yet built in current runtime:** production-grade ambient voice pipeline (real-time ASR + diarization), persistent long-memory/knowledge-graph storage, and broader external-record interoperability (outside the current in-repo `fhir` read/write mapping layer).
 - Production voice pipeline (real-time ASR + speaker diarization)
 
 ---
@@ -513,7 +525,7 @@ This is not a stateless system. Every agent has persistent memory.
 ## X. Development Phases
 
 **Phase 1 — Foundation (Complete)**
-Core EHR data model, workflow engine, CDS rule engine, audit logging, SOAP note generation, and the encounter-centered runtime that later expanded into the full 9-module system.
+Core EHR data model, workflow engine, CDS rule engine, audit logging, SOAP note generation, and the encounter-centered runtime that later expanded into the full 14-module system.
 
 **Phase 2 — Agent Intelligence (Current)**
 Physician Agent learning engine, MA Agent protocol system, pre-visit briefing generator, inter-agent communication bus.

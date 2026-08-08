@@ -15,6 +15,7 @@
  */
 
 const { BaseAgent } = require('./base-agent');
+const uspstfMatcher = require('../quality/uspstf-matcher');
 
 class QualityAgent extends BaseAgent {
   constructor(options = {}) {
@@ -224,7 +225,10 @@ class QualityAgent extends BaseAgent {
     // 5. Documentation compliance
     const complianceChecks = this._checkDocumentationCompliance(context, codingResult);
 
-    // 6. Build quality dashboard data
+    // 6. USPSTF Grade A/B applicability + status (Phase 5 of primary-care deepening)
+    const uspstfResult = this._runUSPSTFMatcher(context);
+
+    // 7. Build quality dashboard data
     const dashboard = this._buildDashboard(measureResults, gaps, immunizationGaps, complianceChecks);
 
     return {
@@ -233,6 +237,7 @@ class QualityAgent extends BaseAgent {
       immunizationGaps,
       awvComponents,
       complianceChecks,
+      uspstf: uspstfResult,
       dashboard,
       counts: {
         measuresEvaluated: measureResults.length,
@@ -463,6 +468,58 @@ class QualityAgent extends BaseAgent {
     if (score < 75) label = 'Needs Improvement';
     if (score < 50) label = 'Below Threshold';
     return { score, label, met, total: measures.length };
+  }
+
+  /**
+   * Run USPSTF matcher against the patient's demographics + signals.
+   * Source seed: server/seed/uspstf_recommendations_seed.json
+   * Reference: docs/research/PRIMARY_CARE_DEEPENING_RESEARCH_2026-05-03.md §6.
+   */
+  _runUSPSTFMatcher(context) {
+    const patient = context.patient || {};
+    const vitals = context.vitals || {};
+    const problems = context.problems || [];
+    const transcript = String(context.encounter?.transcript || '').toLowerCase();
+
+    // Derive risk-factor signals from available context.
+    const riskFactors = [];
+    if (transcript.includes('smok') || transcript.includes('tobacco') || transcript.includes('cigarette')) {
+      riskFactors.push('smoking_history');
+    }
+    const bmi = this._calculateBMIFromVitals(vitals);
+    if (typeof bmi === 'number' && bmi >= 25) riskFactors.push('overweight_or_obesity');
+
+    return uspstfMatcher.matchApplicableRecommendations(
+      { id: patient.id, dob: patient.dob, sex: patient.sex },
+      {
+        problems,
+        priorProcedures: context.priorProcedures || [],
+        additionalSignals: { bmi, risk_factors: riskFactors }
+      }
+    );
+  }
+
+  /**
+   * Compute BMI from vitals if both height and weight are present (unit-aware).
+   * Mirrors the CDS-agent A-H4 logic.
+   */
+  _calculateBMIFromVitals(vitals) {
+    const h = vitals.height;
+    const w = vitals.weight;
+    if (typeof h !== 'number' || typeof w !== 'number' || h <= 0 || w <= 0) return null;
+    const wUnit = String(vitals.weight_unit || '').toLowerCase();
+    const hUnit = String(vitals.height_unit || '').toLowerCase();
+    const isMetric = wUnit === 'kg' || hUnit === 'cm' || hUnit === 'm';
+    const isImperial = wUnit === 'lbs' || wUnit === 'lb' || hUnit === 'in';
+    if (isMetric) {
+      const hm = h > 3 ? h / 100 : h;
+      return w / (hm * hm);
+    }
+    if (isImperial || h <= 100) {
+      return (w / (h * h)) * 703;
+    }
+    const hm = h / 100;
+    return w / (hm * hm);
   }
 
   _hasDiagnosis(ctx, prefixes) {

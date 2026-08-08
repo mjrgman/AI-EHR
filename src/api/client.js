@@ -1,6 +1,7 @@
 const BASE = '/api';
 const PORTAL_BASE = '/api/patient-portal';
 const AUTH_STORAGE_KEY = 'ehr_auth_session_v1';
+const PORTAL_CSRF_STORAGE_KEY = 'ehr_portal_csrf_v1';
 
 export const safeLog = {
   error: (msg, ...args) => {
@@ -40,14 +41,26 @@ function saveStoredJson(key, value) {
 }
 
 let auditSessionId = isSessionStorageAvailable() ? window.sessionStorage.getItem('audit_session_id') : null;
-let auditUser = null;
-let auditRole = null;
 let authSession = loadStoredJson(AUTH_STORAGE_KEY);
+let portalCsrfToken = isSessionStorageAvailable() ? window.sessionStorage.getItem(PORTAL_CSRF_STORAGE_KEY) : null;
 let authFailureHandler = null;
 
-export function setAuditContext(providerName, role) {
-  auditUser = providerName || null;
-  auditRole = role || null;
+function setPortalCsrfToken(token) {
+  portalCsrfToken = token || null;
+  if (!isSessionStorageAvailable()) return;
+  if (portalCsrfToken) {
+    window.sessionStorage.setItem(PORTAL_CSRF_STORAGE_KEY, portalCsrfToken);
+  } else {
+    window.sessionStorage.removeItem(PORTAL_CSRF_STORAGE_KEY);
+  }
+}
+
+function isStateChangingPortalRequest(method) {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
+}
+
+export function setAuditContext(_providerName, _role) {
+  // Audit identity is resolved server-side from the authenticated JWT.
 }
 
 export function setAuthFailureHandler(handler) {
@@ -127,8 +140,6 @@ async function request(url, options = {}, meta = {}) {
   const { retryCount = 0, suppressUnauthorizedRedirect = false } = meta;
   const auditHeaders = {};
   if (auditSessionId) auditHeaders['X-Audit-Session-Id'] = auditSessionId;
-  if (auditUser) auditHeaders['X-Audit-User'] = auditUser;
-  if (auditRole) auditHeaders['X-Audit-Role'] = auditRole;
 
   const headers = {
     'Content-Type': 'application/json',
@@ -170,27 +181,44 @@ async function request(url, options = {}, meta = {}) {
     }
   }
 
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
     if (!suppressUnauthorizedRedirect) {
       handleUnauthorized();
     }
     const err = await parseResponse(res).catch(() => null);
-    throw new Error(err?.error || 'Session expired. Please log in again.');
+    const error = new Error(err?.error || 'Session expired. Please log in again.');
+    error.status = res.status;
+    throw error;
+  }
+
+  if (res.status === 403) {
+    const err = await parseResponse(res).catch(() => null);
+    const error = new Error(err?.error || 'You do not have permission to access this area.');
+    error.status = res.status;
+    throw error;
   }
 
   if (!res.ok) {
     const err = await parseResponse(res).catch(() => null);
-    throw new Error(err?.error || err?.message || res.statusText || 'Request failed');
+    const error = new Error(err?.error || err?.message || res.statusText || 'Request failed');
+    error.status = res.status;
+    throw error;
   }
 
   return parseResponse(res);
 }
 
 async function portalRequest(path, options = {}) {
+  const method = options.method || 'GET';
+  const csrfHeaders = isStateChangingPortalRequest(method) && !['/verify', '/logout'].includes(path) && portalCsrfToken
+    ? { 'x-portal-csrf': portalCsrfToken }
+    : {};
+
   const res = await fetch(`${PORTAL_BASE}${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...csrfHeaders,
       ...options.headers,
     },
     ...options,
@@ -201,7 +229,14 @@ async function portalRequest(path, options = {}) {
     throw new Error(err?.error || err?.message || res.statusText || 'Portal request failed');
   }
 
-  return parseResponse(res);
+  const payload = await parseResponse(res);
+  if ((path === '/verify' || path === '/session') && payload?.csrfToken) {
+    setPortalCsrfToken(payload.csrfToken);
+  }
+  if (path === '/logout') {
+    setPortalCsrfToken(null);
+  }
+  return payload;
 }
 
 export const api = {
@@ -264,6 +299,10 @@ export const api = {
   },
   createReferral: (data) => request('/referrals', { method: 'POST', body: JSON.stringify(data) }),
   createPrescription: (data) => request('/prescriptions', { method: 'POST', body: JSON.stringify(data) }),
+  // Sign-time Rx-from-speech: returns { prescriptions: [{ ...rxData, id, safety }] }.
+  // Each prescription carries the warn-and-allow drug-safety screen; the caller
+  // must surface `safety` (interactions / boxed warnings / screening-unavailable).
+  generatePrescriptionsFromSpeech: (data) => request('/prescriptions/from-speech', { method: 'POST', body: JSON.stringify(data) }),
   extractData: (data) => request('/ai/extract-data', { method: 'POST', body: JSON.stringify(data) }),
   generateNote: (data) => request('/ai/generate-note', { method: 'POST', body: JSON.stringify(data) }),
   getWorkflow: (encounterId) => request(`/workflow/${encounterId}`),
@@ -281,6 +320,11 @@ export const api = {
   rejectSuggestion: (id, data) => request(`/cds/suggestions/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
   deferSuggestion: (id) => request(`/cds/suggestions/${id}/defer`, { method: 'POST', body: JSON.stringify({}) }),
   getProviderPreferences: (provider) => request(`/provider/preferences?provider=${encodeURIComponent(provider)}`),
+  // Decision Queue (provider) + AI triage + MA close-out
+  getDecisions: () => request('/decisions'),
+  decideDecision: (id, payload) => request(`/decisions/${id}/decide`, { method: 'POST', body: JSON.stringify(payload) }),
+  getMaCloseouts: () => request('/decisions/ma/closeouts'),
+  closeDecision: (id) => request(`/decisions/${id}/close`, { method: 'POST', body: JSON.stringify({}) }),
   getDashboard: () => request('/dashboard'),
   getHealth: () => request('/health'),
   getAuditLogs: (params) => {
@@ -306,18 +350,25 @@ export const api = {
   updateAppointment: (id, data) => request(`/appointments/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAppointment: (id) => request(`/appointments/${id}`, { method: 'DELETE' }),
   getCharge: (encounterId) => request(`/encounters/${encounterId}/charge`),
-  updateCharge: (encounterId, data) => request(`/encounters/${encounterId}/charge`, { method: 'POST', body: JSON.stringify(data) }),
+  captureCharge: (encounterId, data) => request(`/encounters/${encounterId}/charge`, { method: 'POST', body: JSON.stringify(data) }),
   finalizeCheckout: (encounterId, data) => request(`/encounters/${encounterId}/checkout`, { method: 'POST', body: JSON.stringify(data) }),
   getBillingCharges: (params) => {
     const q = new URLSearchParams(params).toString();
     return request(`/billing/charges${q ? `?${q}` : ''}`);
   },
+  verifyInsuranceEligibility: (data) => request('/insurance/verify-eligibility', { method: 'POST', body: JSON.stringify(data) }),
   addProblem: (patientId, data) => request(`/patients/${patientId}/problems`, { method: 'POST', body: JSON.stringify(data) }),
   addMedication: (patientId, data) => request(`/patients/${patientId}/medications`, { method: 'POST', body: JSON.stringify(data) }),
   addAllergy: (patientId, data) => request(`/patients/${patientId}/allergies`, { method: 'POST', body: JSON.stringify(data) }),
   runAgentPipeline: (data) => request('/agents/run', { method: 'POST', body: JSON.stringify(data) }),
   getAgentBriefing: (patientId, encounterId) => request(`/agents/briefing/${patientId}${encounterId ? `?encounter_id=${encounterId}` : ''}`),
   runMAAgent: (data) => request('/agents/ma', { method: 'POST', body: JSON.stringify(data) }),
+  // B1: Staff portal inbox
+  getStaffPortalMessages: (params) => {
+    const q = params ? new URLSearchParams(params).toString() : '';
+    return request(`/staff/portal-messages${q ? `?${q}` : ''}`);
+  },
+  updatePortalMessage: (id, data) => request(`/staff/portal-messages/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 };
 
 export const portalApi = {
@@ -348,6 +399,13 @@ export const portalApi = {
     method: 'POST',
     body: JSON.stringify({ transcript }),
   }),
+  // C1: MediVault export — uses the portal session cookie for auth
+  exportMediVault: (patientId) => {
+    // This is a direct fetch that triggers a file download
+    return fetch(`/api/medivault/export/${patientId}`, {
+      credentials: 'include',
+    });
+  },
 };
 
 export default api;

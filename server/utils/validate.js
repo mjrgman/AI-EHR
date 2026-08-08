@@ -49,7 +49,7 @@ const validators = {
 function schema(definition) { return definition; }
 
 function validate(schemaObj, options = {}) {
-  const { source = 'body', stripUnknown = true } = options;
+  const { source = 'body' } = options;
   return (req, res, next) => {
     const data = req[source];
     if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Request body is required' });
@@ -86,7 +86,7 @@ const schemas = {
     last_name: { type: 'string', required: true, maxLength: 100 },
     dob: { type: 'date', required: true },
     sex: { type: 'enum', values: ['M', 'F', 'Other'] },
-    phone: { type: 'string', maxLength: 20, pattern: /^[\d\-\(\)\s\+]*$/ },
+    phone: { type: 'string', maxLength: 20, pattern: /^[\d\-()\s+]*$/ },
     email: { type: 'string', maxLength: 200 },
     address_line1: { type: 'string', maxLength: 200 },
     address_line2: { type: 'string', maxLength: 200 },

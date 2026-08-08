@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { stateRoute } from '../utils/stateRoute';
+import { ArrowLeft, Plus, ChevronRight, CalendarPlus, Stethoscope, Pill, AlertTriangle, Activity, FlaskConical, ClipboardList } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useToast } from '../components/common/Toast';
@@ -15,20 +17,13 @@ import LabResults from '../components/patient/LabResults';
 import AllergyBadges from '../components/patient/AllergyBadges';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 
-// Workflow state to route mapping for encounter history navigation
-const STATE_ROUTES = {
-  'checked-in': '/checkin/',
-  'vitals-recorded': '/encounter/',
-  'provider-examining': '/encounter/',
-  'orders-pending': '/encounter/',
-  'documentation': '/review/',
-  'signed': '/checkout/',
-  'checked-out': '/checkout/',
-};
+// stateRoute() imported from utils/stateRoute — single shared canonical map.
 
 function calculateAge(dob) {
   if (!dob) return '';
-  const birth = new Date(dob);
+  // Noon-anchor date-only DOB so UTC-midnight parsing does not roll the day back
+  // in negative-offset timezones (keeps age math day-accurate near boundaries).
+  const birth = new Date(/^\d{4}-\d{2}-\d{2}$/.test(dob) ? `${dob}T12:00:00` : dob);
   const now = new Date();
   let age = now.getFullYear() - birth.getFullYear();
   const monthDiff = now.getMonth() - birth.getMonth();
@@ -40,9 +35,31 @@ function calculateAge(dob) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '--';
-  return new Date(dateStr).toLocaleDateString('en-US', {
+  // Anchor date-only strings (YYYY-MM-DD) to local noon so a UTC-midnight parse
+  // is not shifted back a day in negative-offset timezones (off-by-one DOB bug).
+  // Mirrors the idiom already used in SchedulePage.jsx and PatientPortal.jsx.
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T12:00:00` : dateStr;
+  return new Date(normalized).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
   });
+}
+
+// Iconned section title — mirrors the AuditPage header chip so every chart card
+// reads as a deliberate, crafted surface rather than a bare label.
+function SectionTitle({ icon: Icon, children, tone = 'navy' }) {
+  const tones = {
+    navy: 'bg-navy-50 text-navy-600 ring-navy-100',
+    danger: 'bg-danger-50 text-danger-600 ring-danger-100',
+    gold: 'bg-gold-50 text-gold-600 ring-gold-200',
+  };
+  return (
+    <span className="flex items-center gap-2 font-semibold text-xs uppercase tracking-[0.12em] text-slate-600">
+      <span className={`flex h-6 w-6 items-center justify-center rounded-lg ring-1 ${tones[tone] || tones.navy}`} aria-hidden="true">
+        <Icon size={14} strokeWidth={2} />
+      </span>
+      {children}
+    </span>
+  );
 }
 
 export default function PatientPage() {
@@ -168,14 +185,13 @@ export default function PatientPage() {
 
   // --- Navigate to encounter at its workflow stage ---
   function goToEncounter(enc) {
-    const route = STATE_ROUTES[enc.workflow_state] || STATE_ROUTES[enc.status] || '/encounter/';
-    navigate(route + enc.id);
+    navigate(stateRoute(enc.id, enc.workflow_state || enc.status));
   }
 
   // --- Loading / Error ---
   if (loading) return <LoadingSpinner message="Loading patient..." />;
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>;
-  if (!patient) return <div className="p-4 text-gray-500">Patient not found</div>;
+  if (error) return <div className="p-4 text-danger-700">Error: {error}</div>;
+  if (!patient) return <div className="p-4 text-slate-600">Patient not found</div>;
 
   const age = calculateAge(patient.dob);
   const latestVitals = patient.vitals && patient.vitals.length > 0 ? patient.vitals[0] : null;
@@ -184,49 +200,52 @@ export default function PatientPage() {
     <div>
       <PatientBanner patient={patient} />
 
-      <div className="max-w-6xl mx-auto p-4 space-y-4">
+      <div className="mc-page mc-reveal-stagger space-y-4">
         {/* Top bar */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <TouchButton variant="secondary" size="sm" onClick={() => navigate('/')}>
-            &#x2190; Back
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <TouchButton variant="secondary" size="sm" icon={<ArrowLeft size={16} strokeWidth={2} />} onClick={() => navigate('/')}>
+            Back
           </TouchButton>
-          <TouchButton variant="primary" onClick={startEncounter}>
+          <TouchButton variant="primary" icon={<CalendarPlus size={18} strokeWidth={2} />} onClick={startEncounter}>
             New Encounter
           </TouchButton>
         </div>
 
         {/* Demographics Card */}
-        <Card>
-          <CardHeader>Demographics</CardHeader>
+        <Card className="mc-card-hover">
+          <CardHeader><SectionTitle icon={ClipboardList}>Demographics</SectionTitle></CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
               <div>
                 <span className="label-clinical">Full Name</span>
-                <p className="font-semibold text-gray-900">{patient.last_name}, {patient.first_name}</p>
+                <p className="font-semibold text-navy-700">{patient.last_name}, {patient.first_name}</p>
               </div>
               <div>
                 <span className="label-clinical">Date of Birth</span>
-                <p className="font-semibold text-gray-900">{formatDate(patient.dob)} (Age {age})</p>
+                <p className="font-semibold text-navy-700">{formatDate(patient.dob)} (Age {age})</p>
               </div>
               <div>
                 <span className="label-clinical">Sex</span>
-                <p className="font-semibold text-gray-900">{patient.sex || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.sex || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">MRN</span>
-                <p className="font-semibold text-gray-900">{patient.mrn || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.mrn || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">Phone</span>
-                <p className="font-semibold text-gray-900">{patient.phone || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.phone || '--'}</p>
               </div>
               <div>
                 <span className="label-clinical">Insurance</span>
-                <p className="font-semibold text-gray-900">{patient.insurance || patient.insurance_provider || '--'}</p>
+                <p className="font-semibold text-navy-700">{patient.insurance || patient.insurance_provider || '--'}</p>
               </div>
             </div>
           </CardBody>
         </Card>
+
+        {/* Clinical summary — refined eyebrow crowns the chart grid */}
+        <div className="mc-section-label">Clinical Chart</div>
 
         {/* 6-Card Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -235,12 +254,12 @@ export default function PatientPage() {
           <Card>
             <CardHeader
               action={
-                <TouchButton variant="ghost" size="sm" onClick={() => setProblemModalOpen(true)}>
-                  + Add
+                <TouchButton variant="primary" size="sm" icon={<Plus size={15} strokeWidth={2.5} />} onClick={() => setProblemModalOpen(true)}>
+                  Add
                 </TouchButton>
               }
             >
-              Problems
+              <SectionTitle icon={ClipboardList}>Problems</SectionTitle>
             </CardHeader>
             <CardBody>
               <ProblemList problems={patient.problems} />
@@ -251,12 +270,12 @@ export default function PatientPage() {
           <Card>
             <CardHeader
               action={
-                <TouchButton variant="ghost" size="sm" onClick={() => setMedModalOpen(true)}>
-                  + Add
+                <TouchButton variant="primary" size="sm" icon={<Plus size={15} strokeWidth={2.5} />} onClick={() => setMedModalOpen(true)}>
+                  Add
                 </TouchButton>
               }
             >
-              Medications
+              <SectionTitle icon={Pill}>Medications</SectionTitle>
             </CardHeader>
             <CardBody>
               <MedList medications={patient.medications} />
@@ -267,12 +286,12 @@ export default function PatientPage() {
           <Card>
             <CardHeader
               action={
-                <TouchButton variant="ghost" size="sm" onClick={() => setAllergyModalOpen(true)}>
-                  + Add
+                <TouchButton variant="primary" size="sm" icon={<Plus size={15} strokeWidth={2.5} />} onClick={() => setAllergyModalOpen(true)}>
+                  Add
                 </TouchButton>
               }
             >
-              Allergies
+              <SectionTitle icon={AlertTriangle} tone="danger">Allergies</SectionTitle>
             </CardHeader>
             <CardBody>
               <AllergyBadges allergies={patient.allergies} />
@@ -281,19 +300,19 @@ export default function PatientPage() {
 
           {/* 4. Latest Vitals */}
           <Card>
-            <CardHeader>Latest Vitals</CardHeader>
+            <CardHeader><SectionTitle icon={Activity}>Latest Vitals</SectionTitle></CardHeader>
             <CardBody>
               {latestVitals ? (
                 <VitalsDisplay vitals={latestVitals} />
               ) : (
-                <p className="text-sm text-gray-400 italic">No vitals recorded</p>
+                <p className="text-sm italic text-slate-500">No vitals recorded</p>
               )}
             </CardBody>
           </Card>
 
           {/* 5. Recent Labs (col-span-2 on md+) */}
           <Card className="md:col-span-2">
-            <CardHeader>Recent Lab Results</CardHeader>
+            <CardHeader><SectionTitle icon={FlaskConical}>Recent Lab Results</SectionTitle></CardHeader>
             <CardBody>
               <LabResults labs={patient.labs} />
             </CardBody>
@@ -302,7 +321,7 @@ export default function PatientPage() {
           {/* 6. Encounter History (full width on lg) */}
           <Card className="lg:col-span-3 md:col-span-2">
             <CardHeader>
-              Encounter History
+              <SectionTitle icon={Stethoscope}>Encounter History</SectionTitle>
             </CardHeader>
             <CardBody className="p-0">
               {encountersLoading ? (
@@ -310,29 +329,31 @@ export default function PatientPage() {
                   <LoadingSpinner message="Loading encounters..." />
                 </div>
               ) : encounters.length === 0 ? (
-                <p className="p-5 text-sm text-gray-400 italic">No encounters on record.</p>
+                <p className="p-5 text-sm italic text-slate-500">No encounters on record.</p>
               ) : (
-                <div className="divide-y divide-gray-50">
+                <div className="divide-y divide-slate-100">
                   {encounters.map((enc) => (
                     <div
                       key={enc.id}
-                      className="flex items-center justify-between px-5 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                      className="group relative flex cursor-pointer items-center justify-between px-5 py-3 transition-all duration-150 hover:bg-ivory-200/70"
                       onClick={() => goToEncounter(enc)}
                     >
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {/* gold lead edge on hover — quiet signature on each row */}
+                      <span className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-gold-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100" aria-hidden="true" />
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
                         <div className="text-sm">
-                          <p className="font-medium text-gray-900">
+                          <p className="font-medium text-navy-700">
                             {enc.encounter_type || 'Office Visit'}
                           </p>
                           {enc.chief_complaint && (
-                            <p className="text-gray-500 text-xs truncate max-w-xs">
+                            <p className="max-w-xs truncate text-xs text-slate-600">
                               CC: {enc.chief_complaint}
                             </p>
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <span className="text-xs text-gray-400">
+                      <div className="flex flex-shrink-0 items-center gap-3">
+                        <span className="text-xs text-slate-500">
                           {formatDate(enc.created_at || enc.date)}
                         </span>
                         <Badge
@@ -346,7 +367,7 @@ export default function PatientPage() {
                         >
                           {enc.workflow_state || enc.status || 'unknown'}
                         </Badge>
-                        <span className="text-gray-300 text-sm">&#x203A;</span>
+                        <ChevronRight size={16} strokeWidth={2} aria-hidden="true" className="text-slate-300 transition-colors group-hover:text-slate-400" />
                       </div>
                     </div>
                   ))}
@@ -364,7 +385,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Problem Name *</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Hypertension"
               value={problemForm.problem_name}
               onChange={(e) => setProblemForm({ ...problemForm, problem_name: e.target.value })}
@@ -375,7 +396,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">ICD-10 Code</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. I10"
               value={problemForm.icd10_code}
               onChange={(e) => setProblemForm({ ...problemForm, icd10_code: e.target.value })}
@@ -384,7 +405,7 @@ export default function PatientPage() {
           <div>
             <label className="label-clinical block mb-1">Status</label>
             <select
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               value={problemForm.status}
               onChange={(e) => setProblemForm({ ...problemForm, status: e.target.value })}
             >
@@ -411,7 +432,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Medication Name *</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Lisinopril"
               value={medForm.medication_name}
               onChange={(e) => setMedForm({ ...medForm, medication_name: e.target.value })}
@@ -423,7 +444,7 @@ export default function PatientPage() {
               <label className="label-clinical block mb-1">Dose</label>
               <input
                 type="text"
-                className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="input-clinical text-sm"
                 placeholder="e.g. 10mg"
                 value={medForm.dose}
                 onChange={(e) => setMedForm({ ...medForm, dose: e.target.value })}
@@ -432,7 +453,7 @@ export default function PatientPage() {
             <div>
               <label className="label-clinical block mb-1">Route</label>
               <select
-                className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="input-clinical text-sm"
                 value={medForm.route}
                 onChange={(e) => setMedForm({ ...medForm, route: e.target.value })}
               >
@@ -451,7 +472,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Frequency</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Once daily"
               value={medForm.frequency}
               onChange={(e) => setMedForm({ ...medForm, frequency: e.target.value })}
@@ -460,7 +481,7 @@ export default function PatientPage() {
           <div>
             <label className="label-clinical block mb-1">Status</label>
             <select
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               value={medForm.status}
               onChange={(e) => setMedForm({ ...medForm, status: e.target.value })}
             >
@@ -487,7 +508,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Allergen *</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Penicillin"
               value={allergyForm.allergen}
               onChange={(e) => setAllergyForm({ ...allergyForm, allergen: e.target.value })}
@@ -498,7 +519,7 @@ export default function PatientPage() {
             <label className="label-clinical block mb-1">Reaction</label>
             <input
               type="text"
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               placeholder="e.g. Rash, Anaphylaxis"
               value={allergyForm.reaction}
               onChange={(e) => setAllergyForm({ ...allergyForm, reaction: e.target.value })}
@@ -507,7 +528,7 @@ export default function PatientPage() {
           <div>
             <label className="label-clinical block mb-1">Severity</label>
             <select
-              className="input-clinical w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="input-clinical text-sm"
               value={allergyForm.severity}
               onChange={(e) => setAllergyForm({ ...allergyForm, severity: e.target.value })}
             >

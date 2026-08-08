@@ -8,6 +8,7 @@ const db = require('./database');
 // Pharmaceutical knowledge base (graceful fallback if unavailable)
 let drugSafetyService = null;
 try {
+  // eslint-disable-next-line global-require -- optional dependency, guarded by try/catch
   drugSafetyService = require('./pharma/drug-safety-service');
 } catch {
   console.warn('[CDS] Drug safety service unavailable — using local rules only');
@@ -43,7 +44,7 @@ function monthsSince(dateStr) {
 // EVALUATE BY RULE TYPE
 // ==========================================
 
-function evaluateVitalRules(rules, vitals, context) {
+function evaluateVitalRules(rules, vitals, _context) {
   if (!vitals || Object.keys(vitals).length === 0) return [];
   const suggestions = [];
 
@@ -267,7 +268,7 @@ function evaluateDifferentialRules(rules, chiefComplaint, transcript, context) {
   return suggestions;
 }
 
-function evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, transcript, context) {
+function evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, transcript, _context) {
   if (!medications || medications.length === 0) return [];
   const text = `${chiefComplaint || ''} ${transcript || ''}`.toLowerCase();
   const suggestions = [];
@@ -311,7 +312,7 @@ function evaluatePrescribingAdvisoryRules(rules, medications, chiefComplaint, tr
   return suggestions;
 }
 
-function evaluateScreeningRules(rules, problems, labs, context) {
+function evaluateScreeningRules(rules, problems, labs, _context) {
   if (!problems || problems.length === 0) return [];
   const suggestions = [];
 
@@ -478,10 +479,15 @@ function evaluateHeartScoreProtocol(context) {
     recommendation = 'HEART score ≥ 7 (high risk). Early invasive strategy indicated. Cardiology consult, antiplatelet therapy, and urgent catheterization per institutional protocol.';
   }
 
+  // Dynamic priority so a high-risk (potential ACS) score sorts ABOVE routine
+  // priority-1 alerts under the ascending sort (lower number = higher priority).
+  // High=1, Moderate=2, Low=4.
+  const priority = totalScore <= 3 ? 4 : totalScore <= 6 ? 2 : 1;
+
   return [{
     suggestion_type: 'clinical_protocol',
     category,
-    priority: 5, // Highest priority — potential ACS
+    priority,
     title: `HEART Score: ${totalScore}/10 — ${tier}`,
     description: recommendation,
     rationale: `HEART score components: History=${components.history}, ECG=${components.ecg} (pending review), Age=${components.age}, Risk Factors=${components.riskFactors}, Troponin=${components.troponin}. Note: ECG score defaults to 1 (non-specific) pending physician review.`,
@@ -490,9 +496,11 @@ function evaluateHeartScoreProtocol(context) {
       score: totalScore,
       components,
       ...ecgReview,
+      // type must match the executeSuggestion switch ('create_lab_order') so that
+      // accepting a high-risk HEART suggestion actually creates the serial troponins.
       actions: totalScore >= 4 ? [
-        { type: 'order_lab', description: 'Serial Troponin (3-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } },
-        { type: 'order_lab', description: 'Serial Troponin (6-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } }
+        { type: 'create_lab_order', description: 'Serial Troponin (3-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } },
+        { type: 'create_lab_order', description: 'Serial Troponin (6-hour)', payload: { test_name: 'Troponin I', cpt_code: '84484' } }
       ] : []
     },
     source: 'heart_score_protocol'
@@ -504,9 +512,23 @@ function evaluateHeartScoreProtocol(context) {
 // ==========================================
 
 /**
- * Check drug interactions using NLM RxNorm API data.
- * Supplements local rule-based checking with real pharmacological data.
- * Returns CDS suggestions for any interactions found.
+ * Check drug interactions using the drug-safety service (curated table + the
+ * now-retired NLM RxNav /interaction API). Supplements local rule-based
+ * checking with real pharmacological data.
+ *
+ * FAIL-CLOSED at the CDS boundary: the NLM /interaction endpoints were retired
+ * Jan-2024, so live screening is effectively always UNAVAILABLE. The
+ * drug-safety service distinguishes three states (curated/real interaction,
+ * source-reachable-zero-interactions, and UNAVAILABLE-sentinel). We:
+ *   - emit a CDS suggestion ONLY for a real, graded interaction (curated/live),
+ *   - SKIP the UNAVAILABLE sentinel entirely (it is NOT a finding and must not
+ *     be persisted as a CDS suggestion — the "verify manually" warning is
+ *     surfaced at the prescribing/safety-service layer, not as rule_engine
+ *     output). This keeps the dead-API error from leaking a spurious non-
+ *     rule_engine suggestion into the evaluation result while still NEVER
+ *     treating an unavailable screen as "no interactions."
+ *
+ * Returns CDS suggestions for any REAL interactions found.
  */
 async function evaluateRxNormInteractions(medications) {
   if (!drugSafetyService || !medications || medications.length < 2) return [];
@@ -528,6 +550,12 @@ async function evaluateRxNormInteractions(medications) {
         med.medication_name, otherMeds
       );
       for (const interaction of interactions) {
+        // Fail-closed sentinel: screening could not be completed for this pair.
+        // This is NOT a clinical finding — skip it so it is never persisted as
+        // a CDS suggestion (the "interaction check unavailable — verify
+        // manually" warning lives in the safety-service alert path, not here).
+        if (interaction && interaction.unavailable) continue;
+
         const pairKey = [interaction.drug1, interaction.drug2].sort().join('|');
         if (checked.has(pairKey)) continue;
         checked.add(pairKey);
@@ -592,10 +620,13 @@ async function evaluatePatientContext(encounterId, patientId, context) {
   const saved = [];
   for (const s of unique) {
     const existing = await db.dbGet(
-      'SELECT id FROM cds_suggestions WHERE encounter_id = ? AND title = ? AND status = ?',
+      'SELECT * FROM cds_suggestions WHERE encounter_id = ? AND title = ? AND status = ?',
       [encounterId, s.title, 'pending']
     );
-    if (existing) continue; // Skip duplicate
+    if (existing) {
+      saved.push(existing);
+      continue;
+    }
 
     const result = await db.createSuggestion({
       encounter_id: encounterId,
@@ -638,22 +669,24 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
 
     try {
       switch (action.type) {
-        case 'create_lab_order':
+        case 'create_lab_order': {
           payload.ordered_by = payload.ordered_by || providerName;
           payload.order_date = payload.order_date || today;
           const labResult = await db.createLabOrder(payload);
           results.push({ type: 'lab_order', id: labResult.id, description: action.description });
           break;
+        }
 
-        case 'create_prescription':
+        case 'create_prescription': {
           payload.prescriber = payload.prescriber || providerName;
           payload.prescribed_date = payload.prescribed_date || today;
           payload.status = payload.status || 'signed';
           const rxResult = await db.createPrescription(payload);
           results.push({ type: 'prescription', id: rxResult.id, description: action.description });
           break;
+        }
 
-        case 'create_imaging_order':
+        case 'create_imaging_order': {
           payload.ordered_by = payload.ordered_by || providerName;
           payload.order_date = payload.order_date || today;
           payload.body_part = payload.body_part || 'Unspecified';
@@ -661,8 +694,9 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
           const imgResult = await db.createImagingOrder(payload);
           results.push({ type: 'imaging_order', id: imgResult.id, description: action.description });
           break;
+        }
 
-        case 'create_referral':
+        case 'create_referral': {
           payload.referred_by = payload.referred_by || providerName;
           payload.referred_date = payload.referred_date || today;
           payload.specialty = payload.specialty || 'Unspecified';
@@ -670,6 +704,7 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
           const refResult = await db.createReferral(payload);
           results.push({ type: 'referral', id: refResult.id, description: action.description });
           break;
+        }
 
         case 'medication_adjustment':
         case 'dose_adjustment':

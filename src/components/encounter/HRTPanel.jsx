@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
+import { Syringe, BrainCircuit } from 'lucide-react';
 import Card, { CardHeader, CardBody } from '../common/Card';
 import Badge from '../common/Badge';
 import EmptyState from '../common/EmptyState';
 import HRTRegimenCard from './HRTRegimenCard';
 import PeptideCalculator from './PeptideCalculator';
-import { HRT_KEYWORDS, isHrtRelevant } from '../../utils/hrt-keywords.mjs';
+import { HRT_KEYWORDS, isHRTRelevant } from '../../utils/hrt-keywords.mjs';
 
 /**
  * HRTPanel — fourth encounter tab for HRT / Peptide / functional-medicine work.
@@ -14,7 +15,7 @@ import { HRT_KEYWORDS, isHrtRelevant } from '../../utils/hrt-keywords.mjs';
  *
  *   1. Active Regimens      — list of current HRT/peptide therapies
  *   2. Proposed Changes     — CDS + Domain Logic suggestions filtered to
- *                             HRT/peptide relevance via `isHrtRelevant`
+ *                             HRT/peptide relevance via `isHRTRelevant`
  *   3. Peptide Calculator   — dose-to-U100-units math for compounded peptides
  *
  * Keyword list lives in `src/utils/hrt-keywords.mjs` so it can be shared with
@@ -27,7 +28,7 @@ export default function HRTPanel({
   suggestions = [],
 }) {
   const relevantSuggestions = useMemo(
-    () => (suggestions || []).filter(isHrtRelevant),
+    () => (suggestions || []).filter(isHRTRelevant),
     [suggestions]
   );
   const pendingSuggestions = useMemo(
@@ -36,10 +37,18 @@ export default function HRTPanel({
   );
 
   return (
-    <div className="p-4 space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">HRT / Peptide</h2>
+    <div className="p-4 space-y-4 mc-reveal-stagger">
+      {/* Header — gold eyebrow + icon chip, matching the app-wide section bar */}
+      <div className="relative flex items-end justify-between">
+        <div>
+          <p className="mc-section-label">Functional Medicine</p>
+          <h2 className="font-display text-lg font-semibold tracking-tight text-navy-700 flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-50 text-navy-600 ring-1 ring-navy-100">
+              <Syringe size={16} strokeWidth={2} aria-hidden="true" />
+            </span>
+            HRT / Peptide
+          </h2>
+        </div>
         {pendingSuggestions.length > 0 && (
           <Badge variant="urgent">{pendingSuggestions.length} pending</Badge>
         )}
@@ -51,7 +60,7 @@ export default function HRTPanel({
         <CardBody>
           {regimens.length === 0 ? (
             <EmptyState
-              icon={"\u{1F489}"}
+              icon={<Syringe size={26} strokeWidth={1.75} className="text-navy-400" aria-hidden="true" />}
               title="No active HRT / peptide therapies"
               message="When a hormone or peptide therapy is prescribed for this patient, it will appear here with dose, schedule, and monitoring labs due."
             />
@@ -77,7 +86,7 @@ export default function HRTPanel({
         <CardBody>
           {pendingSuggestions.length === 0 ? (
             <EmptyState
-              icon={"\u{1F9E0}"}
+              icon={<BrainCircuit size={26} strokeWidth={1.75} className="text-navy-400" aria-hidden="true" />}
               title="No pending proposals"
               message="Hormone/peptide-related CDS and Domain Logic suggestions will appear here for review before any dosing change."
             />
@@ -86,14 +95,14 @@ export default function HRTPanel({
               {pendingSuggestions.map((s) => (
                 <div
                   key={s.id}
-                  className="border-l-4 border-l-blue-500 bg-blue-50/50 rounded-r-lg p-3"
+                  className="border-l-4 border-l-navy-500 bg-navy-50/50 rounded-r-xl p-3 shadow-mc transition-all duration-200 hover:-translate-y-px hover:shadow-mc-lg"
                 >
-                  <div className="font-semibold text-sm text-gray-900">{s.title}</div>
+                  <div className="font-semibold text-sm text-navy-700">{s.title}</div>
                   {s.description && (
-                    <p className="text-xs text-gray-600 mt-1">{s.description}</p>
+                    <p className="text-xs text-slate-600 mt-1">{s.description}</p>
                   )}
                   {s.rationale && (
-                    <p className="text-xs text-gray-400 italic mt-1">{s.rationale}</p>
+                    <p className="text-xs text-slate-400 italic mt-1">{s.rationale}</p>
                   )}
                 </div>
               ))}
@@ -115,4 +124,4 @@ export default function HRTPanel({
 
 // Re-export so existing consumers (EncounterPage) can keep their import path
 // unchanged while the canonical source of truth lives in src/utils/.
-export { HRT_KEYWORDS, isHrtRelevant };
+export { HRT_KEYWORDS, isHRTRelevant };

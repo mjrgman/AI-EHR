@@ -102,8 +102,8 @@ function deliverWebhook(url, payload, secret) {
     };
 
     const req = transport.request(options, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      let _data = '';
+      res.on('data', (chunk) => { _data += chunk; });
       res.on('end', () => {
         resolve({
           success: res.statusCode >= 200 && res.statusCode < 300,

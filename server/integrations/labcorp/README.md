@@ -1,5 +1,13 @@
 # LabCorp Integration
 
+> **This integration is mock-only and cannot be enabled.**
+> `LABCORP_MODE=api` is refused when this module loads, and `LabCorpClient`
+> refuses to construct in any non-mock mode regardless of the environment.
+> The OAuth2 flow, the API client and `scripts/labcorp-sandbox-smoke.js`
+> remain in the tree as unreachable scaffolding. Everything below that
+> describes enabling api mode is retained as design history, not as
+> instructions. See `docs/SYNTHETIC_ONLY_BASELINE.md`.
+
 LabCorp Link API integration. Provides mock-mode result parsing (Phase 2a),
 a full OAuth2 + API-mode client, HTTP routes, and the `LabSynthesisAgent`
 that turns raw results into `LAB_SYNTHESIS_READY` events for CDS + Domain
@@ -34,7 +42,9 @@ Controlled via `LABCORP_MODE`:
 
 ## Environment variables
 
-See `.env.example` for the full block. Minimum required for API mode:
+Historical reference only — API mode cannot be enabled, so none of these
+variables changes behavior. They are read solely by the status endpoint's
+"is this set" display.
 
 ```
 LABCORP_MODE=api
@@ -102,7 +112,8 @@ through the message bus into CDS + Domain Logic automatically.
 
 ## Sandbox connectivity smoke test (Phase 2c)
 
-Before flipping `LABCORP_MODE=api` in a real deployment, verify the sandbox
+Retained as design history. `LABCORP_MODE=api` cannot be set in this build,
+so this script has no reachable use. It would verify that the sandbox
 is reachable and speaks OAuth2 correctly. Two ways to run the same check:
 
 ```bash

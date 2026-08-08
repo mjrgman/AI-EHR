@@ -35,6 +35,8 @@
 const express = require('express');
 const oauth = require('../integrations/labcorp/oauth');
 const { LabCorpClient } = require('../integrations/labcorp/client');
+const rbac = require('../security/rbac');
+const { logSafe } = require('../security/log-safe');
 
 const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — OAuth flows complete in seconds
 
@@ -72,12 +74,16 @@ function mountLabCorpRoutes(app, { db } = {}) {
   // No auth required for a simple boolean check. Leaks no secrets — only
   // reports which env vars are SET, not their values.
   router.get('/integrations/labcorp/status', (req, res) => {
-    const mode = process.env.LABCORP_MODE || 'mock';
+    // SYNTHETIC-ONLY BASELINE: report the mode this build can actually run in,
+    // not whatever LABCORP_MODE happens to say. Echoing the env var here would
+    // let the status endpoint advertise "api" for a process that is physically
+    // incapable of reaching a laboratory -- a health check that lies.
     const hasCredentials = Boolean(
       process.env.LABCORP_CLIENT_ID && process.env.LABCORP_CLIENT_SECRET
     );
     res.json({
-      mode,
+      mode: 'mock',
+      syntheticOnly: true,
       hasCredentials,
       hasAuthUrl: Boolean(process.env.LABCORP_AUTH_URL),
       hasTokenUrl: Boolean(process.env.LABCORP_TOKEN_URL),
@@ -209,6 +215,27 @@ function mountLabCorpRoutes(app, { db } = {}) {
       return res.status(401).json({ error: 'authentication_required' });
     }
 
+    // RBAC (sec-labcorp-order-ownership-08): submitting a lab order to an
+    // external lab is a write against lab_orders. Gate it to roles that hold
+    // lab_orders write authority (physician / nurse_practitioner / system).
+    // Fail closed — any role lacking that authority (front_desk, billing, ma,
+    // an unknown/absent role) is denied 403 BEFORE the order is loaded or
+    // transmitted, preventing ID-enumeration transmission of any patient's
+    // order to LabCorp.
+    const role = req.user && req.user.role;
+    if (!rbac.canWrite(role, 'lab_orders')) {
+      console.warn(
+        `[RBAC] LabCorp submit denied: user ${logSafe(userId)} (role: ${logSafe(role || 'none')}) ` +
+        `attempted submit-to-labcorp on order ${logSafe(req.params.id)}`
+      );
+      return res.status(403).json({
+        error: 'Permission denied: cannot submit lab orders to LabCorp',
+        userRole: role || null,
+        requiredAction: 'write',
+        requiredResource: 'lab_orders',
+      });
+    }
+
     const orderId = parseInt(req.params.id, 10);
     if (!orderId || Number.isNaN(orderId)) {
       return res.status(400).json({ error: 'invalid_order_id' });
@@ -223,13 +250,13 @@ function mountLabCorpRoutes(app, { db } = {}) {
       return res.status(404).json({ error: 'lab_order_not_found' });
     }
 
-    const mode = process.env.LABCORP_MODE || 'mock';
+    // SYNTHETIC-ONLY BASELINE: mode is pinned, not read from the environment.
+    // Re-reading process.env here was a bypass -- the module-load guard in
+    // client.js only sees the value present at startup, so anything that
+    // mutated LABCORP_MODE afterwards (a test, a hot-reload, a stray
+    // process.env write) could reach a live laboratory through this route.
     const client = new LabCorpClient({
-      mode,
-      baseUrl: process.env.LABCORP_SANDBOX_URL,
-      tokenUrl: process.env.LABCORP_TOKEN_URL,
-      clientId: process.env.LABCORP_CLIENT_ID,
-      clientSecret: process.env.LABCORP_CLIENT_SECRET,
+      mode: 'mock',
       db,
       userId,
     });

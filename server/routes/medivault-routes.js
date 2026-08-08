@@ -148,10 +148,12 @@ function mountMediVaultRoutes(app, { db } = {}) {
         [patientId, String(accessedBy)]
       );
     } catch (auditErr) {
-      // Don't block the response on audit failure — but log loudly so ops
-      // can triage. This is a deliberate trade-off: we favor patient access
-      // to their own data over a perfect audit trail.
-      console.warn('[MediVault] vault_access_log write failed:', auditErr.message);
+      // Production exports fail closed if the durable export audit cannot be
+      // written. Synthetic development remains available for local fixtures.
+      console.error('[MediVault] vault_access_log write failed:', auditErr.message);
+      if (process.env.NODE_ENV === 'production') {
+        return sendError(res, 503, 'transient', 'Export unavailable because the audit record could not be persisted');
+      }
     }
 
     // Build the filename. Date is the export day in YYYY-MM-DD so a patient

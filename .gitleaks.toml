@@ -1,0 +1,65 @@
+# gitleaks configuration for the Clinical/EHR synthetic demo.
+#
+# Extends the upstream default ruleset -- this file only adds narrowly scoped
+# allowlist entries for known false positives. It never disables a rule.
+#
+# Every entry below was classified by hand on 2026-08-07 by inspecting the
+# match in context. Scans covered the current tree (43 MB) and all 79 commits
+# reachable from HEAD; these six are the complete set of matches in
+# git-tracked files, and none is a live credential.
+#
+# If you add an entry here, say in the comment WHY the value cannot be a real
+# secret. "It's just a test" is not a reason; "the value is a documented
+# all-zeros test vector" is.
+
+title = "Clinical EHR synthetic-demo gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Placeholder values in the committed environment template"
+paths = ['''^\.env\.example$''']
+# .env.example ships generation instructions, not values. The file is the
+# template an operator copies to .env, which is gitignored.
+
+[[allowlists]]
+description = "CI test vectors for JWT and PHI encryption"
+paths = ['''^\.github/workflows/ci\.yml$''']
+regexes = [
+  '''ci-test-secret-not-for-production''',
+  # A repeating 0123456789abcdef pattern: a 256-bit all-nibbles test vector,
+  # not key material. Used so the suite can exercise the encryption path.
+  '''(?:0123456789abcdef){4}''',
+]
+
+[[allowlists]]
+description = "Encryption test keys declared in the test suite"
+paths = [
+  '''^test/unit/phi-encryption\.test\.js$''',
+  '''^test/run-tests\.js$''',
+]
+regexes = [
+  '''TEST_KEY_[AB]''',
+  '''(?:0123456789abcdef){4}''',
+  '''ci-test-secret-not-for-production''',
+]
+
+[[allowlists]]
+description = "Drug-class token map misread as high-entropy key material"
+paths = ['''^server/pharma/curated-ddi\.js$''']
+# This file maps medication names to interaction-class tokens
+# (e.g. 'strong_cyp3a4_inhibitor'). The entropy heuristic fires on the
+# underscore-separated class identifiers. There are no credentials here.
+
+[[allowlists]]
+description = "Local agent configuration and environment files, never committed"
+paths = [
+  '''^\.claude/''',
+  '''^\.env$''',
+  '''^node_modules/''',
+  '''^dist/''',
+]
+# Belt and braces: .claude/ and .env are both gitignored (.gitignore:50 and
+# :13), so these cannot enter history. Listed so a local `gitleaks dir .` run
+# produces the same verdict CI does.

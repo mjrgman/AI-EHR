@@ -209,7 +209,7 @@ async function captureCharge(encounterId, patientId, providerName, overrides = {
  * Finalize charge at checkout — marks status 'finalized' and sets checkout time on workflow.
  */
 async function finalizeCheckout(encounterId, patientId, providerName, overrides = {}) {
-  const charge = await captureCharge(encounterId, patientId, providerName, overrides);
+  const _charge = await captureCharge(encounterId, patientId, providerName, overrides);
   await db.finalizeCharge(encounterId);
 
   // Update workflow state to checked-out

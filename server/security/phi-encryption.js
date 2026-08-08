@@ -2,7 +2,7 @@
  * PHI Encryption Module for Agentic EHR
  *
  * Handles encryption/decryption of Protected Health Information (PHI) at rest.
- * Uses AES-256-GCM with PBKDF2 key derivation and per-record IVs.
+ * Uses AES-256-GCM with PBKDF2 key derivation and per-record 12-byte IVs.
  * No external dependencies - uses Node.js built-in crypto module only.
  *
  * Reference: HIPAA Security Rule 45 CFR §164.312(a)(2)(ii)
@@ -14,10 +14,35 @@ const crypto = require('crypto');
 // CONFIGURATION & VALIDATION
 // ==========================================
 
+// sec-gcm-iv-length-09: NIST SP 800-38D recommends a 12-byte (96-bit) IV for
+// AES-GCM — it is the value GCM's internal counter is optimized for and avoids
+// the GHASH-based re-derivation that other lengths trigger. New records are
+// written with a 12-byte random IV. The DECRYPT path reads the IV length from
+// the stored record, so legacy 16-byte-IV records in data/mjr-ehr.db continue
+// to decrypt unchanged (no migration required for reads).
+const GCM_IV_BYTES = 12;
+
 // L2: Module-scoped key cache — avoids running PBKDF2 (100k iterations) on every call.
 // Invalidated on key rotation or when key material changes.
 let cachedKey = null;
 let cachedKeyMaterial = null;
+
+/** Refuse to start a production process without both independent secrets. */
+function assertProductionEncryptionConfig(env = process.env) {
+  if (env.NODE_ENV !== 'production') return true;
+  if (!env.PHI_ENCRYPTION_KEY || env.PHI_ENCRYPTION_KEY.length < 32) {
+    throw new Error('[PHI] FATAL: production requires PHI_ENCRYPTION_KEY with at least 32 characters.');
+  }
+  if (!env.PHI_PEPPER || env.PHI_PEPPER.length < 32) {
+    throw new Error('[PHI] FATAL: production requires an independent PHI_PEPPER with at least 32 characters.');
+  }
+  if (env.PHI_PEPPER === env.PHI_ENCRYPTION_KEY) {
+    throw new Error('[PHI] FATAL: PHI_PEPPER must be independent of PHI_ENCRYPTION_KEY.');
+  }
+  return true;
+}
+
+assertProductionEncryptionConfig();
 
 /**
  * Derive encryption key from key material using PBKDF2.
@@ -62,10 +87,36 @@ function deriveKey(keyMaterial = null, salt = null) {
   return cachedKey;
 }
 
-// Pepper for hashPHI function (should be set via environment or derived from key)
+// Pepper for hashPHI function.
+// sec-gcm-iv-length-09: the pepper MUST be independent of the encryption key —
+// deriving it from PHI_ENCRYPTION_KEY means a single compromised value defeats
+// both confidentiality (decrypt) and the searchable-hash unlinkability at once.
+// In production we therefore REQUIRE an independent PHI_PEPPER and fail closed
+// if it is missing. Dev/test keep a derived fallback so existing fixtures and
+// the dev-server (which only sets PHI_ENCRYPTION_KEY) keep working, but the
+// fallback is domain-separated from the encryption-key derivation path.
 function getPepper() {
-  return process.env.PHI_PEPPER ||
-    crypto.createHash('sha256').update(process.env.PHI_ENCRYPTION_KEY + 'pepper').digest();
+  if (process.env.PHI_PEPPER) {
+    return process.env.PHI_PEPPER;
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'PHI_PEPPER environment variable is required in production and must be ' +
+      'independent of PHI_ENCRYPTION_KEY. Generate with: ' +
+      'node -e "console.log(crypto.randomBytes(32).toString(\'hex\'))"'
+    );
+  }
+  if (!process.env.PHI_ENCRYPTION_KEY) {
+    throw new Error('PHI_ENCRYPTION_KEY is required to derive a fallback pepper outside production.');
+  }
+  // Non-production fallback: BACKWARD-COMPAT — this derivation string is
+  // unchanged from the original implementation so that existing searchable
+  // hash_* values in data/mjr-ehr.db still match on lookup. NOT used in
+  // production (the guard above fails closed there). Do not alter the suffix
+  // without a hash-rebuild migration.
+  return crypto.createHash('sha256')
+    .update(process.env.PHI_ENCRYPTION_KEY + 'pepper')
+    .digest();
 }
 
 // ==========================================
@@ -87,7 +138,11 @@ function encrypt(plaintext) {
   // S-H2: Use random salt for PBKDF2 (stored alongside encrypted data)
   const salt = crypto.randomBytes(16);
   const key = deriveKey(null, salt);
-  const iv = crypto.randomBytes(16); // 128-bit IV
+  // sec-gcm-iv-length-09: 12-byte (96-bit) random IV per NIST SP 800-38D.
+  // A fresh random IV per record is the GCM safety invariant. Stored as hex in
+  // the record; decrypt() reads IV length from the record, so legacy 16-byte-IV
+  // records remain decryptable.
+  const iv = crypto.randomBytes(GCM_IV_BYTES);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
 
   let encrypted = cipher.update(String(plaintext), 'utf8', 'hex');
@@ -349,5 +404,6 @@ module.exports = {
   reencryptWithNewKey,
   PHI_FIELDS,
   deriveKey,
-  getPepper
+  getPepper,
+  assertProductionEncryptionConfig
 };

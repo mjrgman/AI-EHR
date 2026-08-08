@@ -31,7 +31,7 @@ class MAAgent extends BaseAgent {
     this.approvedResponses = options.approvedResponses || this._buildApprovedResponses();
   }
 
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const { requestType, payload } = context.maRequest || {};
 
     if (!requestType) {
@@ -231,7 +231,29 @@ class MAAgent extends BaseAgent {
   }
 
   async processEscalationResponse(context, directivePayload) {
-    const { directive } = directivePayload;
+    const { directive } = directivePayload || {};
+
+    if (!directive) {
+      return {
+        status: 'directive_missing_or_invalid',
+        message: 'Escalation response did not include an executable directive',
+        from_physician_agent: true,
+        actions_taken: ['No execution performed'],
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    if (!directive.instructions) {
+      return {
+        status: 'directive_missing_or_invalid',
+        message: 'Escalation response included a directive but no instructions',
+        from_physician_agent: true,
+        directive_id: directive.directive_id,
+        instructions: '',
+        actions_taken: ['No executable instructions found'],
+        timestamp: new Date().toISOString()
+      };
+    }
 
     return {
       status: 'directive_received_and_executed',
@@ -307,7 +329,7 @@ class MAAgent extends BaseAgent {
     const { vitals, labs } = context;
 
     if (protocol.conditions) {
-      for (const [condition, requiredValue] of Object.entries(protocol.conditions)) {
+      for (const [condition, _requiredValue] of Object.entries(protocol.conditions)) {
         let conditionMet = false;
 
         switch (condition) {
@@ -329,11 +351,12 @@ class MAAgent extends BaseAgent {
             }
             if (!conditionMet) return { passes: false, failed_condition: 'compliant', reason: 'Patient compliance not confirmed or data unavailable' };
             break;
-          case 'a1c_stable':
+          case 'a1c_stable': {
             const a1c = labs?.find(l => l.test_name === 'Hemoglobin A1C');
             conditionMet = a1c && a1c.result_value < 9;
             if (!conditionMet) return { passes: false, failed_condition: 'a1c_stable', reason: 'A1C not at goal' };
             break;
+          }
           default:
             conditionMet = true;
         }
@@ -361,7 +384,7 @@ class MAAgent extends BaseAgent {
     return Math.max(0, max - (dispensed + 1));
   }
 
-  _buildVitalsChecklist(problems) {
+  _buildVitalsChecklist(_problems) {
     const checklist = [
       { vital: 'Temperature', required: true },
       { vital: 'Blood Pressure (sitting)', required: true },
@@ -387,7 +410,7 @@ class MAAgent extends BaseAgent {
     return questionnaires;
   }
 
-  _buildMAAlerts(medications, allergies, problems) {
+  _buildMAAlerts(medications, allergies, _problems) {
     const alerts = [];
 
     if (allergies && allergies.length > 0) {

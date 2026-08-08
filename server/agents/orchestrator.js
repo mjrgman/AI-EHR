@@ -4,11 +4,17 @@
  *
  * Encounter execution order (respects dependencies):
  *   Phase 1 (parallel): Scribe + CDS
+ *   Phase 1b: Domain Logic (after CDS; Tier 3 specialty layer — HRT/peptide/FM rules)
  *   Phase 2 (parallel): Orders + Coding
  *   Phase 3: Quality
  *
- * The full system includes 9 workflow modules:
- *   Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Orders, Coding, Quality
+ * This orchestrator registers 10 workflow agents:
+ *   Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic,
+ *   Orders, Coding, Quality
+ *
+ * The broader 14-module catalog (see MODULE_CATALOG.md) is a superset: AWV,
+ * PatientLink, Patient App, and MediVault are built but are not registered as
+ * orchestrator agents (they are standalone/route-driven/governance modules).
  *
  * The orchestrator:
  *   1. Builds shared PatientContext from the database
@@ -18,7 +24,6 @@
  */
 
 const EventEmitter = require('events');
-const { AGENT_STATUS } = require('./base-agent');
 const { MessageBus } = require('./message-bus');
 const { AgentMemory } = require('./agent-memory');
 

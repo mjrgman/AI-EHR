@@ -65,11 +65,11 @@ describe('FrontDeskAgent: notification channels honesty', () => {
       },
       {},
     );
-    assert.deepEqual(contact.channels, ['portal'], 'channels must claim ONLY portal — email/SMS are TODO');
+    assert.deepEqual(contact.channels, ['portal'], 'channels must claim ONLY portal; email/SMS are not configured');
     assert.ok(contact.pendingChannels, 'pendingChannels must surface the gap');
     assert.equal(contact.pendingChannels.email, 'not_configured');
     assert.equal(contact.pendingChannels.sms, 'not_configured');
-    assert.match(contact.deliveryNote, /TODO/, 'deliveryNote must explain the gap');
+    assert.match(contact.deliveryNote, /separate Twilio \+ SendGrid integration/, 'deliveryNote must explain the gap');
 
     // Defensive: every entry in `channels` must correspond to a real, working delivery path.
     const ALLOWED = new Set(['portal']);

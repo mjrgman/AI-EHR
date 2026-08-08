@@ -16,13 +16,14 @@ class PhysicianAgent extends BaseAgent {
       ...options
     });
 
+    this.settings = options.settings || {};
     this.preferences = this._initializePreferences(options.providerName || 'Dr. Provider');
     this.protocols = options.protocols || this._buildDefaultProtocols();
     this.escalationResponses = this._buildEscalationResponses();
     this.decisionLog = [];
   }
 
-  async process(context, agentResults = {}) {
+  async process(context, _agentResults = {}) {
     const { requestType, payload } = context.physicianRequest || {};
 
     if (!requestType) {
@@ -60,8 +61,9 @@ class PhysicianAgent extends BaseAgent {
     const { escalation } = escalationPayload;
 
     const autoResponse = this._findAutoResponseForEscalation(escalation.type);
+    const allowTemplateAutoResponses = this.settings?.allowTemplateAutoResponses === true;
 
-    if (autoResponse) {
+    if (allowTemplateAutoResponses && autoResponse) {
       const directive = this._generateDirective(escalation, autoResponse, context);
 
       // Audit trail for auto-response (A-C4)
@@ -102,7 +104,7 @@ class PhysicianAgent extends BaseAgent {
     };
   }
 
-  _generateDirective(escalation, responseTemplate, context) {
+  _generateDirective(escalation, responseTemplate, _context) {
     const directive = {
       directive_id: crypto.randomUUID(),
       in_response_to: escalation.escalation_id,
@@ -272,7 +274,7 @@ ${signature}
           protocol_name: protocol.name
         }, context);
         return { status: 'protocol_added', protocol_id: protocol.id };
-      case 'update':
+      case 'update': {
         const index = this.protocols.findIndex(p => p.id === protocol.id);
         if (index >= 0) {
           this.protocols[index] = { ...this.protocols[index], ...protocol };
@@ -284,13 +286,14 @@ ${signature}
           return { status: 'protocol_updated', protocol_id: protocol.id };
         }
         return { status: 'error', message: 'Protocol not found' };
+      }
       default:
         return { status: 'error', message: `Unknown action: ${action}` };
     }
   }
 
   async learnFromEncounter(context, learningPayload) {
-    const { originalNote, editedNote, finalOrders } = learningPayload;
+    const { originalNote, editedNote } = learningPayload;
 
     if (originalNote && editedNote) {
       this._learnDocumentationStyle(originalNote, editedNote);

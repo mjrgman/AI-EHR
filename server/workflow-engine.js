@@ -83,14 +83,22 @@ async function transitionState(encounterId, targetState, metadata = {}, userRole
   if (userRole && userRole !== 'physician' && targetConfig && targetConfig.role) {
     // Map role names: 'provider' in STATES matches physician/nurse_practitioner
     const requiredRole = targetConfig.role;
-    const roleMatches =
-      requiredRole === 'provider'
+    // An MA legitimately advances the encounter through rooming/vitals and hands
+    // it off into the provider's queue. Permit the MA to ADVANCE into these
+    // handoff states even though they are provider-owned — the MA is moving the
+    // encounter forward, not performing provider documentation/signing (which
+    // remain provider-only: orders-pending, documentation, signed). (UR-005)
+    const maHandoffStates = ['vitals-recorded', 'provider-examining'];
+    const isMaHandoff = ['ma', 'medical_assistant'].includes(userRole) &&
+      requiredRole === 'provider' && maHandoffStates.includes(targetState);
+    const roleMatches = isMaHandoff ||
+      (requiredRole === 'provider'
         ? ['physician', 'nurse_practitioner', 'provider'].includes(userRole)
         : requiredRole === 'reception'
           ? ['front_desk', 'reception', 'admin'].includes(userRole)
           : requiredRole === 'ma'
             ? ['ma', 'medical_assistant'].includes(userRole)
-            : userRole === requiredRole;
+            : userRole === requiredRole);
     if (!roleMatches) {
       throw new Error(`Role '${userRole}' cannot transition to '${targetState}'. Required role: '${requiredRole}'.`);
     }

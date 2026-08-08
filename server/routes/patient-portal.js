@@ -1,9 +1,12 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const repository = require('../repositories/patient-portal-repository');
+const schedulingRepository = require('../repositories/scheduling-repository');
 const { processVoiceIntent, verifyPatient } = require('../integrations/patient-voice');
 const { FrontDeskAgent } = require('../agents/front-desk-agent');
+const { logSafe } = require('../security/log-safe');
 const {
   attachSessionCookie,
   clearSessionCookie,
@@ -14,6 +17,7 @@ const {
 
 let toPlainLanguage;
 try {
+  // eslint-disable-next-line global-require -- optional agent; falls back to identity
   const patientLink = require('../agents/patientlink-agent');
   toPlainLanguage = patientLink.toPlainLanguage;
 } catch {
@@ -21,9 +25,154 @@ try {
 }
 
 const router = express.Router();
-const REQUIRE_MRN_IN_PRODUCTION =
-  process.env.PATIENT_PORTAL_REQUIRE_MRN === 'true'
-  || (process.env.NODE_ENV === 'production' && process.env.PATIENT_PORTAL_REQUIRE_MRN !== 'false');
+// P1-2 (sec-portal-weak-verify-05): MRN is a MANDATORY non-public second factor
+// in ALL environments. Name + DOB (both semi-public) can never establish a
+// session on their own. There is no longer an env flag to relax this — the
+// requirement is enforced unconditionally and a missing/wrong MRN yields the
+// same generic failure as any other verification miss (see verifyPatient).
+
+// ------------------------------------------------------------------
+// Verify rate-limiting / temporary lockout (sec-portal-weak-verify-05)
+//
+// /verify is a public, unauthenticated endpoint that matches on low-secrecy
+// data (name + DOB, MRN optional outside production). Without throttling it is
+// an identity-enumeration / account-takeover surface. We mirror the clinician
+// auth lockout pattern (security/auth.js S-M7): track failed attempts per
+// client IP, lock out for a fixed window after a threshold, and clear the
+// counter on a successful verify. Fail closed — a locked client gets 429
+// regardless of whether the supplied identity exists.
+// ------------------------------------------------------------------
+const verifyAttempts = new Map(); // ip -> { attempts, firstAttempt, lockedUntil }
+const VERIFY_MAX_ATTEMPTS = 5;
+const VERIFY_WINDOW_MS = 15 * 60 * 1000;   // 15 minutes
+const VERIFY_LOCKOUT_MS = 15 * 60 * 1000;  // 15 minutes
+
+// Periodically prune stale entries so the map stays bounded. unref() so this
+// timer never holds the process (or a test runner) open.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, data] of verifyAttempts) {
+    if (data.lockedUntil && now >= data.lockedUntil) {
+      verifyAttempts.delete(ip);
+    } else if (!data.lockedUntil && now - data.firstAttempt > VERIFY_WINDOW_MS) {
+      verifyAttempts.delete(ip);
+    }
+  }
+}, VERIFY_WINDOW_MS).unref();
+
+// ------------------------------------------------------------------
+// CSRF protection for the cookie-backed portal session (sec-portal-csrf-07)
+//
+// The portal authenticates with an HttpOnly + SameSite=Lax cookie. SameSite=Lax
+// does NOT cover cross-site state-changing requests in every browser/scenario
+// (top-level navigations, certain method/redirect chains), so a synchronizer
+// CSRF token is layered on top. This lives entirely in the route module — the
+// shared portal-session-service is consumed read-only and is NOT modified.
+//
+// Model (synchronizer token):
+//   - On a successful /verify, mint a random CSRF token, store it server-side
+//     keyed by the session's hash (the same sha256(token) the session service
+//     uses), and return it in the JSON body as `csrfToken`.
+//   - State-changing portal requests (POST/PUT/PATCH/DELETE under the session
+//     guard) must echo that token in the `x-portal-csrf` header. The header is
+//     not a cookie, so a cross-site attacker riding the ambient session cookie
+//     cannot read or set it (it requires script access to the JSON response,
+//     which the same-origin policy denies cross-site).
+//   - Fail closed: missing OR mismatched token -> 403. Tokens are bound to the
+//     specific session, so a token from session A cannot authorize a write on
+//     session B.
+//
+// This does NOT touch the Wave-1 verify rate-limit/lockout or the Wave-2
+// mandatory-MRN verify logic — it is strictly additive.
+// ------------------------------------------------------------------
+const CSRF_HEADER = 'x-portal-csrf';
+const csrfTokens = new Map(); // sessionHash -> { token, expiresAt }
+
+// Replicates portal-session-service's token->hash derivation (sha256 hex) so we
+// can key CSRF tokens by session WITHOUT importing/altering the shared service's
+// internals. If that derivation ever changes, this must track it.
+function sessionHashFor(sessionToken) {
+  return crypto.createHash('sha256').update(sessionToken).digest('hex');
+}
+
+function issueCsrfToken(sessionToken, expiresAtIso) {
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = expiresAtIso ? new Date(expiresAtIso).getTime() : (Date.now() + 8 * 60 * 60 * 1000);
+  csrfTokens.set(sessionHashFor(sessionToken), { token, expiresAt });
+  return token;
+}
+
+function timingSafeEqualStr(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Prune expired CSRF tokens periodically; unref so this never holds the process
+// (or a test runner) open.
+setInterval(() => {
+  const now = Date.now();
+  for (const [hash, data] of csrfTokens) {
+    if (!data || now >= data.expiresAt) {
+      csrfTokens.delete(hash);
+    }
+  }
+}, 15 * 60 * 1000).unref();
+
+// CSRF guard for state-changing methods. Registered AFTER requirePortalSession,
+// so req.portalSession.session_hash is always available and identifies the
+// session whose CSRF token we must match. Safe methods (GET/HEAD/OPTIONS) pass
+// through untouched.
+function requireCsrfToken(req, res, next) {
+  const method = (req.method || 'GET').toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
+    return next();
+  }
+
+  const sessionHash = req.portalSession && req.portalSession.session_hash;
+  const stored = sessionHash ? csrfTokens.get(sessionHash) : null;
+  const supplied = req.headers[CSRF_HEADER];
+
+  // Fail closed on anything missing or expired.
+  if (!stored || Date.now() >= stored.expiresAt) {
+    return res.status(403).json({ error: 'CSRF token required. Please re-establish your session.' });
+  }
+  if (!supplied || !timingSafeEqualStr(supplied, stored.token)) {
+    return res.status(403).json({ error: 'Invalid or missing CSRF token.' });
+  }
+
+  return next();
+}
+
+function clientIpFor(req) {
+  const fwd = req.headers && req.headers['x-forwarded-for'];
+  if (fwd) {
+    // First hop is the originating client.
+    return String(fwd).split(',')[0].trim();
+  }
+  return (req.ip)
+    || (req.socket && req.socket.remoteAddress)
+    || (req.connection && req.connection.remoteAddress)
+    || 'unknown';
+}
+
+function recordFailedVerify(ip) {
+  const now = Date.now();
+  let data = verifyAttempts.get(ip);
+  if (!data || (now - data.firstAttempt > VERIFY_WINDOW_MS)) {
+    data = { attempts: 1, firstAttempt: now, lockedUntil: null };
+    verifyAttempts.set(ip, data);
+    return { locked: false };
+  }
+  data.attempts++;
+  if (data.attempts >= VERIFY_MAX_ATTEMPTS) {
+    data.lockedUntil = now + VERIFY_LOCKOUT_MS;
+    console.warn(`[PORTAL] Verify locked out for client ${logSafe(ip)} after ${data.attempts} failed attempts`);
+    return { locked: true };
+  }
+  return { locked: false };
+}
 
 function buildLabExplanation(lab) {
   const plainName = toPlainLanguage(lab.test_name);
@@ -56,25 +205,63 @@ function buildLabExplanation(lab) {
 
 router.post('/verify', async (req, res) => {
   try {
+    const ip = clientIpFor(req);
+
+    // sec-portal-weak-verify-05: enforce lockout BEFORE evaluating the
+    // identity, so a throttled client can't keep probing. Fail closed.
+    const existing = verifyAttempts.get(ip);
+    if (existing && existing.lockedUntil && Date.now() < existing.lockedUntil) {
+      const retryAfterSec = Math.ceil((existing.lockedUntil - Date.now()) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        error: 'Too many verification attempts. Please try again later.',
+        retryAfter: retryAfterSec,
+      });
+    }
+
     const { first_name, last_name, dob, mrn } = req.body || {};
 
-    if (!first_name || !last_name || !dob) {
-      return res.status(400).json({ error: 'first_name, last_name, and dob are required' });
-    }
-    if (REQUIRE_MRN_IN_PRODUCTION && !mrn) {
-      return res.status(400).json({ error: 'mrn is required for patient portal verification in production' });
+    // A completely malformed request (no identifying fields at all) is a 400.
+    // But once ANY identity field is supplied, we do NOT field-validate which
+    // factor is missing — a missing/blank MRN is treated exactly like a wrong
+    // MRN: a generic verification failure that counts toward lockout. This
+    // prevents an attacker from probing "is name+DOB enough?" vs "is the MRN
+    // the only thing wrong?" via differing error shapes. (sec-portal-weak-verify-05)
+    if (!first_name && !last_name && !dob && !mrn) {
+      return res.status(400).json({ error: 'Verification details are required.' });
     }
 
+    // verifyPatient enforces mandatory name + DOB + MRN and applies a constant
+    // delay on every path so timing/content never reveals which factor failed.
     const patient = await verifyPatient(first_name, last_name, dob, mrn);
     if (!patient) {
+      // Record the failed attempt; lock out + 429 once the threshold is hit.
+      const result = recordFailedVerify(ip);
+      if (result.locked) {
+        const retryAfterSec = Math.ceil(VERIFY_LOCKOUT_MS / 1000);
+        res.setHeader('Retry-After', String(retryAfterSec));
+        return res.status(429).json({
+          error: 'Too many verification attempts. Please try again later.',
+          retryAfter: retryAfterSec,
+        });
+      }
       return res.status(401).json({ error: 'Could not verify your identity. Please check your information and try again.' });
     }
+
+    // Successful verify clears any accumulated failure counter for this client.
+    verifyAttempts.delete(ip);
 
     const session = await createSession(patient.id, req);
     attachSessionCookie(res, session.cookie);
 
+    // sec-portal-csrf-07: mint a CSRF token bound to this session and return it
+    // in the body. The SPA stores it in memory and echoes it via the
+    // x-portal-csrf header on every state-changing request.
+    const csrfToken = issueCsrfToken(session.token, session.expiresAt);
+
     return res.json({
       verified: true,
+      csrfToken,
       patient: {
         id: patient.id,
         mrn: patient.mrn,
@@ -98,13 +285,30 @@ router.post('/logout', async (req, res) => {
 });
 
 router.use(requirePortalSession);
+// sec-portal-csrf-07: every state-changing request past this point must carry a
+// valid per-session CSRF token. Safe (GET/HEAD/OPTIONS) requests pass through.
+router.use(requireCsrfToken);
 
 router.get('/session', async (req, res) => {
   const patient = await repository.getPatientSessionProfile(req.portalPatient.id);
+  // Reseed the client's CSRF token on session restore (page reload, new tab).
+  // Without this, a fresh browser context has no portalCsrfToken in sessionStorage
+  // and any subsequent POST (find-slots, request, refill) returns 403.
+  const sessionHash = req.portalSession.session_hash;
+  let entry = csrfTokens.get(sessionHash);
+  if (!entry || Date.now() >= entry.expiresAt) {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = req.portalSession.expires_at
+      ? new Date(req.portalSession.expires_at).getTime()
+      : Date.now() + 8 * 60 * 60 * 1000;
+    entry = { token, expiresAt };
+    csrfTokens.set(sessionHash, entry);
+  }
   return res.json({
     authenticated: true,
     patient,
     expiresAt: req.portalSession.expires_at,
+    csrfToken: entry.token,
   });
 });
 
@@ -143,21 +347,28 @@ router.post('/appointments/checkin', async (req, res) => {
 //
 // Both endpoints sit behind requirePortalSession (registered at line 99) so
 // req.portalPatient.id is always the authenticated patient — never trusted
-// from a body field. Status semantics mirror the refill flow: bookings enter
-// status='scheduled' (not auto-confirmed). Front-desk staff confirm via the
-// existing clinician schedule UI.
+// from a body field. Status semantics mirror the refill flow: a patient
+// booking enters status='requested' -- it is a REQUEST, not a booking, and is
+// not on the schedule until front-desk staff accept it from the clinician
+// schedule UI (moving it to 'scheduled', then 'confirmed', or 'declined').
 //
-// CSRF: these endpoints inherit the existing portal-wide CSRF gap
-// (HttpOnly + SameSite=Lax cookies only — no CSRF token validation). The
-// gap predates this change and is tracked separately for follow-up.
+// This previously entered as 'scheduled', which is the same state as an
+// appointment staff had actually accepted, so the portal listed it among the
+// patient's upcoming appointments. The patient was told they had an
+// appointment that nobody had agreed to.
+//
+// CSRF (sec-portal-csrf-07, resolved): these state-changing endpoints sit
+// behind requireCsrfToken (registered just after requirePortalSession), so a
+// valid per-session x-portal-csrf token is mandatory in addition to the
+// HttpOnly + SameSite=Lax session cookie.
 // ------------------------------------------------------------------
 
 function getFrontDeskAgent() {
-  // Per-request instantiation. In SCHEDULER_MODE=db all state lives in the
-  // appointments table, so no shared instance is needed. In mock mode each
-  // request gets a fresh in-memory list — acceptable for dev because mock
-  // mode is for scenario testing, not multi-user portal traffic.
-  return new FrontDeskAgent();
+  // Per-request instantiation. Always use the DB-backed scheduling repository
+  // for portal requests so that patient appointments persist and appear in the
+  // upcoming-appointments list. (B2 fix — mock mode left appointments in memory
+  // and they were invisible to getUpcomingAppointments queries.)
+  return new FrontDeskAgent({ repository: schedulingRepository });
 }
 
 router.post('/appointments/find-slots', async (req, res) => {
@@ -210,6 +421,11 @@ router.post('/appointments/request', async (req, res) => {
           appointmentType,
           reason: reason || 'Patient-requested appointment',
           chief_complaint: chief_complaint || null,
+          // A patient asking for a slot is a REQUEST, not a booking. It enters
+          // as 'requested' and stays off the schedule until staff accept it.
+          // Previously this persisted as 'scheduled', so the portal told the
+          // patient they had an appointment nobody had agreed to.
+          initialStatus: 'requested',
         },
       },
       {},
@@ -219,8 +435,25 @@ router.post('/appointments/request', async (req, res) => {
       return res.status(400).json({ error: result.message });
     }
 
+    const appointmentId = result.appointment?.persistedId ?? result.appointmentId;
+    const dateTimeStr = result.appointment?.dateTimeFormatted || result.appointment?.dateTime || 'TBD';
+
+    // Notify staff inbox so front-desk sees the request in the Portal Inbox
+    try {
+      await repository.createMessage(req.portalPatient.id, {
+        message_type: 'appointment_request',
+        subject: `Appointment Request — ${appointmentType}`,
+        content: `Patient ${req.portalPatient.first_name} ${req.portalPatient.last_name} requested a ${appointmentType} appointment for ${dateTimeStr}.${reason ? ' Reason: ' + reason : ''}`,
+        status: 'pending',
+        tier: 2,
+      });
+    } catch (msgErr) {
+      // Non-fatal: appointment is booked; log and continue
+      console.error('[portal] Failed to create staff inbox message for appointment request:', msgErr.message);
+    }
+
     return res.status(201).json({
-      appointment_id: result.appointment?.persistedId ?? result.appointmentId,
+      appointment_id: appointmentId,
       status: 'scheduled',
       dateTime: result.appointment?.dateTime,
       dateTimeFormatted: result.appointment?.dateTimeFormatted,
@@ -271,7 +504,7 @@ router.post('/message', async (req, res) => {
       message_type: 'general',
       subject: subject || 'Message from Patient Portal',
       content: message,
-      status: 'submitted',
+      status: 'physician_review',
       tier: 2,
       sent_at: new Date().toISOString(),
     });

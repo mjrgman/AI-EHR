@@ -1,32 +1,40 @@
 # Agentic EHR: Production Prototype Roadmap
 
-**From 9-Module Demo to FHIR-Compliant, AI-Native Clinical System**
+**From 14-Module Runtime to FHIR-Compliant, AI-Native Clinical System**
 
-Dr. Michael Renner | ImpactMed Consulting, LLC | April 2, 2026
-Repository: github.com/mjrgman/AI-EHR | Branch: main (f66be4a)
+Dr. Michael Renner | ImpactMed Consulting, LLC
+**Original:** April 2, 2026 (commit f66be4a) | **Last refreshed:** June 30, 2026
+Repository: github.com/mjrgman/AI-EHR | Branch: main
+
+> **Refresh note (2026-06-30):** {"module_count":14,"runtime_registered_encounter_agents":10,"test_surface":308,"postgres_js_shim":"present","sprints":{"1":"completed","2":"completed","3":"planned","4":"planned","5":"planned","6":"planned","7":"planned"}}
 
 ---
 
 ## Executive Summary
 
-This roadmap converts the Agentic EHR from a working 9-module clinical demo into a production-grade prototype capable of FHIR interoperability, HIPAA-compliant AI layering, and integration with existing health systems. Five gaps separate the current state from a production prototype.
+This roadmap converts the Agentic EHR from a 14-module clinical workflow catalog (11 encounter + 3 patient-data governance) into a production-grade prototype capable of FHIR interoperability, HIPAA-compliant AI layering, and integration with existing health systems. Of those 14 cataloged modules, 10 are registered and run in the orchestrator runtime today; the remaining 4 (AWV, PatientLink, Patient App, MediVault) are built but not yet wired into the orchestrator. Five gaps separate the current state from a production prototype. The system is not starting from zero — it already has a multi-agent orchestrator, CDS engine, HIPAA middleware, billing/scheduling modules, and Docker deployment.
 
 ## Current State
 
 The system is **not** a demo. It already has:
 
-- **9-agent orchestrator** with dependency-aware parallel execution, message bus, agent memory
+- **Multi-agent orchestrator** (10 registered agents — Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic, Orders, Coding, Quality — with dependency-aware parallel execution, message bus, agent memory). The 14-module catalog is a superset: AWV, PatientLink, Patient App, and MediVault are built but not registered in the orchestrator (standalone/route-driven/governance). See [`MODULE_CATALOG.md`](./MODULE_CATALOG.md) and [`server/agents/module-registry.js`](./server/agents/module-registry.js)
 - **CDS engine** with rule-based evaluation, HEART score protocol, antibiotic stewardship, drug interaction checks
-- **HIPAA middleware** with AES-256-GCM field-level encryption, RBAC, session tracking, audit logging, rate limiting
-- **Claude API integration** with pattern-matching offline fallback
+- **HIPAA middleware** with AES-256-GCM field-level encryption (PBKDF2 100k iterations, per-record IV+salt), RBAC, session tracking, audit logging, rate limiting
+- **Deterministic clinical extraction** — pattern-matching only. The external-AI
+  runtime and the Anthropic SDK were removed; `AI_MODE=api` is refused at startup
 - **Billing/scheduling** modules (Phase 2 complete)
 - **Docker deployment** with multi-stage build, nginx reverse proxy, health checks
+- **Test surface (re-measured 2026-08-07, Node 22.23.2):** `npm run test:unit`
+  615 pass / 0 fail; `npm test` 287 pass / 0 fail. Lint 0 errors, 0 warnings.
+  Production build succeeds. These are executed counts, not inventory. No line
+  or branch coverage is measured — see `docs/SYNTHETIC_ONLY_BASELINE.md` §7
 
 ## Five Gaps to Production
 
 ### Gap 1: FHIR R4 Interoperability (Critical)
 
-**Current:** Research docs only. Zero FHIR resources in code. Custom SQLite schema.
+**Current:** FHIR mapping workstreams for Patient, Encounter, Observation, Condition, AllergyIntolerance, and MedicationRequest are implemented and operational in the Express facade via `server/postgres.js` shim + runtime adapters. Remaining work is Smart-on-FHIR token/authorization hardening, Medplum migration sequencing, and pgvector-backed semantic search.
 
 **Target:** FHIR R4 facade on existing Express server using @medplum/fhir-router.
 
@@ -83,15 +91,15 @@ The system is **not** a demo. It already has:
 
 ## Master Timeline
 
-| Sprint | Dates | Deliverables | Dependencies |
-|---|---|---|---|
-| 1 | Apr 7-18 | FHIR facade: Patient, Encounter, Observation, Condition | None |
-| 2 | Apr 21 - May 2 | FHIR: MedicationRequest, AllergyIntolerance, DiagnosticReport. PostgreSQL migration. | Sprint 1 |
-| 3 | May 5-16 | FHIR: ServiceRequest, DocumentReference, CarePlan. pgvector + RAG pipeline. Agent memory upgrade. | Sprint 2 |
-| 4 | May 19-30 | Deepgram voice pipeline. Speaker diarization. Scribe agent integration. | Sprint 1 |
-| 5 | Jun 1-12 | AssemblyAI batch pipeline. Medplum Docker deployment. SMART-on-FHIR auth. | Sprint 2-3 |
-| 6 | Jun 15-26 | Medplum CDR migration. Bot-based agent triggers. React component integration. | Sprint 5 |
-| 7 | Jun 29 - Jul 10 | FHIR capability statement. Pen testing. BAA documentation. Synthea test patients. | All |
+| Sprint | Dates | Deliverables | Dependencies | Status |
+|---|---|---|---|---|
+| 1 | Apr 7-18 | FHIR facade: Patient, Encounter, Observation, Condition | None | Completed |
+| 2 | Apr 21 - May 2 | FHIR: MedicationRequest, AllergyIntolerance, DiagnosticReport. PostgreSQL migration. | Sprint 1 | Completed |
+| 3 | May 5-16 | FHIR: ServiceRequest, DocumentReference, CarePlan. pgvector + RAG pipeline. Agent memory upgrade. | Sprint 2 | Planned |
+| 4 | May 19-30 | Deepgram voice pipeline. Speaker diarization. Scribe agent integration. | Sprint 1 | Planned |
+| 5 | Jun 1-12 | AssemblyAI batch pipeline. Medplum Docker deployment. SMART-on-FHIR auth. | Sprint 2-3 | Planned |
+| 6 | Jun 15-26 | Medplum CDR migration. Bot-based agent triggers. React component integration. | Sprint 5 | Planned |
+| 7 | Jun 29 - Jul 10 | FHIR capability statement. Pen testing. BAA documentation. Synthea test patients. | All | Planned |
 
 ## Production Tech Stack
 
@@ -123,3 +131,4 @@ The system is **not** a demo. It already has:
 ---
 
 *Sprint 1 begins April 7, 2026. First deliverable: FHIR R4 endpoints for Patient, Encounter, Observation, and Condition.*
+

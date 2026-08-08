@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { X } from 'lucide-react';
 
 export default function Modal({ isOpen, onClose, title, children, size = 'md' }) {
   const modalRef = useRef(null);
@@ -29,11 +30,28 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
 
-  // Escape key handler
+  // Escape to close + focus trap (Tab/Shift+Tab cycle within the dialog so
+  // keyboard focus never escapes to the inert background — WCAG 2.1.2/2.4.3).
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') { onClose(); return; }
+      if (e.key !== 'Tab' || !modalRef.current) return;
+      const focusable = Array.from(
+        modalRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => !el.disabled && el.offsetParent !== null);
+      if (focusable.length === 0) { e.preventDefault(); return; }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
@@ -53,19 +71,20 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute inset-0 bg-navy-900/45 backdrop-blur-[1px]" onClick={onClose} />
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`relative bg-white rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}
+        style={{ boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 12px rgba(26,58,82,0.07), 0 24px 64px rgba(26,58,82,0.22)' }}
+        className={`relative bg-offWhite-100 rounded-2xl shadow-mc-xl w-full ${sizes[size]} max-h-[90vh] flex flex-col`}
       >
         {title && (
-          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h2 id={titleId} className="text-lg font-semibold">{title}</h2>
-            <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600">
-              &#x2715;
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 id={titleId} className="font-display text-lg font-semibold text-navy-700">{title}</h2>
+            <button onClick={onClose} aria-label="Close modal" className="p-2 hover:bg-ivory-200 rounded-lg text-slate-500 hover:text-slate-700 transition-colors">
+              <X size={18} strokeWidth={2.25} aria-hidden="true" />
             </button>
           </div>
         )}
