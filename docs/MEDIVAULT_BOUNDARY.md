@@ -81,11 +81,11 @@ Two logs, two auditors. Non-negotiable. **Removing either layer breaks a separat
 
 ### Failure mode
 
-The route handler treats the Layer 1 write as best-effort: if the `vault_access_log` insert fails, the response still returns the bundle with `console.warn` output for ops triage. The trade-off is deliberate — patient access to their own data wins over a perfect audit trail.
+Layer 1 behaves differently by environment. If the `vault_access_log` insert fails, development mode still returns the bundle with `console.error` output for ops triage — the trade-off being that local work on synthetic fixtures should not be blocked by an audit table. In `NODE_ENV=production` the export **fails closed with a 503** rather than delivering unaudited PHI (`server/routes/medivault-routes.js:151-156`).
 
-**Layer 2 is also best-effort, despite what this section previously claimed.** It said "Layer 2 is strict: if the global HIPAA middleware can't write its row, the request fails before it reaches the handler." That is not what the code does. `auditMiddleware` registers its work inside `res.on('finish')` and runs it as fire-and-forget precisely so it can never block a response (`server/audit-logger.js:420-423`). The row is written *after* the bundle has already been delivered, and a failure there is unobservable to the caller.
+**Layer 2 remains best-effort in every mode, despite what this section previously claimed.** It said "Layer 2 is strict: if the global HIPAA middleware can't write its row, the request fails before it reaches the handler." That is not what the code does. `auditMiddleware` registers its work inside `res.on('finish')` and runs it as fire-and-forget precisely so it can never block a response (`server/audit-logger.js:420-423`). The row is written *after* the bundle has already been delivered, and a failure there is unobservable to the caller.
 
-The practical consequence: **an export can succeed with neither audit row written.** Both layers can be lost. Nothing in the current code makes an audit write a precondition for PHI disclosure. Closing that is tracked in [`SYNTHETIC_ONLY_BASELINE.md`](SYNTHETIC_ONLY_BASELINE.md) as a commercial-readiness item; it is not closed today.
+The practical consequence: in development, an export can succeed with neither audit row written. In production, the vault-side Layer 1 write is now a precondition for the MediVault export, while the central Layer 2 write is still fire-and-forget and can be lost silently. Making Layer 2 durable is tracked in [`SYNTHETIC_ONLY_BASELINE.md`](SYNTHETIC_ONLY_BASELINE.md) as a commercial-readiness item; it is not closed today.
 
 ## 4. EHR-of-record vs vault-of-record line
 
