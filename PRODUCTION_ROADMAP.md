@@ -21,10 +21,14 @@ The system is **not** a demo. It already has:
 - **Multi-agent orchestrator** (10 registered agents — Phone Triage, Front Desk, MA, Physician, Scribe, CDS, Domain Logic, Orders, Coding, Quality — with dependency-aware parallel execution, message bus, agent memory). The 14-module catalog is a superset: AWV, PatientLink, Patient App, and MediVault are built but not registered in the orchestrator (standalone/route-driven/governance). See [`MODULE_CATALOG.md`](./MODULE_CATALOG.md) and [`server/agents/module-registry.js`](./server/agents/module-registry.js)
 - **CDS engine** with rule-based evaluation, HEART score protocol, antibiotic stewardship, drug interaction checks
 - **HIPAA middleware** with AES-256-GCM field-level encryption (PBKDF2 100k iterations, per-record IV+salt), RBAC, session tracking, audit logging, rate limiting
-- **Claude API integration** with pattern-matching offline fallback
+- **Deterministic clinical extraction** — pattern-matching only. The external-AI
+  runtime and the Anthropic SDK were removed; `AI_MODE=api` is refused at startup
 - **Billing/scheduling** modules (Phase 2 complete)
 - **Docker deployment** with multi-stage build, nginx reverse proxy, health checks
-- **Test surface:** 308+ tests across scenarios + HTTP boundary + RBAC + auth + portal, 100% pass (verified 2026-06-30)
+- **Test surface (re-measured 2026-08-07, Node 22.23.2):** `npm run test:unit`
+  615 pass / 0 fail; `npm test` 287 pass / 0 fail. Lint 0 errors, 0 warnings.
+  Production build succeeds. These are executed counts, not inventory. No line
+  or branch coverage is measured — see `docs/SYNTHETIC_ONLY_BASELINE.md` §7
 
 ## Five Gaps to Production
 

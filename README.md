@@ -19,15 +19,15 @@ Built by Dr. Michael Renner / [ImpactMed Consulting, LLC](https://impactmedconsu
 - **SOAP note generation** — professional documentation from conversational input
 - **Clinical Decision Support (CDS)** — evidence-based alerts, drug interaction checks, care gap detection
 - **HRT / Peptide / Functional Medicine support** — specialty-medicine `DomainLogicAgent` with Tier 3 dosing-approval gate, hormone/peptide keyword routing, and a dedicated Encounter tab (see [HRT & Peptide Support](#hrt--peptide-support))
-- **LabCorp integration** — pluggable client with OAuth2 + PDF/XML result parsing and mock mode for offline tests (see [LabCorp Integration](#labcorp-integration))
+- **LabCorp integration (mock only)** — result-parsing client for PDF/XML fixtures on disk. Live submission is blocked: `LABCORP_MODE=api` is refused at startup and a non-mock client cannot be constructed. The OAuth2 scaffold is present but unreachable (see [LabCorp Integration](#labcorp-integration))
 - **MediVault patient-owned export** — one-click FHIR R4 Bundle download of the patient's full record via `GET /api/medivault/export/:patientId`
 - **Multi-agent architecture** — a **14-module catalog** in two layers: (1) **11 encounter modules** (phone triage, front desk, MA, physician, scribe, CDS, domain logic, orders, coding, quality, annual wellness visit) and (2) **3 patient-data governance modules** (PatientLink, Patient App, MediVault). The orchestrator currently **registers 10 of these as runtime agents** (phone triage, front desk, MA, physician, scribe, CDS, domain logic, orders, coding, quality), coordinated via message bus. Annual Wellness Visit, PatientLink, Patient App, and MediVault's agent pipeline are built but not yet wired into the orchestrator (MediVault surfaces only FHIR export today). Canonical roster: `server/agents/module-registry.js`; wiring status: `MODULE_CATALOG.md`
 - **Provider learning** — adapts to individual physician documentation style and preferences
 - **Prescription and lab ordering** — structured orders from natural language
-- **Full audit trail** — HIPAA-compliant access logging on all PHI endpoints
-- **PHI encryption** — AES-256-GCM field-level encryption with key rotation support
+- **Access logging** — session, user, timestamp, route and status recorded for `/api/` and `/fhir/R4/` requests, with PHI-bearing routes classified in `PHI_ROUTES`. Two known limits: routes absent from that table are still logged but as `resource_type='unknown'` with no patient ID, and every write is fire-and-forget on the response `finish` event, so a failed write cannot block or fail the request. This is an access log with known gaps, not a certified HIPAA audit trail — see [`docs/SYNTHETIC_ONLY_BASELINE.md`](docs/SYNTHETIC_ONLY_BASELINE.md)
+- **PHI encryption** — AES-256-GCM field-level encryption with per-record salts and key rotation support
 - **Role-based access control** — granular RBAC with scope validation
-- **Offline-first** — works without internet using pattern-matching fallback (Claude API optional)
+- **Offline by construction** — no external AI runtime exists. Extraction and note generation are deterministic pattern matching; there is no code path from this process to a third-party inference endpoint, and `AI_MODE=api` is refused at startup
 - **Docker-ready** — multi-stage build, non-root user, health checks, nginx reverse proxy
 
 ## Clinical Modules
@@ -72,11 +72,11 @@ agentic-ehr/
 │   ├── server.js                # Express API server
 │   ├── database.js              # SQLite schema, migrations, queries
 │   ├── database-migrations.js   # Schema versioning
-│   ├── ai-client.js             # Claude API + pattern-matching fallback
+│   ├── ai-client.js             # Deterministic pattern-matching extraction
 │   ├── cds-engine.js            # Clinical decision support rules
 │   ├── workflow-engine.js       # Encounter state machine
 │   ├── provider-learning.js     # Physician preference tracking
-│   ├── audit-logger.js          # HIPAA audit middleware
+│   ├── audit-logger.js          # Access-log middleware (see SYNTHETIC_ONLY_BASELINE)
 │   ├── agents/
 │   │   ├── base-agent.js            # Agent framework + requestDosingApproval()
 │   │   ├── physician-agent.js       # Physician documentation agent
@@ -150,14 +150,15 @@ agentic-ehr/
 └── package.json
 ```
 
-**Stack:** Node.js + Express | React 18 + Vite | SQLite3 | Tailwind CSS | Anthropic Claude API (optional)
+**Stack:** Node.js 22/24 + Express | React 18 + Vite | SQLite3 | Tailwind CSS | no external AI runtime
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+ (recommended: 22 LTS)
-- npm 9+
+- Node.js 22 LTS or 24 LTS (`engines`: `>=22.0.0 <25`; see `.nvmrc`). Node 18
+  and 20 are past end-of-life and are no longer supported or tested.
+- npm 10+. This project uses npm only — there is no pnpm or yarn lockfile.
 
 ### Setup
 
@@ -169,19 +170,22 @@ cd AI-EHR
 # Install dependencies
 npm install
 
-# Create environment file (optional — runs in mock AI mode without it)
+# Create environment file (optional — the defaults are already correct)
 @"
 PORT=3000
 AI_MODE=mock
-# AI_MODE=api
-# ANTHROPIC_API_KEY=sk-ant-...
 "@ | Set-Content -Path .env
 
 # Start development server (frontend + backend)
 npm run dev
 ```
 
-If you skip `.env`, the app still runs in mock AI mode with default settings.
+If you skip `.env`, the app still runs with the same defaults.
+
+> `AI_MODE=mock` is the only accepted value, and it is the default. This build
+> has no external-AI runtime — setting anything else makes the server refuse to
+> start rather than silently fall back. The same applies to `LABCORP_MODE`.
+> See [`docs/SYNTHETIC_ONLY_BASELINE.md`](docs/SYNTHETIC_ONLY_BASELINE.md).
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
@@ -227,14 +231,12 @@ For support and public contribution policy, see [SUPPORT.md](./SUPPORT.md), [SEC
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `PORT` | No | `3000` | Server port |
-| `AI_MODE` | No | `mock` | `mock` for pattern-matching, `api` for Claude |
-| `ANTHROPIC_API_KEY` | Only if `AI_MODE=api` | — | Claude API key |
-| `LABCORP_MODE` | No | `mock` | `mock` for fixture-based tests, `api` for real sandbox/production |
-| `LABCORP_CLIENT_ID` | Only if `LABCORP_MODE=api` | — | LabCorp OAuth2 client ID |
-| `LABCORP_CLIENT_SECRET` | Only if `LABCORP_MODE=api` | — | LabCorp OAuth2 client secret |
-| `LABCORP_SANDBOX_URL` | Only if `LABCORP_MODE=api` | — | LabCorp sandbox base URL |
-| `LABCORP_PROD_URL` | Only if `LABCORP_MODE=api` | — | LabCorp production base URL |
-| `LABCORP_REDIRECT_URI` | Only if `LABCORP_MODE=api` | — | OAuth2 callback URL |
+| `AI_MODE` | No | `mock` | **`mock` is the only accepted value.** Any other value makes the server refuse to start — there is no external-AI runtime |
+| `LABCORP_MODE` | No | `mock` | **`mock` is the only accepted value.** Same refusal; results come from fixtures on disk |
+| `LABCORP_CLIENT_ID` | No | — | Read by the status endpoint for a "is this set" display. Cannot enable anything |
+| `LABCORP_CLIENT_SECRET` | No | — | As above |
+| `LABCORP_SANDBOX_URL` | No | — | As above |
+| `LABCORP_REDIRECT_URI` | No | — | As above |
 | `PHI_ENCRYPTION_KEY` | Production | — | AES-256 encryption key for patient data |
 | `PHI_PEPPER` | No | Auto-derived | Salt for searchable PHI hashing |
 | `PROVIDER_NAME` | No | `Dr. Provider` | Default provider name for orders and notes |
@@ -309,22 +311,18 @@ pipeline. It has two modes:
   `server/integrations/labcorp/mock-responses/`. Covers CBC, CMP, lipid
   panel, A1C, TSH/T3/T4, testosterone, estradiol, and IGF-1, including
   abnormal-flag cases. All tests run offline in this mode.
-- **`LABCORP_MODE=api`** — hits the real LabCorp sandbox or production
-  API. Requires OAuth2 credentials (see env vars above) from the
-  LabCorp developer portal.
+- **`LABCORP_MODE=api`** — **blocked.** The client refuses to load in any
+  non-mock mode, and refuses to construct one regardless of environment.
+  The OAuth2 scaffold and `scripts/labcorp-sandbox-smoke.js` remain in the
+  tree as unreachable code. This is deliberate: submitting orders and
+  pulling results for the demo's fictional patients against a real
+  laboratory is the exact failure this repository is built to prevent.
+  See [`docs/SYNTHETIC_ONLY_BASELINE.md`](docs/SYNTHETIC_ONLY_BASELINE.md).
 
 ### Developer setup
 
-1. **Sandbox signup**: go to the LabCorp developer portal and request
-   sandbox credentials. Record the client ID, secret, sandbox URL, and
-   required scopes.
-2. **Environment**: copy the LabCorp variables from `.env.example` into
-   your `.env.local` (never commit this file). Set `LABCORP_MODE=api`
-   only after the credentials are filled in.
-3. **Smoke test**: `node scripts/labcorp-sandbox-smoke.js` hits the
-   sandbox and reports connectivity. It is deliberately **not** part of
-   CI — it requires real credentials and you don't want those in GitHub
-   Actions secrets without a separate review.
+No setup is required or possible. Mock mode is the default and the only
+mode; all fixtures are already on disk and every test runs offline.
 4. **Optional poller**: `docker-compose.yml` ships with a commented
    `labcorp-poller` service block. Uncomment it and set the env vars to
    enable periodic `pollPendingOrders()` calls.
@@ -403,7 +401,13 @@ other EHR, or research workflow.
 - **Parameterized queries** — no raw SQL concatenation
 - **Audit logging** — all API calls logged with session, user, and timestamp
 
-> **Note:** This is a demonstration system with synthetic patient data. It is not certified for production clinical use. Always consult applicable regulations (HIPAA, HITECH, state law) before deploying any EHR system with real patient data.
+> **Note:** This is a local demonstration system running on synthetic patient
+> data. It is not HIPAA compliant, not clinically validated, not FDA cleared,
+> and holds no interoperability certification. It must not be used with real
+> patient data. Known gaps, failure modes and prohibited uses are enumerated in
+> [`docs/SYNTHETIC_ONLY_BASELINE.md`](docs/SYNTHETIC_ONLY_BASELINE.md) — read
+> that before drawing any conclusion about what the security controls here
+> actually cover.
 
 ## Demo Data
 

@@ -503,7 +503,8 @@ This is not a stateless system. Every agent has persistent memory.
 - Frontend: React + Vite + Tailwind CSS
 - Backend: Node.js / Express
 - Database: SQLite (development) → PostgreSQL (production)
-- AI: Claude API (Anthropic) for clinical reasoning, with pattern-matching fallback
+- AI: none. Clinical extraction is deterministic pattern matching; there is no
+  external inference runtime in this build (see `docs/SYNTHETIC_ONLY_BASELINE.md`)
 - Voice: Web Speech API (development) → production-grade ASR (Whisper, Deepgram, or equivalent)
 
 **Agent Framework (built):**

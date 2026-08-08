@@ -9,7 +9,55 @@ on:
 permissions:
   contents: read
 
+# Node version policy (verified against nodejs/Release schedule.json on 2026-08-07):
+#   v18  EOL 2025-04-30   -- removed, was a release gate on an unsupported runtime
+#   v20  EOL 2026-04-30   -- removed, same reason
+#   v22  Maintenance LTS until 2027-04-30  -- primary
+#   v24  Active LTS until 2028-04-30       -- forward gate
+# Both matrix entries were run locally against this commit before being made
+# gates: npm ci, unit suite, full suite, lint and build pass on 22 and 24.
+env:
+  NODE_PRIMARY: '22'
+
 jobs:
+  # ------------------------------------------------------------------
+  # Private-artifact guard. Runs first and independently of path filters:
+  # a history that carries _eval/ or _dispatch_archive/ must never reach
+  # the public remote, and that check must not be skippable.
+  # ------------------------------------------------------------------
+  private-artifact-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse _eval/ or _dispatch_archive/ anywhere in reachable history
+        run: |
+          # Scope is deliberately HEAD, not --all. The artifacts DO legitimately
+          # exist on the local-only branch local-archive/eval-docs, which is the
+          # backup of record and is never pushed. --all would fail a correctly
+          # configured clone. What must be clean is the history this ref would
+          # publish, which is exactly what is reachable from HEAD.
+          echo "Scanning every commit reachable from HEAD..."
+          hits=$(git log HEAD --name-only --pretty=format: -- '_eval/**' '_dispatch_archive/**' | sort -u | sed '/^$/d')
+          if [ -n "$hits" ]; then
+            echo "::error::Private artifacts found in reachable git history."
+            echo "These trees hold internal security-review records and must stay"
+            echo "local/offsite only. Offending paths:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: no _eval/ or _dispatch_archive/ path in any reachable commit."
+
+      - name: Refuse them in the working tree
+        run: |
+          if git ls-files --error-unmatch '_eval' '_dispatch_archive' 2>/dev/null; then
+            echo "::error::_eval/ or _dispatch_archive/ is tracked in this commit."
+            exit 1
+          fi
+          echo "OK: neither tree is tracked."
+
   changes:
     runs-on: ubuntu-latest
     outputs:
@@ -45,10 +93,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 22
+      - name: Use Node.js ${{ env.NODE_PRIMARY }}
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_PRIMARY }}
           cache: npm
 
       - name: Install dependencies
@@ -69,8 +117,9 @@ jobs:
     needs: changes
     if: github.event_name == 'push' || needs.changes.outputs.full_suite == 'true'
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@v4
 
@@ -87,6 +136,13 @@ jobs:
         run: |
           find server -name '*.js' -exec node -c {} +
 
+      - name: Run unit suite
+        run: npm run test:unit
+        env:
+          NODE_ENV: test
+          JWT_SECRET: ci-test-secret-not-for-production
+          PHI_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
       - name: Run full test suite
         run: npm test
         env:
@@ -94,33 +150,135 @@ jobs:
           JWT_SECRET: ci-test-secret-not-for-production
           PHI_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
+  # ------------------------------------------------------------------
+  # Synthetic-only boundary. These are the guarantees that let this repo
+  # be public at all, so they get their own job rather than being buried
+  # in the suite.
+  # ------------------------------------------------------------------
+  synthetic-only-boundary:
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_PRIMARY }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: External AI and live laboratory modes must fail closed
+        run: node --test test/unit/synthetic-only-baseline.test.js
+
+      - name: No external inference SDK may be installed
+        run: |
+          for pkg in @anthropic-ai/sdk openai @google/generative-ai \
+                     @google-cloud/aiplatform @aws-sdk/client-bedrock-runtime \
+                     @azure/openai cohere-ai @mistralai/mistralai; do
+            if [ -d "node_modules/$pkg" ]; then
+              echo "::error::forbidden inference SDK installed: $pkg"
+              exit 1
+            fi
+          done
+          echo "OK: no external inference SDK in the installed tree."
+
   security-scan:
     runs-on: ubuntu-latest
     needs: changes
     if: github.event_name == 'push' || needs.changes.outputs.full_suite == 'true'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Use Node.js 22
-        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_PRIMARY }}
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
 
-      - name: Check for hardcoded secrets
-        run: |
-          ! grep -rn 'password\s*=\s*["\x27][^"\x27]*["\x27]' server/ --include='*.js' \
-            | grep -v 'password_hash' \
-            | grep -v '\.example' \
-            | grep -v 'test' \
-            | grep -v 'req\.body\.password' \
-            | grep -v 'newPassword' || echo "No hardcoded secrets found"
+      # Replaces the previous hand-rolled `grep` for password= literals, which
+      # produced no findings because its own exclusion chain swallowed them and
+      # ended in `|| echo`, so it could not fail the build.
+      - name: Secret scan (gitleaks, current tree + full history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
 
       - name: Dependency audit
+        # Threshold stays at moderate. Do not raise it to obtain a green run --
+        # the correct response to a finding is a fix or a documented, dated
+        # exception in docs/SYNTHETIC_ONLY_BASELINE.md.
         run: npm audit --audit-level=moderate
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm@latest \
+            --output-format JSON \
+            --output-file sbom.cyclonedx.json
+          echo "SBOM components: $(jq '.components | length' sbom.cyclonedx.json)"
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cyclonedx.json
+          retention-days: 90
+
+      - name: License review
+        run: |
+          npx --yes license-checker-rseidelsohn \
+            --production --summary --excludePrivatePackages > licenses.txt || true
+          cat licenses.txt
+          # Copyleft licenses would change the distribution terms of a public
+          # MIT repository. Flag, do not silently accept.
+          if grep -Eiq '(^|[^L])GPL-[23]|AGPL|SSPL' licenses.txt; then
+            echo "::warning::A strong-copyleft license appeared in the production tree. Review before publication."
+          fi
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: licenses.txt
+          retention-days: 90
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  # ------------------------------------------------------------------
+  # SAST. CodeQL covers the JS/JSX in server/ and src/.
+  # ------------------------------------------------------------------
+  codeql:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.full_suite == 'true'
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript
 
   docker-build:
     runs-on: ubuntu-latest

@@ -27,6 +27,11 @@
   ],
   "author": "MJR Health Systems",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0 <25",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@10.9.8",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

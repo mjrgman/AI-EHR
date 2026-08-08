@@ -4,7 +4,9 @@
 
 This document describes the inter-agent message bus and persistent memory system for the Agentic EHR 14-module runtime.
 
-**Status:** ✅ Production-ready (all tests pass)
+**Status:** Implemented and covered by the local test suite. "All tests pass"
+means the suite in `test/` passes on Node 22 and 24; it is not a statement
+about production readiness, load behavior, or operational maturity.
 
 **Files:**
 - `/server/agents/message-bus.js` - Event-driven message bus with SQLite persistence

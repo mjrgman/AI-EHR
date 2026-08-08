@@ -50,11 +50,28 @@ Written by `server/routes/medivault-routes.js` after the bundle assembles cleanl
 
 This row is the **vault-ownership audit**: who pulled this patient's full file, on what date. It exists so a patient or auditor can ask "who has touched my record this year" and get a complete answer for vault-side actions specifically.
 
-### Layer 2 — HIPAA-wide (`audit_log` via `PHI_ROUTES`)
+### Layer 2 — app-wide access log (`audit_log` via `PHI_ROUTES`)
 
 Written by the global HIPAA audit middleware (`server/audit-logger.js` `auditMiddleware`) on every PHI-route request. The MediVault export endpoint is registered in `PHI_ROUTES` so this middleware fires on every call, exported bundle or not.
 
-This row is the **HIPAA compliance audit**: every PHI access logged with session, user, timestamp, route, status. It exists so a HIPAA auditor can run one query against `audit_log` and see every PHI-touching call across the entire app — the MediVault export is one row in that stream, alongside every other patient-data fetch.
+This row is the **central access log**: session, user, timestamp, route and status for the request. The intent is that one query against `audit_log` shows PHI-touching calls across the app, with the MediVault export as one row in that stream.
+
+> **What this layer does not currently guarantee.** Coverage now spans both
+> `/api/` and `/fhir/R4/` (`server/audit-logger.js:390`), and the FHIR read
+> routes are classified in `PHI_ROUTES`. Two limits remain open:
+>
+> 1. **Unclassified routes carry no patient context.** A route absent from
+>    `PHI_ROUTES` is still logged, but as `resource_type='unknown'` with
+>    `phi_accessed=false` and no patient ID. Nothing fails the build when a
+>    PHI-bearing route is added without a classification, so the table drifts.
+> 2. **Writes are best-effort.** Both this layer and the vault-side log write
+>    inside `res.on('finish')` as fire-and-forget (`audit-logger.js:420-423`),
+>    so an export can succeed with neither row present.
+>
+> Earlier revisions of this document called this layer "strict" and described
+> it as a HIPAA compliance audit. Neither was accurate. Treat it as an access
+> log with known limits until the durability work in
+> [`SYNTHETIC_ONLY_BASELINE.md`](SYNTHETIC_ONLY_BASELINE.md) is done.
 
 ### Why both
 
@@ -64,7 +81,11 @@ Two logs, two auditors. Non-negotiable. **Removing either layer breaks a separat
 
 ### Failure mode
 
-The route handler treats the Layer 1 write as best-effort: if `vault_access_log` insert fails, the response still returns the bundle with `console.warn` output for ops triage. The trade-off is documented in `server/routes/medivault-routes.js:77-82` — patient access to their own data wins over a perfect audit trail. Layer 2 is strict: if the global HIPAA middleware can't write its row, the request fails before it reaches the handler.
+The route handler treats the Layer 1 write as best-effort: if the `vault_access_log` insert fails, the response still returns the bundle with `console.warn` output for ops triage. The trade-off is deliberate — patient access to their own data wins over a perfect audit trail.
+
+**Layer 2 is also best-effort, despite what this section previously claimed.** It said "Layer 2 is strict: if the global HIPAA middleware can't write its row, the request fails before it reaches the handler." That is not what the code does. `auditMiddleware` registers its work inside `res.on('finish')` and runs it as fire-and-forget precisely so it can never block a response (`server/audit-logger.js:420-423`). The row is written *after* the bundle has already been delivered, and a failure there is unobservable to the caller.
+
+The practical consequence: **an export can succeed with neither audit row written.** Both layers can be lost. Nothing in the current code makes an audit write a precondition for PHI disclosure. Closing that is tracked in [`SYNTHETIC_ONLY_BASELINE.md`](SYNTHETIC_ONLY_BASELINE.md) as a commercial-readiness item; it is not closed today.
 
 ## 4. EHR-of-record vs vault-of-record line
 

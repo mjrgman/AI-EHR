@@ -122,7 +122,7 @@ PATCH /api/encounters/:id   — transcript landed in DB
       ↓
 [Physician clicks "Extract Data"]
       ↓
-POST /api/ai/extract-data   — ai-client.js pattern matching or Claude API
+POST /api/ai/extract-data   — ai-client.js deterministic pattern matching
       ↓
 [CDS auto-triggers via message bus]
       ↓
@@ -169,24 +169,24 @@ using typed events. Key event types:
 
 ## Integrations
 
-### Claude API (optional, via `ai-client.js`)
+### Clinical extraction (`ai-client.js`) — no external AI
 
-The AI client is a lazy-singleton wrapper with a 30-second `Promise.race`
-timeout. In `AI_MODE=mock` (the default), it runs pattern-matching
-regex-based extractors. In `AI_MODE=api`, it hits the Anthropic Claude
-API using `ANTHROPIC_API_KEY`.
+`ai-client.js` runs deterministic pattern-matching extractors for vitals,
+medications, problems, orders, ROS, physical exam and SOAP notes.
 
-No PHI is ever sent to Claude without an explicit config opt-in. Mock mode
-is the default precisely so contributors can run the full test suite
-offline.
+There is **no external-AI mode**. The Anthropic SDK, the API client and the
+`_claude*` request paths were removed; `AI_MODE` accepts only `mock` and the
+module throws at `require()` time otherwise. Nothing in this process can
+reach a third-party inference endpoint, so the question of what data would
+be sent does not arise.
 
 ### LabCorp (Phases 2a-2c)
 
 The LabCorp integration (`server/integrations/labcorp/`) follows the same
-lazy-singleton pattern. In `LABCORP_MODE=mock`, it reads PDF/XML fixtures
-from `mock-responses/`. In `LABCORP_MODE=api`, it goes through OAuth2
-against the LabCorp developer portal. OAuth tokens are stored encrypted
-in the `labcorp_tokens` table. The parser output feeds into
+lazy-singleton pattern and reads PDF/XML fixtures from `mock-responses/`.
+`LABCORP_MODE=api` is refused at load time and a non-mock client cannot be
+constructed, so the OAuth2 scaffold and the `labcorp_tokens` table are
+present but unreachable. The parser output feeds into
 `LabSynthesisAgent`, which emits `LAB_SYNTHESIS_READY` for CDS and Domain
 Logic to consume.
 

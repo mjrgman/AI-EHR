@@ -815,4 +815,5 @@ const result = await physician.run(context, {});
 
 **Built by:** Claude (Anthropic)
 **Date:** March 22, 2026
-**Status:** Production-ready
+**Status:** Implemented in the local synthetic demo. Not production-ready —
+see `docs/SYNTHETIC_ONLY_BASELINE.md` for the open gaps.
