@@ -205,6 +205,10 @@ jobs:
       - name: Secret scan (gitleaks, current tree + full history)
         uses: gitleaks/gitleaks-action@v2
         env:
+          # Required for pull_request events since gitleaks-action v2 — without
+          # it the action hard-fails rather than skipping, so the secret scan
+          # would be absent exactly where it matters most.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
 
       - name: Dependency audit
