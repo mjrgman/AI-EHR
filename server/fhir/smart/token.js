@@ -7,13 +7,15 @@
  * Supported grant types:
  *   client_credentials  — system-to-system; client authenticates with
  *                         Basic auth (username:password) or JSON body.
- *   password            — resource owner password; for integration testing.
- *                         Not recommended for production SMART apps.
  *   authorization_code  — standard SMART-on-FHIR authorization code flow.
  *   refresh_token       — exchange a refresh token for new access + refresh tokens.
  *
- * Additional endpoints:
- *   POST /smart/revoke    — revoke a refresh token
+ * The resource-owner password grant was REMOVED — see REMOVED_GRANT_TYPES.
+ *
+ * Additional endpoints (all client-authenticated):
+ *   POST /smart/introspect — RFC 7662 introspection. POST only; GET is refused
+ *                            because a token in a query string is logged.
+ *   POST /smart/revoke    — revoke a refresh token, scoped to the calling client
  *   POST /smart/register  — dynamic client registration
  *
  * All grants validate credentials and issue a JWT carrying SMART scope
@@ -42,10 +44,20 @@ const BCRYPT_ROUNDS = 12;
 
 const SUPPORTED_GRANT_TYPES = [
   'client_credentials',
-  'password',
   'authorization_code',
   'refresh_token',
 ];
+
+// The resource-owner password grant was removed. It requires the client to
+// handle the user's password directly, which defeats the point of an
+// authorization flow, and OAuth 2.1 drops it. It was present "for integration
+// testing" -- a reason that does not survive the endpoint being reachable in
+// any other configuration. Named separately so the error can say what happened
+// rather than a generic "unsupported".
+const REMOVED_GRANT_TYPES = {
+  password: 'The resource-owner password grant was removed. Use authorization_code with PKCE.',
+  implicit: 'The implicit grant is not and was never supported.',
+};
 
 // ──────────────────────────────────────────
 // TABLE INITIALIZATION
@@ -296,10 +308,10 @@ async function logTokenDenied(username, reason, _ip) {
  * POST /smart/token
  *
  * Request (application/x-www-form-urlencoded or JSON):
- *   grant_type   required  'client_credentials' | 'password' | 'authorization_code' | 'refresh_token'
+ *   grant_type   required  'client_credentials' | 'authorization_code' | 'refresh_token'
  *   scope        optional  space-separated SMART scopes
- *   username     required for password/client_credentials grants (or via Basic auth)
- *   password     required for password/client_credentials grants (or via Basic auth)
+ *   username     required for the client_credentials grant (or via Basic auth)
+ *   password     required for the client_credentials grant (or via Basic auth)
  *   code         required for authorization_code grant
  *   redirect_uri required for authorization_code grant
  *   client_id    required for authorization_code grant
@@ -313,6 +325,14 @@ async function tokenHandler(req, res) {
   const body = req.body || {};
   const grantType = body.grant_type;
   const ip = req.ip;
+
+  if (REMOVED_GRANT_TYPES[grantType]) {
+    await logTokenDenied(body.client_id || body.username || 'unknown', `removed grant type: ${grantType}`, ip);
+    return res.status(400).json({
+      error: 'unsupported_grant_type',
+      error_description: REMOVED_GRANT_TYPES[grantType],
+    });
+  }
 
   if (!SUPPORTED_GRANT_TYPES.includes(grantType)) {
     return res.status(400).json({
@@ -331,7 +351,8 @@ async function tokenHandler(req, res) {
     return handleRefreshTokenGrant(req, res, body, ip);
   }
 
-  // ── client_credentials / password grants (existing logic) ──
+  // ── client_credentials grant ───────────────
+  // Only client_credentials reaches here now that the password grant is gone.
   let username, password;
 
   // Prefer Basic auth header; fall back to body fields
@@ -638,20 +659,76 @@ async function handleRefreshTokenGrant(req, res, body, ip) {
 }
 
 /**
- * GET /smart/introspect (stub — returns token metadata)
- * POST /smart/introspect
+ * Authenticate the calling client for a protected endpoint (RFC 7662 §2.1,
+ * RFC 7009 §2.1). Credentials come from Basic auth or the request body.
+ *
+ * Returns the client on success, or sends the error response and returns null.
+ */
+async function requireClientAuth(req, res) {
+  await smartTablesReady;
+  const body = req.body || {};
+
+  let clientId = body.client_id;
+  let clientSecret = body.client_secret;
+  const basic = parseBasicAuth(req.headers['authorization']);
+  if (basic) {
+    clientId = basic.username;
+    clientSecret = basic.password;
+  }
+
+  if (!clientId || !clientSecret) {
+    res.set('WWW-Authenticate', 'Basic realm="smart"');
+    res.status(401).json({
+      error: 'invalid_client',
+      error_description: 'Client authentication is required.',
+    });
+    return null;
+  }
+
+  try {
+    return await authenticateClient(clientId, clientSecret);
+  } catch (err) {
+    res.status(401).json({
+      error: 'invalid_client',
+      error_description: 'Client authentication failed.',
+    });
+    return null;
+  }
+}
+
+/**
+ * POST /smart/introspect — RFC 7662 token introspection.
+ *
+ * Client-authenticated. It was previously open to anyone, over both GET and
+ * POST, which made it an oracle: send a captured token, learn its subject,
+ * role, scopes and launch patient. GET was worse still, because a token in a
+ * query string lands in access logs, proxy logs and browser history. GET is
+ * now refused outright rather than merely discouraged.
  */
 async function introspectHandler(req, res) {
+  if (req.method === 'GET') {
+    return res.status(405).set('Allow', 'POST').json({
+      error: 'invalid_request',
+      error_description: 'Use POST. A token in a query string is recorded in server and proxy logs.',
+    });
+  }
+
+  const client = await requireClientAuth(req, res);
+  if (!client) return undefined;
+
   const body = req.body || {};
-  const token = body.token || req.query.token;
+  const token = body.token;
   if (!token) {
     return res.status(400).json({ error: 'invalid_request', error_description: 'token required' });
   }
+
   const decoded = auth.verifyToken(token);
   if (!decoded) {
+    // RFC 7662: an inactive token is a 200 with active:false, not an error.
     return res.json({ active: false });
   }
-  res.json({
+
+  return res.json({
     active: true,
     sub: decoded.sub,
     username: decoded.username,
@@ -922,6 +999,13 @@ async function launchHandler(req, res) {
  * not found or already revoked (to prevent token-existence oracle attacks).
  */
 async function revokeHandler(req, res) {
+  // Client-authenticated (RFC 7009 §2.1). Without this, anyone who observed a
+  // refresh token could revoke it -- a denial-of-service against a legitimate
+  // client. The RFC's "always return 200" rule prevents a token-existence
+  // oracle; it is not a licence to skip authenticating the caller.
+  const client = await requireClientAuth(req, res);
+  if (!client) return undefined;
+
   const body = req.body || {};
   const token = body.token;
 
@@ -933,9 +1017,11 @@ async function revokeHandler(req, res) {
   }
 
   try {
+    // Scope the revocation to the authenticated client so one client cannot
+    // revoke another's tokens.
     await db.dbRun(
-      'UPDATE smart_refresh_tokens SET revoked = 1 WHERE token = ?',
-      [token]
+      'UPDATE smart_refresh_tokens SET revoked = 1 WHERE token = ? AND client_id = ?',
+      [token, client.client_id]
     );
   } catch (_) { /* swallow — return 200 regardless */ }
 

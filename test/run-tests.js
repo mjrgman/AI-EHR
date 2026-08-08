@@ -1858,10 +1858,16 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(body.error, 'invalid_client');
   });
 
-  await test('SMART: introspect returns active:false for invalid token', async () => {
+  await test('SMART: introspect refuses an unauthenticated caller', async () => {
+    // This test previously asserted that an anonymous POST got a 200 with
+    // active:false. That was the defect, not the contract: introspection is
+    // client-authenticated per RFC 7662 §2.1, and answering an unauthenticated
+    // caller at all turns the endpoint into a token oracle. The active:false
+    // response is still correct -- but only AFTER the client authenticates.
     const { status, body } = await smartPost('/smart/introspect', { token: 'not.a.real.token' });
-    assertEqual(status, 200);
-    assertEqual(body.active, false);
+    assertEqual(status, 401);
+    assertEqual(body.error, 'invalid_client');
+    assert(body.active === undefined, 'must not disclose token state to an unauthenticated caller');
   });
 
   // ── CapabilityStatement SMART security extension ──
