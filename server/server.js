@@ -17,6 +17,7 @@ const logger = require('./utils/logger');
 const { validate, schemas } = require('./utils/validate');
 const auth = require('./security/auth');
 const rbac = require('./security/rbac');
+const { throttle } = require('./security/endpoint-throttle');
 const refreshTokens = require('./security/refresh-tokens');
 const { runMigrations } = require('./database-migrations');
 const triage = require('./triage-service');
@@ -224,13 +225,23 @@ app.get('/.well-known/jwks.json', (req, res) => {
 // SMART-on-FHIR ENDPOINTS
 // ==========================================
 
-app.post('/smart/token', tokenHandler);
-app.get('/smart/introspect', introspectHandler);
-app.post('/smart/introspect', introspectHandler);
-app.get('/smart/authorize', authorizeHandler);
-app.get('/smart/launch', auth.requireAuth, launchHandler);
-app.post('/smart/revoke', revokeHandler);
-app.post('/smart/register', registerClientHandler);
+// These run BEFORE any user identity exists, so the user-keyed limiter in
+// hipaa-middleware.js cannot cover them. Each checks a secret, and the token
+// and registration paths do bcrypt work, so they are both a guessing surface
+// and a cheap way to burn CPU. Throttled per client IP -- a weak key, but the
+// only one available pre-auth. See server/security/endpoint-throttle.js.
+const smartTokenThrottle = throttle({ name: 'smart-token', max: 20, windowMs: 60 * 1000 });
+const smartIntrospectThrottle = throttle({ name: 'smart-introspect', max: 60, windowMs: 60 * 1000 });
+const smartAuthorizeThrottle = throttle({ name: 'smart-authorize', max: 30, windowMs: 60 * 1000 });
+const smartRegisterThrottle = throttle({ name: 'smart-register', max: 5, windowMs: 60 * 60 * 1000 });
+
+app.post('/smart/token', smartTokenThrottle, tokenHandler);
+app.get('/smart/introspect', smartIntrospectThrottle, introspectHandler);
+app.post('/smart/introspect', smartIntrospectThrottle, introspectHandler);
+app.get('/smart/authorize', smartAuthorizeThrottle, authorizeHandler);
+app.get('/smart/launch', smartAuthorizeThrottle, auth.requireAuth, launchHandler);
+app.post('/smart/revoke', smartTokenThrottle, revokeHandler);
+app.post('/smart/register', smartRegisterThrottle, registerClientHandler);
 
 // ==========================================
 // FHIR R4 TRANSLATION LAYER
