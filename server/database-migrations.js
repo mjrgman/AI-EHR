@@ -48,6 +48,7 @@ async function runMigrations(db) {
     await createLabCorpTokensTable(db);
     await addLabCorpColumns(db);
     await createDecisionQueueTable(db);
+    await addDurableAuditColumns(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -1019,6 +1020,42 @@ async function addLabCorpColumns(db) {
   }
 }
 
+/**
+ * Add durable-audit columns to audit_log.
+ *
+ * `receipt_id` is the caller-visible correlation id returned as the
+ * X-Audit-Receipt header, so a caller can quote it when asking whether an
+ * access was recorded. `outcome_recorded` distinguishes an audit intent
+ * written BEFORE a high-consequence operation from one whose outcome was
+ * recorded after: a row left at 0 means a response completed without its audit
+ * row being closed out, which is queryable via findOrphanedAuditIntents.
+ *
+ * Existing rows default to outcome_recorded = 1 -- they were written after the
+ * fact under the old fire-and-forget path, so their outcome is by definition
+ * already in the row. Backfilling them as 0 would invent a fleet of orphans.
+ */
+async function addDurableAuditColumns(db) {
+  const columns = [
+    { name: 'receipt_id', type: 'TEXT' },
+    { name: 'outcome_recorded', type: 'INTEGER DEFAULT 1' },
+  ];
+  try {
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(audit_log)');
+    if (!cols.length) return; // table not created yet
+    for (const col of columns) {
+      if (!cols.some(c => c.name === col.name)) {
+        await dbRun(db, `ALTER TABLE audit_log ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`[MIGRATIONS] Added ${col.name} column to audit_log`);
+      }
+    }
+    // Partial-index equivalent: orphan lookups filter on outcome_recorded.
+    await dbRun(db, 'CREATE INDEX IF NOT EXISTS idx_audit_log_outcome ON audit_log(outcome_recorded)');
+    await dbRun(db, 'CREATE INDEX IF NOT EXISTS idx_audit_log_receipt ON audit_log(receipt_id)');
+  } catch (err) {
+    console.warn(`[MIGRATIONS] audit_log durable-audit column migration: ${err.message}`);
+  }
+}
+
 // ==========================================
 // DECISION QUEUE TABLE (Provider Decision Queue + AI Triage)
 // ==========================================
@@ -1078,6 +1115,7 @@ async function createDecisionQueueTable(db) {
 
 module.exports = {
   runMigrations,
+  addDurableAuditColumns,
   createDecisionQueueTable,
   createUsersTable,
   createPatientConsentTable,

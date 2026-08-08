@@ -382,7 +382,13 @@ function initializeDatabase() {
         user_agent TEXT,
         timestamp DATETIME DEFAULT (datetime('now')),
         duration_ms INTEGER,
-        error_message TEXT
+        error_message TEXT,
+        -- Durable-audit support. receipt_id is the caller-visible correlation
+        -- id returned as X-Audit-Receipt; outcome_recorded=0 marks an intent
+        -- written before the operation whose result was never recorded, which
+        -- is a detectable gap rather than a silent absence.
+        receipt_id TEXT,
+        outcome_recorded INTEGER DEFAULT 1
       )`);
 
       db.run(`CREATE TABLE IF NOT EXISTS audit_sessions (

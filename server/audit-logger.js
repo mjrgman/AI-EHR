@@ -287,6 +287,24 @@ const PHI_ROUTES = {
  * why. If you are unsure, classify it in PHI_ROUTES instead: over-auditing is
  * recoverable, under-auditing is not.
  */
+/**
+ * Actions whose audit record must be durable BEFORE the operation completes.
+ *
+ * The ordinary path writes after the response, fire-and-forget. That is a fine
+ * trade for a routine read: losing one row costs detail. It is the wrong trade
+ * when the operation hands over a whole record, changes a prescription, or
+ * signs a note -- there, an unrecorded event is the thing accountability is
+ * supposed to prevent.
+ *
+ * Keyed on `action` rather than route so a new export or signing route inherits
+ * the behavior without anyone remembering to opt in.
+ *
+ * Deliberately NOT here: plain READ. Making every read block on a synchronous
+ * audit write would trade a silent gap for an availability failure across the
+ * whole API, which is a worse bargain than the one being fixed.
+ */
+const DURABLE_AUDIT_ACTIONS = new Set(['EXPORT', 'SIGN', 'PRESCRIBE']);
+
 const NON_PHI_ROUTES = {
   // Authentication -- credentials and tokens, never clinical content.
   'POST /api/auth/login':      'credential exchange; no patient data in request or response',
@@ -475,16 +493,106 @@ async function insertAuditLog(data) {
       session_id, user_identity, user_role, action, resource_type, resource_id,
       description, request_method, request_path, request_body_summary, response_status,
       phi_accessed, phi_fields_accessed, patient_id,
-      ip_address, user_agent, duration_ms, error_message
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ip_address, user_agent, duration_ms, error_message,
+      receipt_id, outcome_recorded
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `, [
     data.session_id, data.user_identity, data.user_role, data.action,
     data.resource_type, data.resource_id, data.description,
     data.request_method, data.request_path, data.request_body_summary,
     data.response_status, data.phi_accessed ? 1 : 0, data.phi_fields_accessed,
     data.patient_id, data.ip_address, data.user_agent, data.duration_ms,
-    data.error_message
+    data.error_message,
+    data.receipt_id || null,
+    data.outcome_recorded === undefined ? 1 : (data.outcome_recorded ? 1 : 0)
   ]);
+}
+
+/**
+ * Write the audit INTENT for a high-consequence route, before the handler runs.
+ *
+ * The ordinary audit path writes inside `res.on('finish')` as fire-and-forget,
+ * so the row lands after the response and a failure is invisible to everyone:
+ * the caller already has the data and nothing records that the disclosure
+ * happened. For an operation like exporting a patient's whole record, that is
+ * the wrong trade.
+ *
+ * This writes first. If it fails, the caller is refused and no PHI leaves the
+ * process. The row is marked `outcome_recorded = 0` until the response
+ * completes, so a row that never gets its outcome is a *detectable* gap rather
+ * than an absence -- see `findOrphanedAuditIntents`.
+ *
+ * Returns the receipt id, or throws so the caller can fail closed.
+ */
+async function writeAuditIntent({ req, sessionId, config, requestPath, maxBodySummaryLength }) {
+  const receiptId = crypto.randomUUID();
+  const { userIdentity, userRole } = resolveAuditIdentity(req);
+
+  let patientId = null;
+  if (config.extractPatientId) {
+    patientId = parseInt(config.extractPatientId(req), 10) || null;
+  }
+
+  const result = await insertAuditLog({
+    session_id: sessionId,
+    user_identity: userIdentity,
+    user_role: userRole,
+    action: config.action || methodToAction(req.method),
+    resource_type: config.resource_type,
+    resource_id: extractResourceId(req),
+    description: buildDescription(config, req),
+    request_method: req.method,
+    request_path: requestPath,
+    request_body_summary: scrubAndTruncateBody(req.body, maxBodySummaryLength),
+    response_status: null,          // not known yet -- that is the point
+    phi_accessed: config.phi,
+    phi_fields_accessed: config.phi && config.phiFields ? JSON.stringify(config.phiFields) : null,
+    patient_id: patientId,
+    ip_address: req.ip,
+    user_agent: truncate(req.headers['user-agent'], 200),
+    duration_ms: null,
+    error_message: null,
+    receipt_id: receiptId,
+    outcome_recorded: 0,
+  });
+
+  return { receiptId, rowId: result?.lastID ?? null };
+}
+
+/**
+ * Record the outcome against an intent row written by writeAuditIntent.
+ * Best-effort by design: the disclosure is already durably recorded, so a
+ * failure here degrades detail, not accountability. An un-updated row stays
+ * queryable as an orphan.
+ */
+async function recordAuditOutcome(receiptId, { status, durationMs, errorMessage }) {
+  return db.dbRun(
+    `UPDATE audit_log
+        SET response_status = ?, duration_ms = ?, error_message = ?, outcome_recorded = 1
+      WHERE receipt_id = ?`,
+    [status, durationMs, errorMessage, receiptId]
+  );
+}
+
+/**
+ * Audit intents whose outcome was never recorded.
+ *
+ * A non-empty result means responses completed without their audit row being
+ * closed out -- a process crash mid-request, or a database problem. This is the
+ * operational surface for "audit degraded"; it is the reason intents are worth
+ * writing rather than simply making the existing write synchronous.
+ */
+async function findOrphanedAuditIntents({ olderThanMinutes = 5, limit = 100 } = {}) {
+  return db.dbAll(
+    `SELECT id, receipt_id, user_identity, action, resource_type, patient_id,
+            request_method, request_path, timestamp
+       FROM audit_log
+      WHERE outcome_recorded = 0
+        AND timestamp <= datetime('now', ?)
+      ORDER BY timestamp DESC
+      LIMIT ?`,
+    [`-${parseInt(olderThanMinutes, 10) || 5} minutes`, parseInt(limit, 10) || 100]
+  );
 }
 
 async function upsertSession(sessionId, userIdentity, userRole, ip, userAgent) {
@@ -511,7 +619,25 @@ function auditMiddleware(options = {}) {
     maxBodySummaryLength = 500,
   } = options;
 
-  return (req, res, next) => {
+  // Async because the durable path awaits its audit write before the handler
+  // runs. Express 4 does not route rejections from async middleware, so the
+  // body is wrapped below -- an unrouted rejection here would hang the request
+  // rather than fail it.
+  return async (req, res, next) => {
+    try {
+      return await runAuditMiddleware(req, res, next, { excludePaths, maxBodySummaryLength });
+    } catch (err) {
+      console.error('[AUDIT] middleware error:', err.message);
+      // Auditing must not take the request down when it is not the durable
+      // path; the durable path returns its own 503 before reaching here.
+      if (!res.headersSent) return next();
+      return undefined;
+    }
+  };
+}
+
+function runAuditMiddleware(req, res, next, { excludePaths, maxBodySummaryLength }) {
+  return (async () => {
     // Use originalUrl (never mutated by sub-routers) instead of req.path,
     // because Express's `app.use('/api/patient-portal', router)` rewrites
     // req.path to the path INSIDE the router. Without this, audit_log
@@ -551,6 +677,43 @@ function auditMiddleware(options = {}) {
     };
 
     // Log after response completes
+    // ── Durable path: write the audit BEFORE the handler, for the operations
+    // where losing the record is worse than refusing the request. ──
+    const preMatch = matchRoute(req.method, requestPath);
+    if (preMatch && DURABLE_AUDIT_ACTIONS.has(preMatch.config.action)) {
+      let intent;
+      try {
+        intent = await writeAuditIntent({
+          req, sessionId, config: preMatch.config, requestPath, maxBodySummaryLength,
+        });
+      } catch (err) {
+        console.error('[AUDIT] durable audit intent failed; refusing the operation:', err.message);
+        return res.status(503).json({
+          error: 'audit_unavailable',
+          error_description:
+            'This operation could not be recorded in the access log and was refused. '
+            + 'No data was disclosed. Retry shortly.',
+        });
+      }
+
+      // The caller gets a receipt they can quote when asking "was this logged?".
+      res.setHeader('X-Audit-Receipt', intent.receiptId);
+      req.auditReceiptId = intent.receiptId;
+
+      res.on('finish', () => {
+        // Best-effort by design: the disclosure is already durably recorded.
+        recordAuditOutcome(intent.receiptId, {
+          status: res.statusCode,
+          durationMs: Date.now() - startTime,
+          errorMessage: res.statusCode >= 400 ? extractErrorMessage(capturedBody) : null,
+        }).catch((err) => {
+          console.error('[AUDIT] outcome not recorded for receipt', intent.receiptId, '-', err.message);
+        });
+      });
+
+      return next();
+    }
+
     res.on('finish', () => {
       const duration = Date.now() - startTime;
 
@@ -621,8 +784,8 @@ function auditMiddleware(options = {}) {
       })();
     });
 
-    next();
-  };
+    return next();
+  })();
 }
 
 // ==========================================
@@ -706,6 +869,10 @@ module.exports = {
   PHI_ROUTES,
   NON_PHI_ROUTES,
   PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION,
+  DURABLE_AUDIT_ACTIONS,
+  writeAuditIntent,
+  recordAuditOutcome,
+  findOrphanedAuditIntents,
   matchRoute,
   SESSION_HEADER,
   resolveAuditIdentity,
