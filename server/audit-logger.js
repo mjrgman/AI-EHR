@@ -209,8 +209,142 @@ const PHI_ROUTES = {
   'GET /fhir/R4/Appointment':           { resource_type: 'fhir.Appointment', action: 'READ', phi: true, phiFields: ['appointments'], extractPatientId: patientIdFromPathOrQuery },
   'GET /fhir/R4/Practitioner/:id':      { resource_type: 'fhir.Practitioner', action: 'READ', phi: false },
 
+  // --- FHIR R4 writes ---
+  // Reads were classified above; writes were not, so a POST that creates a
+  // patient record produced an 'unknown' audit row with no patient ID.
+  'POST /fhir/R4/Patient':              { resource_type: 'fhir.Patient', action: 'CREATE', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'PUT /fhir/R4/Patient/:id':           { resource_type: 'fhir.Patient', action: 'UPDATE', phi: true, phiFields: ['demographics'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/Condition':            { resource_type: 'fhir.Condition', action: 'CREATE', phi: true, phiFields: ['conditions'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/Observation':          { resource_type: 'fhir.Observation', action: 'CREATE', phi: true, phiFields: ['observations'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/AllergyIntolerance':   { resource_type: 'fhir.AllergyIntolerance', action: 'CREATE', phi: true, phiFields: ['allergies'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /fhir/R4/Bundle':               { resource_type: 'fhir.Bundle', action: 'CREATE', phi: true, phiFields: ['bundle'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Scheduling and appointments ---
+  'GET /api/schedule':                            { resource_type: 'appointment', action: 'READ', phi: true, phiFields: ['patient_name', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/appointments/:id':                    { resource_type: 'appointment', action: 'READ', phi: true, phiFields: ['patient_name', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/appointments':                       { resource_type: 'appointment', action: 'CREATE', phi: true, phiFields: ['patient_id', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'PATCH /api/appointments/:id':                  { resource_type: 'appointment', action: 'UPDATE', phi: true, phiFields: ['status', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'DELETE /api/appointments/:id':                 { resource_type: 'appointment', action: 'DELETE', phi: true, phiFields: ['patient_id', 'reason'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/patients/:id/appointments':           { resource_type: 'appointment', action: 'READ', phi: true, phiFields: ['reason'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Provider decision queue ---
+  'GET /api/decisions':                           { resource_type: 'decision_queue', action: 'READ', phi: true, phiFields: ['patient_name', 'summary'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/decisions/ma/closeouts':              { resource_type: 'decision_queue', action: 'READ', phi: true, phiFields: ['patient_name', 'summary'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/decisions/:id/decide':               { resource_type: 'decision_queue', action: 'UPDATE', phi: true, phiFields: ['decision', 'rationale'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/decisions/:id/close':                { resource_type: 'decision_queue', action: 'UPDATE', phi: true, phiFields: ['closeout_note'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Care management ---
+  'POST /api/care-management/eligibility':        { resource_type: 'care_management', action: 'READ', phi: true, phiFields: ['problems', 'encounters'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/care-management/billable':           { resource_type: 'care_management', action: 'READ', phi: true, phiFields: ['problems', 'time_logged'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/care-management/conflict-check':     { resource_type: 'care_management', action: 'READ', phi: true, phiFields: ['enrollments'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Quality / HEDIS (evaluates a patient's clinical record) ---
+  'POST /api/quality/hedis/evaluate/:measureId':  { resource_type: 'hedis_evaluation', action: 'READ', phi: true, phiFields: ['measure_result'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/quality/hedis/all':                  { resource_type: 'hedis_evaluation', action: 'READ', phi: true, phiFields: ['measure_result'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Charges and coding (carry diagnosis context) ---
+  'GET /api/encounters/:id/charge':               { resource_type: 'charge', action: 'READ', phi: true, phiFields: ['icd10_codes', 'cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/encounters/:id/charge':              { resource_type: 'charge', action: 'CREATE', phi: true, phiFields: ['icd10_codes', 'cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/encounters/:id/cpt-suggestions':      { resource_type: 'charge', action: 'READ', phi: true, phiFields: ['cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+  'POST /api/encounters/:id/checkout':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['checkout_summary'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/billing/charges':                     { resource_type: 'charge', action: 'READ', phi: true, phiFields: ['icd10_codes', 'cpt_codes'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Insurance eligibility (synthetic, but patient-scoped) ---
+  'POST /api/insurance/verify-eligibility':       { resource_type: 'insurance', action: 'READ', phi: true, phiFields: ['member_id', 'coverage'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Staff view of patient portal messages ---
+  'GET /api/staff/portal-messages':               { resource_type: 'portal_message', action: 'READ', phi: true, phiFields: ['subject', 'message'], extractPatientId: patientIdFromPathOrQuery },
+  'PATCH /api/staff/portal-messages/:id':         { resource_type: 'portal_message', action: 'UPDATE', phi: true, phiFields: ['status'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Patient portal visit prep ---
+  'GET /api/patient-portal/visit-prep':           { resource_type: 'visit_prep', action: 'READ', phi: true, phiFields: ['problems', 'medications'], extractPatientId: (req) => req.portalPatient?.id },
+
+  // --- Lab order transmission ---
+  'POST /api/orders/:id/submit-to-labcorp':       { resource_type: 'lab_order', action: 'UPDATE', phi: true, phiFields: ['test_name', 'indication'], extractPatientId: patientIdFromPathOrQuery },
+
+  // --- Audit surface itself ---
+  // Reading the audit trail discloses who accessed which patient. That is a
+  // PHI disclosure in its own right and must be audited, not exempt.
+  'GET /api/audit/logs':                          { resource_type: 'audit', action: 'READ', phi: true, phiFields: ['audit_trail'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/audit/patient/:id':                   { resource_type: 'audit', action: 'READ', phi: true, phiFields: ['audit_trail'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/audit/export':                        { resource_type: 'audit', action: 'EXPORT', phi: true, phiFields: ['audit_trail'], extractPatientId: patientIdFromPathOrQuery },
+  'GET /api/audit/sessions':                      { resource_type: 'audit', action: 'READ', phi: false },
+  'GET /api/audit/stats':                         { resource_type: 'audit', action: 'READ', phi: false },
+
   // --- System ---
   'GET /api/health':                              { resource_type: 'system', action: 'READ', phi: false },
+};
+
+/**
+ * Routes deliberately classified as carrying no PHI.
+ *
+ * This list exists so `test/unit/audit-route-coverage.test.js` can fail when a
+ * route is in NEITHER table. Before it, an unclassified PHI route logged as
+ * resource_type='unknown' with phi_accessed=false and no patient ID -- silently
+ * wrong, and nothing caught the drift.
+ *
+ * Adding a route here is a claim that it cannot disclose patient data. State
+ * why. If you are unsure, classify it in PHI_ROUTES instead: over-auditing is
+ * recoverable, under-auditing is not.
+ */
+const NON_PHI_ROUTES = {
+  // Authentication -- credentials and tokens, never clinical content.
+  'POST /api/auth/login':      'credential exchange; no patient data in request or response',
+  'POST /api/auth/refresh':    'token rotation only',
+  'POST /api/auth/logout':     'session teardown only',
+  'POST /api/auth/logout-all': 'session teardown only',
+  'GET /api/auth/me':          'returns the authenticated CLINICIAN identity, not a patient',
+  'POST /api/patient-portal/logout': 'portal session teardown; no record access',
+
+  // Reference data -- static lookups with no patient in scope.
+  'GET /api/insurance/carriers':      'static carrier list, not patient-scoped',
+  'GET /api/care-management/codes':   'CPT code reference table',
+  'GET /api/quality/hedis/measures':  'measure definitions, not results',
+
+  // Integration configuration -- reports which env vars are set, never values.
+  'GET /api/integrations/labcorp/status':         'config presence booleans only',
+  'POST /api/integrations/labcorp/oauth/start':   'OAuth state issuance; no patient context',
+  'GET /api/integrations/labcorp/oauth/callback': 'OAuth code exchange; no patient context',
+
+  // Webhook administration -- delivery config, not payloads.
+  'GET /api/webhooks/':        'webhook registration list',
+  'POST /api/webhooks/':       'webhook registration',
+  'DELETE /api/webhooks/:id':  'webhook removal',
+  'GET /api/webhooks/:id/log': 'delivery status log; records outcome, not payload',
+
+  // FHIR metadata -- server capability, no patient data.
+  'GET /fhir/R4/metadata': 'CapabilityStatement',
+  // Registered with an escaped '$' because Express treats it as a path
+  // metacharacter; the key must match the registered path exactly.
+  'GET /fhir/R4/\\$stats': 'aggregate resource counts, no identifiers',
+};
+
+/**
+ * PHI routes that cannot attribute an access to a single patient, with the
+ * reason. Every other phi:true route must supply `extractPatientId`.
+ *
+ * This is a known-gaps register, not an exemption to be grown casually. A PHI
+ * row with no patient ID still records who called what and when, but it cannot
+ * answer "who accessed THIS patient's record" -- which is the question an
+ * access log mainly exists to answer.
+ *
+ * Collection endpoints are legitimately here: `GET /api/patients` returns many
+ * patients, so no single ID applies. The others are recorded honestly as
+ * unresolved rather than quietly passing.
+ */
+const PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION = {
+  'GET /api/patients':                    'collection endpoint; returns many patients, no single subject',
+  'GET /api/encounters':                  'collection endpoint; spans patients',
+  'GET /api/dashboard':                   'aggregate counts across the practice',
+  'POST /api/patients':                   'UNRESOLVED: the new patient id exists only after the insert; attribution needs the response body',
+  'POST /api/patients/extract-from-speech': 'transcript parsing; no patient is referenced',
+  'POST /api/ai/extract-data':            'transcript parsing; no patient is referenced',
+  'POST /api/ai/generate-note':           'UNRESOLVED: patient arrives in the body and is not extracted',
+  'POST /api/cds/evaluate':               'UNRESOLVED: patient arrives in the body and is not extracted',
+  'GET /api/encounters/:id':              'UNRESOLVED: :id is an encounter id; resolving the patient needs a lookup',
+  'PATCH /api/encounters/:id':            'UNRESOLVED: as above',
+  'GET /api/encounters/:id/orders':       'UNRESOLVED: as above',
+  'POST /api/patient-portal/verify':      'identity proofing runs before a portal session exists',
 };
 
 // ==========================================
@@ -570,6 +704,8 @@ module.exports = {
   getAuditStats,
   getAuditSessions,
   PHI_ROUTES,
+  NON_PHI_ROUTES,
+  PHI_ROUTES_WITHOUT_PATIENT_ATTRIBUTION,
   matchRoute,
   SESSION_HEADER,
   resolveAuditIdentity,
