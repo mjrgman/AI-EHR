@@ -120,6 +120,46 @@ describe('the SMART endpoints are throttled', () => {
     });
   }
 
+  test('clinician login and refresh are throttled', () => {
+    // CodeQL js/missing-rate-limiting on /login. The per-(username, origin)
+    // lockout in auth.js stops repeated guessing at ONE account; it does not
+    // see an origin spraying many accounts. This closes that second attack.
+    const routes = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'server', 'routes', 'auth-routes.js'), 'utf8'
+    );
+    const login = routes.split('\n').find((l) => l.includes("router.post('/login'"));
+    const refresh = routes.split('\n').find((l) => l.includes("router.post('/refresh'"));
+    assert.ok(/Throttle\b/.test(login), `no throttle on login: ${String(login).trim()}`);
+    assert.ok(/Throttle\b/.test(refresh), `no throttle on refresh: ${String(refresh).trim()}`);
+  });
+
+  test('login is throttled tighter than refresh by default', () => {
+    const routes = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'server', 'routes', 'auth-routes.js'), 'utf8'
+    );
+    // Read the DEFAULTS, not the wired values: the limits are env-overridable
+    // so the suite can raise the ceiling without bypassing the middleware.
+    const login = routes.match(/LOGIN_MAX\s*=\s*Number\([^)]*\)\s*\|\|\s*(\d+)/);
+    const refresh = routes.match(/REFRESH_MAX\s*=\s*Number\([^)]*\)\s*\|\|\s*(\d+)/);
+    assert.ok(login, 'LOGIN_MAX default not found');
+    assert.ok(refresh, 'REFRESH_MAX default not found');
+    assert.ok(Number(login[1]) < Number(refresh[1]),
+      'login runs bcrypt per attempt and is the guessing surface; it should be the tighter of the two');
+  });
+
+  test('the auth limits are overridable but default to production-sane values', () => {
+    const routes = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'server', 'routes', 'auth-routes.js'), 'utf8'
+    );
+    assert.match(routes, /process\.env\.LOGIN_THROTTLE_MAX/,
+      'the ceiling must be raisable so tests exercise the middleware rather than skip it');
+    // A missing or unparseable override must fall back to the tight default,
+    // never to "unlimited".
+    const loginDefault = Number(routes.match(/LOGIN_MAX\s*=\s*Number\([^)]*\)\s*\|\|\s*(\d+)/)[1]);
+    assert.ok(loginDefault > 0 && loginDefault <= 20,
+      `login default ${loginDefault} should stay tight enough to blunt brute force`);
+  });
+
   test('client registration is throttled harder than token issuance', () => {
     // Registration mints credentials; it should not be spammable at the same
     // rate as ordinary token traffic.

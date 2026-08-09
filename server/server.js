@@ -440,8 +440,8 @@ app.post('/api/patients/extract-from-speech', async (req, res) => {
     const nameMatch = trimmed.match(/(?:name is|patient|called)\s+([A-Z][a-z]+)\s+([A-Z][a-z]+)/i);
     const dobMatch = trimmed.match(/(?:date of birth|DOB|born)\s+([A-Z][a-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})/i);
     const phoneMatch = trimmed.match(/(?:phone|number)\s+(\d{3}[-.\s]?\d{3}[-.\s]?\d{4})/);
-    const addressMatch = trimmed.match(/(?:lives at|address)\s+(\d+\s+[A-Za-z\s]+)/i);
-    const insuranceMatch = trimmed.match(/(?:insurance|covered by)\s+([A-Za-z\s]+)(?:,|member)/i);
+    const addressMatch = trimmed.match(/(?:lives at|address)\s{1,4}(\d{1,6}\s{1,4}[A-Za-z\s]{1,60})/i);
+    const insuranceMatch = trimmed.match(/(?:insurance|covered by)\s{1,4}([A-Za-z\s]{1,60}?)(?:,|member)/i);
 
     const patientData = {
       first_name: nameMatch ? nameMatch[1] : '',
@@ -1058,7 +1058,7 @@ app.post('/api/lab-orders/from-speech', async (req, res) => {
 
     // Parse scheduled date if mentioned
     let scheduledDate = null;
-    const dateMatch = transcript.match(/(\d+)\s+weeks?/i);
+    const dateMatch = transcript.match(/(\d{1,4})\s{1,4}weeks?/i);
     if (dateMatch) {
       const weeksFromNow = parseInt(dateMatch[1], 10);
       const d = new Date();

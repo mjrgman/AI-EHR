@@ -1,15 +1,35 @@
 'use strict';
 
 const express = require('express');
+const { throttle } = require('../security/endpoint-throttle');
+
+// Clinician login and refresh are unauthenticated by definition and both
+// perform credential work -- login runs bcrypt, refresh hits the token store.
+// The per-user limiter in hipaa-middleware.js cannot cover either, because
+// there is no identity yet. CodeQL flagged /login as js/missing-rate-limiting.
+//
+// The per-(username, origin) lockout in auth.js stops repeated guessing at ONE
+// account; this stops an origin spraying many accounts, which the lockout by
+// design does not see. Two controls, two different attacks.
+// Limits are env-overridable so the test suite can raise them rather than
+// bypass the middleware. A control that is switched off in the environment you
+// test in is a control nobody has run -- the middleware stays in the chain,
+// still counts, still sets X-RateLimit-* headers; only the ceiling moves.
+// Enforcement behavior itself is covered by test/unit/endpoint-throttle.test.js.
+const LOGIN_MAX = Number(process.env.LOGIN_THROTTLE_MAX) || 10;
+const REFRESH_MAX = Number(process.env.REFRESH_THROTTLE_MAX) || 30;
+
+const loginThrottle = throttle({ name: 'clinician-login', max: LOGIN_MAX, windowMs: 60 * 1000 });
+const refreshThrottle = throttle({ name: 'clinician-refresh', max: REFRESH_MAX, windowMs: 60 * 1000 });
 
 function buildAuthRouter({ auth, db, logger, refreshTokens }) {
   const router = express.Router();
 
-  router.post('/login', auth.login);
+  router.post('/login', loginThrottle, auth.login);
   router.get('/me', auth.requireAuth, auth.me);
   router.post('/logout', auth.requireAuth, auth.logout);
 
-  router.post('/refresh', async (req, res) => {
+  router.post('/refresh', refreshThrottle, async (req, res) => {
     try {
       const { refreshToken } = req.body;
       if (!refreshToken) {

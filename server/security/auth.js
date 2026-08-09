@@ -88,6 +88,8 @@ setInterval(() => {
 
 // Account lockout tracking (S-M7)
 // Maps username -> { attempts: number, firstAttempt: number, lockedUntil: number }
+const { logSafe } = require('./log-safe');
+
 const loginAttempts = new Map();
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -96,11 +98,11 @@ const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 // Clean up stale lockout entries every 15 minutes
 setInterval(() => {
   const now = Date.now();
-  for (const [username, data] of loginAttempts) {
+  for (const [key, data] of loginAttempts) {
     if (data.lockedUntil && now >= data.lockedUntil) {
-      loginAttempts.delete(username);
+      loginAttempts.delete(key);
     } else if (!data.lockedUntil && now - data.firstAttempt > LOCKOUT_WINDOW_MS) {
-      loginAttempts.delete(username);
+      loginAttempts.delete(key);
     }
   }
 }, 15 * 60 * 1000).unref();
@@ -188,8 +190,9 @@ async function login(req, res) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
-    // S-M7: Check account lockout
-    const lockoutData = loginAttempts.get(username);
+    // S-M7: lockout is per (username, origin) — see recordFailedLogin.
+    const clientIp = loginClientIp(req);
+    const lockoutData = loginAttempts.get(lockoutKey(username, clientIp));
     if (lockoutData && lockoutData.lockedUntil) {
       if (Date.now() < lockoutData.lockedUntil) {
         const retryAfterSec = Math.ceil((lockoutData.lockedUntil - Date.now()) / 1000);
@@ -199,7 +202,7 @@ async function login(req, res) {
         });
       }
       // Lockout expired, clear it
-      loginAttempts.delete(username);
+      clearFailedLogins(username, clientIp);
     }
 
     const user = await db.dbGet(
@@ -209,14 +212,14 @@ async function login(req, res) {
 
     if (!user) {
       // S-M7: Track failed attempt even for unknown users (prevent user enumeration timing)
-      recordFailedLogin(username);
+      recordFailedLogin(username, clientIp);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) {
       // S-M7: Track failed attempt
-      const lockResult = recordFailedLogin(username);
+      const lockResult = recordFailedLogin(username, clientIp);
       if (lockResult.locked) {
         return res.status(429).json({
           error: 'Account temporarily locked due to too many failed login attempts. Try again later.',
@@ -226,8 +229,8 @@ async function login(req, res) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    // S-M7: Reset failed attempts on successful login
-    loginAttempts.delete(username);
+    // S-M7: Reset this origin's failed attempts on successful login
+    clearFailedLogins(username, clientIp);
 
     // Update last login
     await db.dbRun(
@@ -464,13 +467,56 @@ function validatePasswordComplexity(password) {
 /**
  * Record a failed login attempt and return lockout status (S-M7)
  */
-function recordFailedLogin(username) {
+/**
+ * Client IP for lockout keying. Mirrors the portal's resolution so both
+ * surfaces agree on what "the same client" means.
+ */
+function loginClientIp(req) {
+  const fwd = req && req.headers && req.headers['x-forwarded-for'];
+  if (fwd) return String(fwd).split(',')[0].trim();
+  return (req && (req.ip || (req.socket && req.socket.remoteAddress))) || 'unknown';
+}
+
+/**
+ * Composite key: a lockout applies to a credential-and-origin pair.
+ *
+ * The separator is a newline, which cannot appear in either component: a
+ * username is validated on the way in, and an IP never contains one. Using a
+ * character that could appear in a username would let one pair impersonate
+ * another by straddling the separator.
+ */
+function lockoutKey(username, ip) {
+  return `${username}\n${ip}`;
+}
+
+/**
+ * Record a failed login.
+ *
+ * Keyed on (username, client IP), NOT on username alone.
+ *
+ * Username-only keying is a trivial denial-of-service: anyone who knows a
+ * clinician's username can lock that clinician out of the system with five
+ * wrong passwords from anywhere, and repeat it indefinitely. In a clinical
+ * setting that is locking a physician out of charts during a shift. CodeQL
+ * flagged the guard as js/user-controlled-bypass; the deeper problem is that
+ * the attacker chooses whose account is affected.
+ *
+ * With composite keying an attacker locks only their own origin against that
+ * username. The legitimate user, on a different connection, is unaffected.
+ *
+ * A distributed attempt on one account is still detected -- distinctIpsFor()
+ * counts how many origins have failed against a username -- but it is
+ * surfaced as a warning rather than converted into the lockout an attacker
+ * wanted. Detection without a self-inflicted outage.
+ */
+function recordFailedLogin(username, ip = 'unknown') {
   const now = Date.now();
-  let data = loginAttempts.get(username);
+  const key = lockoutKey(username, ip);
+  let data = loginAttempts.get(key);
 
   if (!data || (now - data.firstAttempt > LOCKOUT_WINDOW_MS)) {
-    data = { attempts: 1, firstAttempt: now, lockedUntil: null };
-    loginAttempts.set(username, data);
+    data = { attempts: 1, firstAttempt: now, lockedUntil: null, username, ip };
+    loginAttempts.set(key, data);
     return { locked: false };
   }
 
@@ -478,11 +524,35 @@ function recordFailedLogin(username) {
 
   if (data.attempts >= MAX_LOGIN_ATTEMPTS) {
     data.lockedUntil = now + LOCKOUT_DURATION_MS;
-    console.warn(`[AUTH] Account locked for user: ${username} after ${data.attempts} failed attempts`);
+    console.warn(
+      `[AUTH] Locked ${logSafe(username)} from origin ${logSafe(ip)} after ${data.attempts} failed attempts`
+    );
     return { locked: true };
   }
 
+  const origins = distinctIpsFor(username);
+  if (origins > 2) {
+    // Worth an operator's attention; deliberately NOT a lockout.
+    console.warn(
+      `[AUTH] ${logSafe(username)} has failed logins from ${origins} distinct origins — possible distributed attempt`
+    );
+  }
+
   return { locked: false };
+}
+
+/** How many distinct origins currently hold failed attempts for a username. */
+function distinctIpsFor(username) {
+  const ips = new Set();
+  for (const data of loginAttempts.values()) {
+    if (data.username === username) ips.add(data.ip);
+  }
+  return ips.size;
+}
+
+/** Clear a user's failures from ONE origin, on that origin's success. */
+function clearFailedLogins(username, ip = 'unknown') {
+  loginAttempts.delete(lockoutKey(username, ip));
 }
 
 // ==========================================
@@ -490,6 +560,12 @@ function recordFailedLogin(username) {
 // ==========================================
 
 module.exports = {
+  // Exported for the lockout-keying tests: the composite key is the whole
+  // point of the control, so it needs to be assertable directly.
+  recordFailedLogin,
+  clearFailedLogins,
+  _distinctIpsFor: distinctIpsFor,
+  _resetLoginAttempts: () => loginAttempts.clear(),
   init,
   login,
   logout,

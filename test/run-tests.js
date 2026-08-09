@@ -11,6 +11,11 @@ const fs = require('fs');
 // Set test environment before requiring modules
 process.env.DATABASE_PATH = path.join(__dirname, '../data/test-mjr-ehr.db');
 process.env.AI_MODE = 'mock';
+// The suite logs in many times from one address. Raise the auth throttle
+// ceilings rather than disabling the middleware, so the real code path still
+// runs on every request here.
+process.env.LOGIN_THROTTLE_MAX = '10000';
+process.env.REFRESH_THROTTLE_MAX = '10000';
 process.env.PROVIDER_NAME = 'Dr. Test Provider';
 process.env.PORT = process.env.PORT || '3310';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-suite-secret-not-for-production';
