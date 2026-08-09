@@ -26,6 +26,11 @@ const REQUEST_TIMEOUT_MS = 5000;
 // RXNORM_INTERACTION_ENABLED=true to re-enable if NLM restores the API.
 const RXNORM_INTERACTION_ENABLED = process.env.RXNORM_INTERACTION_ENABLED === 'true';
 
+// Master switch for ALL outbound RxNav traffic, not just /interaction.
+// Default OFF: this is a local synthetic demo and must not reach the public
+// internet unless someone deliberately turns it on.
+const RXNORM_LIVE_ENABLED = process.env.RXNORM_LIVE_ENABLED === 'true';
+
 // ──────────────────────────────────────────
 // HTTP CLIENT
 // ──────────────────────────────────────────
@@ -35,6 +40,24 @@ const RXNORM_INTERACTION_ENABLED = process.env.RXNORM_INTERACTION_ENABLED === 't
  * Returns parsed JSON or null on failure.
  */
 function rxnormGet(path) {
+  // SYNTHETIC-ONLY BASELINE: no outbound request unless explicitly enabled.
+  //
+  // Only the /interaction endpoint was gated. The name-lookup, approximate-term
+  // and dosage-form calls went to rxnav.nlm.nih.gov unconditionally, so a demo
+  // that documents itself as "offline by construction" reached the public
+  // internet the moment anyone looked up a drug. No PHI is sent -- the query is
+  // a drug name -- but an unannounced outbound call is exactly the kind of
+  // thing this baseline exists to prevent, and the README claim was false while
+  // it existed.
+  //
+  // Every caller already tolerates a null return and falls back to the local
+  // curated data (see curated-ddi.js), so refusing here degrades cleanly rather
+  // than failing. Set RXNORM_LIVE_ENABLED=true to restore live lookups.
+  // Flagged by CodeQL as js/file-access-to-http.
+  if (!RXNORM_LIVE_ENABLED) {
+    return Promise.resolve(null);
+  }
+
   return new Promise((resolve) => {
     const url = `${RXNORM_BASE}${path}`;
     const req = https.get(url, { timeout: REQUEST_TIMEOUT_MS }, (res) => {
