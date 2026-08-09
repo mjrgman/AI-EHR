@@ -157,6 +157,46 @@ test('package.json declares no external-AI or cloud-inference SDK', () => {
   }
 });
 
+// ==========================================
+// OUTBOUND NETWORK
+// ==========================================
+
+test('RxNorm makes no outbound request unless explicitly enabled', async () => {
+  // Only /interaction was gated; name lookup, approximate-term and dosage-form
+  // calls hit rxnav.nlm.nih.gov unconditionally, while the README claimed the
+  // build was offline by construction. Found by CodeQL js/file-access-to-http.
+  const rxnormPath = path.join(ROOT, 'server', 'pharma', 'rxnorm-service.js');
+
+  // A live call would need the network; assert instead that the gate short-
+  // circuits before any request is constructed.
+  const out = execFileSync(
+    process.execPath,
+    ['-e', `
+      const https = require('https');
+      // Any attempt to leave the process is a failure, so make it loud.
+      https.get = () => { process.stdout.write('OUTBOUND'); process.exit(0); };
+      const rx = require(${JSON.stringify(rxnormPath)});
+      Promise.resolve(rx.lookupByName('lisinopril'))
+        .then((r) => process.stdout.write('resolved:' + JSON.stringify(r ?? null)))
+        .catch((e) => process.stdout.write('threw:' + e.message));
+    `],
+    // :memory: so the probe never touches the real demo database.
+    { env: { ...process.env, RXNORM_LIVE_ENABLED: '', NODE_ENV: 'test', DATABASE_PATH: ':memory:' }, encoding: 'utf8' }
+  );
+  // The module logs database startup lines, so match anywhere rather than
+  // anchoring to the start of output.
+  assert.ok(!out.includes('OUTBOUND'), 'no outbound request may be attempted with the switch off');
+  assert.ok(!out.includes('threw:'), `the lookup must degrade cleanly; got ${out}`);
+  assert.ok(out.includes('resolved:null'),
+    `the lookup must return null rather than blowing up; got ${out}`);
+});
+
+test('the RxNorm live switch defaults to off', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'server', 'pharma', 'rxnorm-service.js'), 'utf8');
+  assert.match(src, /RXNORM_LIVE_ENABLED\s*=\s*process\.env\.RXNORM_LIVE_ENABLED\s*===\s*'true'/,
+    'the switch must be opt-in: anything other than an explicit "true" stays off');
+});
+
 test('no server source requires an external inference SDK', () => {
   const offenders = [];
   const forbidden = /require\(\s*['"](@anthropic-ai\/sdk|openai|@google\/generative-ai|@google-cloud\/aiplatform|@aws-sdk\/client-bedrock[^'"]*|@azure\/openai|cohere-ai|@mistralai\/mistralai)['"]\s*\)/;
