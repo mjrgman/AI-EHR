@@ -37,6 +37,7 @@ describe('A5 — HEART score protocol (UR-003 priority, UR-004 action type)', ()
     patient: { dob: '1950-01-01' }, // age ≥ 65 → age component 2
     problems: [],
     labs: [{ test_name: 'Troponin I', result: '0.50', reference_range_high: '0.04' }], // > 3×ULN → 2
+    ecgScore: 1,
   };
 
   test('high-risk HEART score gets top priority (1), never the old hard-coded 5', () => {
@@ -56,7 +57,21 @@ describe('A5 — HEART score protocol (UR-003 priority, UR-004 action type)', ()
     }
   });
 
-  test('low-risk HEART score gets a lower priority (dynamic, not constant)', () => {
+  test('completed low-risk HEART score remains lower priority than high-risk', () => {
+    const out = cds.evaluateHeartScoreProtocol({
+      chiefComplaint: 'sharp pleuritic chest pain reproducible on palpation',
+      patient: { dob: '2005-01-01' },
+      problems: [],
+      labs: [{ test_name: 'Troponin I', result: '0.01', reference_range_high: '0.04' }],
+      ecgScore: 0,
+    });
+    assert.equal(out.length, 1);
+    assert.equal(out[0].suggested_action.incomplete, false);
+    assert.equal(out[0].priority, 4);
+    assert.match(out[0].title, /Low Risk/);
+  });
+
+  test('incomplete HEART score is urgent workup, not a low-risk discharge tier', () => {
     const out = cds.evaluateHeartScoreProtocol({
       chiefComplaint: 'sharp pleuritic chest pain reproducible on palpation',
       patient: { dob: '2005-01-01' }, // young → age 0
@@ -64,7 +79,9 @@ describe('A5 — HEART score protocol (UR-003 priority, UR-004 action type)', ()
       labs: [],
     });
     assert.equal(out.length, 1);
-    assert.equal(out[0].priority, 4, 'low-risk should be priority 4, proving priority is dynamic');
+    assert.equal(out[0].suggested_action.incomplete, true);
+    assert.equal(out[0].priority, 1, 'missing ECG/troponin must sort as urgent workup');
+    assert.equal(out[0].suggested_action.score, null);
   });
 });
 

@@ -103,12 +103,12 @@ describe('audit-logger: PHI_ROUTES coverage', () => {
     }
   });
 
-  test('non-PHI routes (e.g. cds suggestion accept/reject) do not falsely declare phiFields', () => {
+  test('CDS accept is a durable prescribe-class PHI write, not a non-PHI update', () => {
     const cdsAccept = auditLogger.matchRoute('POST', '/api/cds/suggestions/abc123/accept');
     assert.ok(cdsAccept);
-    assert.equal(cdsAccept.config.phi, false);
-    // Defensive: phiFields shouldn't be set on non-PHI routes.
-    assert.equal(cdsAccept.config.phiFields, undefined);
+    assert.equal(cdsAccept.config.phi, true);
+    assert.equal(cdsAccept.config.action, 'PRESCRIBE');
+    assert.ok(Array.isArray(cdsAccept.config.phiFields));
   });
 
   test('portal message and triage routes are classified as patient-scoped PHI', () => {

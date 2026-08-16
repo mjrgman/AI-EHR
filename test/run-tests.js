@@ -557,7 +557,7 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       transcript: '',
       patient: { dob: '1995-06-15' }, // Age ~30 → score 0
       problems: [],                     // No risk factors → score 0
-      labs: [],                         // No troponin → score 1 (pending)
+      labs: [],                         // No troponin → incomplete
     };
     const suggestions = cdsEngine.evaluateHeartScoreProtocol(context);
 
@@ -565,9 +565,10 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     const s = suggestions[0];
     assertEqual(s.suggestion_type, 'clinical_protocol', 'Should be clinical_protocol type');
     assertEqual(s.suggested_action.protocol, 'HEART_SCORE', 'Protocol should be HEART_SCORE');
-    // H=0 (slightly suspicious/sharp), E=1 (default), A=0 (age<45), R=0 (no RFs), T=1 (no troponin)
-    assertEqual(s.suggested_action.score, 2, 'HEART score should be 2 (low risk)');
-    assert(s.title.includes('Low Risk'), 'Should classify as low risk');
+    assertEqual(s.suggested_action.incomplete, true, 'Missing ECG/troponin must not complete a HEART score');
+    assertEqual(s.suggested_action.score, null, 'Incomplete HEART score has no numeric total');
+    assert(!/low risk/i.test(s.title), 'Must not label incomplete data as Low Risk');
+    assert(!/discharge/i.test(s.description), 'Must not recommend discharge on an incomplete score');
   });
 
   await test('HEART score: High-risk chest pain (elderly, multiple RFs, elevated troponin)', async () => {
@@ -583,7 +584,8 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       ],
       labs: [
         { test_name: 'Troponin I', result: '3.2', reference_range_high: '0.04' } // >3x ULN → score 2
-      ]
+      ],
+      ecgScore: 1 // reviewed non-specific ECG; required to complete the score
     };
     const suggestions = cdsEngine.evaluateHeartScoreProtocol(context);
 
