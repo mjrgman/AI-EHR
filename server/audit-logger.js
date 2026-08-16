@@ -36,6 +36,7 @@ const PHI_ROUTES = {
   'GET /api/encounters/:id':              { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'], extractPatientId: patientIdFromContextOrBody },
   'POST /api/encounters':                 { resource_type: 'encounter', action: 'CREATE', phi: true, phiFields: ['chief_complaint'], extractPatientId: (req) => req.body.patient_id },
   'PATCH /api/encounters/:id':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['transcript','soap_note','chief_complaint'], extractPatientId: patientIdFromContextOrBody },
+  'POST /api/encounters/:id/sign':        { resource_type: 'encounter', action: 'SIGN', phi: true, phiFields: ['soap_note','signed_by'], extractPatientId: patientIdFromContextOrBody },
   'GET /api/encounters/:id/orders':       { resource_type: 'encounter_orders', action: 'READ', phi: true, phiFields: ['orders_summary'], extractPatientId: patientIdFromContextOrBody },
 
   // --- Vitals (PHI) ---
@@ -43,8 +44,8 @@ const PHI_ROUTES = {
   'POST /api/vitals/from-speech':         { resource_type: 'vitals', action: 'CREATE', phi: true, phiFields: ['transcript'], extractPatientId: (req) => req.body.patient_id },
 
   // --- Prescriptions (PHI) ---
-  'POST /api/prescriptions':              { resource_type: 'prescription', action: 'CREATE', phi: true, phiFields: ['medication_name','dose','instructions'], extractPatientId: (req) => req.body.patient_id },
-  'POST /api/prescriptions/from-speech':  { resource_type: 'prescription', action: 'CREATE', phi: true, phiFields: ['transcript'], extractPatientId: (req) => req.body.patient_id },
+  'POST /api/prescriptions':              { resource_type: 'prescription', action: 'PRESCRIBE', phi: true, phiFields: ['medication_name','dose','instructions'], extractPatientId: (req) => req.body.patient_id },
+  'POST /api/prescriptions/from-speech':  { resource_type: 'prescription', action: 'PRESCRIBE', phi: true, phiFields: ['transcript'], extractPatientId: (req) => req.body.patient_id },
 
   // --- Lab orders (PHI) ---
   'GET /api/lab-orders':                  { resource_type: 'lab_order', action: 'READ', phi: true, phiFields: ['test_name','indication'], extractPatientId: (req) => req.query.patient_id },
@@ -67,7 +68,7 @@ const PHI_ROUTES = {
   // --- CDS endpoints (suggestions are clinical but not direct PHI) ---
   'POST /api/cds/evaluate':               { resource_type: 'cds_evaluation', action: 'CREATE', phi: true, phiFields: ['clinical_context'], extractPatientId: patientIdFromContextOrBody },
   'GET /api/cds/suggestions/:id':         { resource_type: 'cds_suggestion', action: 'READ', phi: false },
-  'POST /api/cds/suggestions/:id/accept': { resource_type: 'cds_suggestion', action: 'UPDATE', phi: false },
+  'POST /api/cds/suggestions/:id/accept': { resource_type: 'cds_suggestion', action: 'PRESCRIBE', phi: true, phiFields: ['suggested_action'], extractPatientId: patientIdFromContextOrBody },
   'POST /api/cds/suggestions/:id/reject': { resource_type: 'cds_suggestion', action: 'UPDATE', phi: false },
   'POST /api/cds/suggestions/:id/defer':  { resource_type: 'cds_suggestion', action: 'UPDATE', phi: false },
 

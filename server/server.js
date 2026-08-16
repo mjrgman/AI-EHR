@@ -134,6 +134,33 @@ function sanitizeString(str, maxLength = 500) {
   return str.trim().slice(0, maxLength);
 }
 
+function integrityError(status, message, code) {
+  const err = new Error(message);
+  err.status = status;
+  err.code = code;
+  return err;
+}
+
+async function requireExistingPatient(patientId) {
+  const patient = await db.getPatientById(patientId);
+  if (!patient) {
+    throw integrityError(404, 'Patient not found', 'PATIENT_NOT_FOUND');
+  }
+  return patient;
+}
+
+async function requireMatchingEncounterPatient(encounterId, patientId) {
+  if (!encounterId) return null;
+  const encounter = await db.getEncounterById(encounterId);
+  if (!encounter) {
+    throw integrityError(404, 'Encounter not found', 'ENCOUNTER_NOT_FOUND');
+  }
+  if (Number(encounter.patient_id) !== Number(patientId)) {
+    throw integrityError(409, 'encounter_id does not belong to patient_id', 'PATIENT_ENCOUNTER_MISMATCH');
+  }
+  return encounter;
+}
+
 function getRequestRole(req) {
   return req.user?.role || req.session?.userRole || 'guest';
 }
@@ -608,6 +635,7 @@ app.post('/api/encounters', async (req, res) => {
     if (!patientId) {
       return res.status(400).json({ error: 'Invalid patient_id' });
     }
+    await requireExistingPatient(patientId);
 
     const encounterData = {
       patient_id: patientId,
@@ -631,6 +659,9 @@ app.post('/api/encounters', async (req, res) => {
 
     res.status(201).json(result);
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Error creating encounter:', error);
     res.status(500).json({ error: 'Failed to create encounter' });
   }
@@ -643,10 +674,21 @@ app.patch('/api/encounters/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid encounter ID' });
     }
 
+    const existing = await db.getEncounterById(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Encounter not found' });
+    }
+
     if (req.body.status !== undefined) {
       const allowedStatuses = ['in-progress', 'completed', 'signed'];
       if (!allowedStatuses.includes(req.body.status)) {
         return res.status(400).json({ error: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}` });
+      }
+      if (req.body.status === 'signed') {
+        return res.status(409).json({
+          error: 'Use POST /api/encounters/:id/sign to sign an encounter',
+          code: 'USE_SIGN_ROUTE',
+        });
       }
     }
 
@@ -657,24 +699,28 @@ app.patch('/api/encounters/:id', async (req, res) => {
     if (req.body.status !== undefined) updates.status = req.body.status;
     if (req.body.duration_minutes !== undefined) updates.duration_minutes = parseInt(req.body.duration_minutes, 10) || null;
 
+    if (existing.status === 'signed') {
+      const mutating = updates.transcript !== undefined
+        || updates.soap_note !== undefined
+        || (updates.status && updates.status !== 'signed');
+      if (mutating) {
+        return res.status(409).json({
+          error: 'Signed encounter notes cannot be altered. Create an addendum.',
+          code: 'ENCOUNTER_LOCKED',
+        });
+      }
+    }
+
     const result = await db.updateEncounter(id, updates);
 
-    // :id identifies an encounter. Prefer the patient_id the caller supplied;
-    // otherwise resolve it so the audit row is attributed to a patient rather
-    // than left blank.
-    req.auditPatientId = validateId(req.body.patient_id)
-      || (await db.getEncounterById(id))?.patient_id
-      || null;
+    req.auditPatientId = existing.patient_id || null;
 
-    // If transcript was updated, run CDS evaluation
+    // If transcript was updated, run CDS evaluation against the encounter's patient.
     let cdsSuggestions = [];
-    if (updates.transcript && req.body.patient_id) {
+    if (updates.transcript) {
       try {
-        const pid = validateId(req.body.patient_id);
-        if (pid) {
-          const context = await cds.buildPatientContext(pid, id);
-          cdsSuggestions = await cds.evaluatePatientContext(id, pid, context);
-        }
+        const context = await cds.buildPatientContext(existing.patient_id, id);
+        cdsSuggestions = await cds.evaluatePatientContext(id, existing.patient_id, context);
       } catch (cdsErr) {
         console.error('CDS evaluation error (non-fatal):', cdsErr.message);
       }
@@ -684,6 +730,46 @@ app.patch('/api/encounters/:id', async (req, res) => {
   } catch (error) {
     console.error('Error updating encounter:', error);
     res.status(500).json({ error: 'Failed to update encounter' });
+  }
+});
+
+app.post('/api/encounters/:id/sign', rbac.requirePermission('sign', 'notes'), async (req, res) => {
+  try {
+    const id = validateId(req.params.id);
+    if (!id) {
+      return res.status(400).json({ error: 'Invalid encounter ID' });
+    }
+
+    const existing = await db.getEncounterById(id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Encounter not found' });
+    }
+    req.auditPatientId = existing.patient_id || null;
+
+    if (existing.status === 'signed') {
+      return res.status(409).json({ error: 'Encounter is already signed', code: 'ALREADY_SIGNED' });
+    }
+
+    const soap = (existing.soap_note || '').trim();
+    if (!soap) {
+      return res.status(400).json({ error: 'SOAP note is required before signing' });
+    }
+
+    const signedBy = sanitizeString(
+      req.body.signed_by || req.user?.full_name || req.user?.username || req.user?.sub || 'unknown',
+      200
+    );
+
+    const result = await db.updateEncounter(id, {
+      status: 'signed',
+      signed_by: signedBy,
+      signed_at: new Date().toISOString(),
+    });
+
+    res.json({ ...result, id, status: 'signed', signed_by: signedBy });
+  } catch (error) {
+    console.error('Error signing encounter:', error);
+    res.status(500).json({ error: 'Failed to sign encounter' });
   }
 });
 
@@ -781,10 +867,13 @@ app.post('/api/prescriptions', async (req, res) => {
     if (!patientId) {
       return res.status(400).json({ error: 'Invalid patient_id' });
     }
+    await requireExistingPatient(patientId);
+    const encounterId = req.body.encounter_id ? validateId(req.body.encounter_id) : null;
+    await requireMatchingEncounterPatient(encounterId, patientId);
 
     const rxData = {
       patient_id: patientId,
-      encounter_id: req.body.encounter_id ? validateId(req.body.encounter_id) : null,
+      encounter_id: encounterId,
       medication_name: sanitizeString(req.body.medication_name, 200),
       generic_name: sanitizeString(req.body.generic_name, 200),
       dose: sanitizeString(req.body.dose, 50),
@@ -797,10 +886,10 @@ app.post('/api/prescriptions', async (req, res) => {
       icd10_codes: sanitizeString(req.body.icd10_codes, 100),
       prescriber: sanitizeString(req.body.prescriber || process.env.PROVIDER_NAME || 'Dr. Provider', 200),
       prescribed_date: req.body.prescribed_date || new Date().toISOString().split('T')[0],
-      status: req.body.status || 'signed'
+      status: 'draft'
     };
 
-    // Drug-safety screening at sign time (warn-and-allow policy: the prescription is
+    // Drug-safety screening at create time (warn-and-allow on drafts: the draft is
     // never blocked, but interaction / boxed-warning / allergy-contraindication alerts
     // and a fail-closed screening-unavailable flag are surfaced to the prescriber).
     let safety = null;
@@ -872,6 +961,9 @@ app.post('/api/prescriptions', async (req, res) => {
 
     res.status(201).json({ ...result, safety });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Error creating prescription:', error);
     res.status(500).json({ error: 'Failed to create prescription' });
   }
@@ -888,8 +980,9 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
     if (!patientId) {
       return res.status(400).json({ error: 'Valid patient_id is required' });
     }
-
+    await requireExistingPatient(patientId);
     const encId = encounter_id ? validateId(encounter_id) : null;
+    await requireMatchingEncounterPatient(encId, patientId);
     const medications = aiClient.extractMedications(transcript);
     const prescriptions = [];
 
@@ -918,7 +1011,7 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
           instructions: `Take ${med.dose} ${med.route} ${med.frequency}`,
           prescriber: process.env.PROVIDER_NAME || 'Dr. Provider',
           prescribed_date: new Date().toISOString().split('T')[0],
-          status: 'signed'
+          status: 'draft'
         };
 
         // Warn-and-allow drug-safety screen (never blocks the script; fails closed).
@@ -953,6 +1046,9 @@ app.post('/api/prescriptions/from-speech', async (req, res) => {
 
     res.json({ prescriptions });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Error generating prescriptions:', error);
     res.status(500).json({ error: 'Failed to generate prescriptions' });
   }
@@ -1051,8 +1147,9 @@ app.post('/api/lab-orders/from-speech', async (req, res) => {
     if (!patientId) {
       return res.status(400).json({ error: 'Valid patient_id is required' });
     }
-
+    await requireExistingPatient(patientId);
     const encId = encounter_id ? validateId(encounter_id) : null;
+    await requireMatchingEncounterPatient(encId, patientId);
     const labs = aiClient.extractLabOrders(transcript);
     const orders = [];
 
@@ -1263,8 +1360,9 @@ app.post('/api/vitals', async (req, res) => {
     if (!patientId) {
       return res.status(400).json({ error: 'Invalid patient_id' });
     }
-
+    await requireExistingPatient(patientId);
     const encounterId = req.body.encounter_id ? validateId(req.body.encounter_id) : null;
+    await requireMatchingEncounterPatient(encounterId, patientId);
 
     const vitalsData = {
       patient_id: patientId,
@@ -1294,6 +1392,9 @@ app.post('/api/vitals', async (req, res) => {
 
     res.status(201).json({ ...result, cds_suggestions: cdsSuggestions });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Error adding vitals:', error);
     res.status(500).json({ error: 'Failed to add vitals' });
   }
@@ -1310,12 +1411,14 @@ app.post('/api/vitals/from-speech', async (req, res) => {
     if (!patientId) {
       return res.status(400).json({ error: 'Valid patient_id is required' });
     }
+    await requireExistingPatient(patientId);
+    const encId = encounter_id ? validateId(encounter_id) : null;
+    await requireMatchingEncounterPatient(encId, patientId);
 
     const vitals = aiClient.extractVitals(transcript);
 
     if (Object.keys(vitals).length > 0) {
       vitals.patient_id = patientId;
-      const encId = encounter_id ? validateId(encounter_id) : null;
       if (encId) vitals.encounter_id = encId;
 
       const result = await db.addVitals(vitals);
@@ -1488,6 +1591,7 @@ app.post('/api/cds/evaluate', async (req, res) => {
     if (!encounterId || !patientId) {
       return res.status(400).json({ error: 'Invalid encounter_id or patient_id' });
     }
+    await requireMatchingEncounterPatient(encounterId, patientId);
 
     const context = await cds.buildPatientContext(patientId, encounterId);
 
@@ -1523,6 +1627,9 @@ app.post('/api/cds/evaluate', async (req, res) => {
       }
     });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error('Error running CDS evaluation:', error);
     res.status(500).json({ error: 'Failed to evaluate CDS rules' });
   }
@@ -1559,8 +1666,8 @@ app.get('/api/cds/suggestions/:encounterId', async (req, res) => {
   }
 });
 
-// Accept a suggestion (auto-executes the order)
-app.post('/api/cds/suggestions/:id/accept', async (req, res) => {
+// Accept a suggestion. Executable orders stay draft; IDs are bound to the stored suggestion.
+app.post('/api/cds/suggestions/:id/accept', rbac.requirePermission('sign', 'prescriptions'), async (req, res) => {
   try {
     const suggestionId = validateId(req.params.id);
     if (!suggestionId) return res.status(400).json({ error: 'Invalid suggestion ID' });
@@ -1569,7 +1676,6 @@ app.post('/api/cds/suggestions/:id/accept', async (req, res) => {
     const patientId = req.body.patient_id ? validateId(req.body.patient_id) : null;
     const providerName = req.body.provider_name || process.env.PROVIDER_NAME || 'Dr. Provider';
 
-    // Execute the suggestion (creates orders automatically)
     const result = await cds.executeSuggestion(suggestionId, encounterId, patientId, providerName);
 
     // Record acceptance for provider learning — associate only with matching indication
@@ -1610,8 +1716,14 @@ app.post('/api/cds/suggestions/:id/accept', async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    if (error.message === 'Suggestion not found') {
+    if (error.code === 'NOT_FOUND' || error.message === 'Suggestion not found') {
       return res.status(404).json({ error: 'Suggestion not found' });
+    }
+    if (error.code === 'PATIENT_MISMATCH' || error.code === 'ENCOUNTER_MISMATCH' || error.code === 'UNBOUND_SUGGESTION') {
+      return res.status(409).json({ error: error.message, code: error.code });
+    }
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
     }
     console.error('Error accepting suggestion:', error);
     res.status(500).json({ error: 'Failed to accept suggestion' });

@@ -181,6 +181,8 @@ function initializeDatabase() {
         transcript TEXT, soap_note TEXT,
         status TEXT CHECK(status IN ('in-progress','completed','signed')) DEFAULT 'in-progress',
         provider TEXT, duration_minutes INTEGER, completed_at DATETIME,
+        signed_by TEXT,
+        signed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
       )`);
@@ -1395,11 +1397,12 @@ const db_helpers = {
   },
 
   updateEncounter: (encounterId, updates) => {
-    const { transcript, soap_note, status, duration_minutes } = updates;
+    const { transcript, soap_note, status, duration_minutes, signed_by, signed_at } = updates;
     return dbRun(`UPDATE encounters SET transcript=COALESCE(?,transcript), soap_note=COALESCE(?,soap_note),
                   status=COALESCE(?,status), duration_minutes=COALESCE(?,duration_minutes),
+                  signed_by=COALESCE(?,signed_by), signed_at=COALESCE(?,signed_at),
                   completed_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP ELSE completed_at END WHERE id=?`,
-      [transcript, soap_note, status, duration_minutes, status, encounterId])
+      [transcript, soap_note, status, duration_minutes, signed_by, signed_at, status, encounterId])
       .then(r => ({ changes: r.changes }));
   },
 

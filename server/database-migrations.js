@@ -49,6 +49,7 @@ async function runMigrations(db) {
     await addLabCorpColumns(db);
     await createDecisionQueueTable(db);
     await addDurableAuditColumns(db);
+    await addEncounterSignatureColumns(db);
 
     console.log('[MIGRATIONS] All migrations completed successfully');
     return { success: true, message: 'All migrations completed' };
@@ -1111,11 +1112,35 @@ async function createDecisionQueueTable(db) {
   console.log('[MIGRATIONS] decision_queue table ready');
 }
 
+/**
+ * Persist encounter signature attribution. Existing databases created
+ * before these columns existed keep the same row ids.
+ */
+async function addEncounterSignatureColumns(db) {
+  const columns = [
+    { name: 'signed_by', type: 'TEXT' },
+    { name: 'signed_at', type: 'DATETIME' },
+  ];
+  try {
+    const cols = await dbAllCompat(db, 'PRAGMA table_info(encounters)');
+    if (!cols.length) return;
+    for (const col of columns) {
+      if (!cols.some(c => c.name === col.name)) {
+        await dbRun(db, `ALTER TABLE encounters ADD COLUMN ${col.name} ${col.type}`);
+        console.log(`[MIGRATIONS] Added ${col.name} column to encounters`);
+      }
+    }
+  } catch (err) {
+    console.warn(`[MIGRATIONS] encounters signature column migration: ${err.message}`);
+  }
+}
+
 // ==========================================
 
 module.exports = {
   runMigrations,
   addDurableAuditColumns,
+  addEncounterSignatureColumns,
   createDecisionQueueTable,
   createUsersTable,
   createPatientConsentTable,

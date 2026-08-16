@@ -160,10 +160,9 @@ export default function ReviewPage() {
         }
       }
 
-      await api.updateEncounter(encounterId, {
-        status: 'signed',
+      await api.signEncounter(encounterId, {
         signed_by: providerName,
-        signed_at: new Date().toISOString(),
+        patient_id: patient?.id,
       });
 
       toast.success('Encounter signed successfully.');
