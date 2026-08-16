@@ -410,11 +410,18 @@ function evaluateHeartScoreProtocol(context) {
   components.history = highlyTypical ? 2 : slightlySuspicious ? 0 : 1;
 
   // --- E: ECG ---
-  // Cannot evaluate without EKG data in current model; default 1 (non-specific changes pending)
-  components.ecg = 1; // Default: non-specific repolarization
+  // A completed HEART score requires an explicit reviewed ECG component (0–2).
+  // Do not invent a default of 1; that can manufacture a low-risk tier.
+  const parsedEcg = Number(context.ecgScore);
+  const ecgComplete = Number.isInteger(parsedEcg) && parsedEcg >= 0 && parsedEcg <= 2;
+  if (ecgComplete) {
+    components.ecg = parsedEcg;
+  }
   const ecgReview = {
-    ecg_needs_review: true,
-    ecg_note: 'ECG component defaulted to 1 (non-specific). Manual ECG review required for accurate HEART score.'
+    ecg_needs_review: !ecgComplete,
+    ecg_note: ecgComplete
+      ? 'ECG component supplied by the caller after review.'
+      : 'ECG component is missing. Do not assign a HEART disposition until a reviewed ECG score (0–2) is recorded.'
   };
 
   // --- A: Age ---
@@ -450,16 +457,37 @@ function evaluateHeartScoreProtocol(context) {
     const name = (l.test_name || l.name || '').toLowerCase();
     return name.includes('troponin') || name.includes('trop');
   });
+  let troponinComplete = false;
   if (troponinLab) {
     const result = parseFloat(troponinLab.result || troponinLab.value || '');
     const uln = parseFloat(troponinLab.reference_range_high || troponinLab.upper_limit || '');
     if (!isNaN(result) && !isNaN(uln) && uln > 0) {
       components.troponin = result > uln * 3 ? 2 : result > uln ? 1 : 0;
-    } else {
-      components.troponin = 1; // Result present but can't parse value — moderate pending
+      troponinComplete = true;
     }
-  } else {
-    components.troponin = 1; // No troponin ordered yet — flag as pending
+  }
+
+  if (!ecgComplete || !troponinComplete) {
+    return [{
+      suggestion_type: 'clinical_protocol',
+      category: 'urgent',
+      priority: 1,
+      title: 'HEART score incomplete — obtain ECG and troponin',
+      description: 'A HEART disposition is not assigned when the ECG or troponin component is missing. Obtain a 12-lead ECG and a troponin result before any low-risk or outpatient-disposition language. This is not a completed score.',
+      rationale: `Incomplete HEART components: History=${components.history}, ECG=${ecgComplete ? components.ecg : 'missing'}, Age=${components.age}, Risk Factors=${components.riskFactors}, Troponin=${troponinComplete ? components.troponin : 'missing'}.`,
+      suggested_action: {
+        protocol: 'HEART_SCORE',
+        incomplete: true,
+        score: null,
+        components,
+        ...ecgReview,
+        actions: [
+          { type: 'create_imaging_order', description: 'Stat 12-lead ECG', payload: { study_type: 'EKG', body_part: 'Chest', cpt_code: '93000', priority: 'stat' } },
+          { type: 'create_lab_order', description: 'Troponin', payload: { test_name: 'Troponin I', cpt_code: '84484', priority: 'stat' } }
+        ]
+      },
+      source: 'heart_score_protocol'
+    }];
   }
 
   const totalScore = components.history + components.ecg + components.age + components.riskFactors + components.troponin;
@@ -468,7 +496,7 @@ function evaluateHeartScoreProtocol(context) {
   if (totalScore <= 3) {
     tier = 'Low Risk';
     category = 'routine';
-    recommendation = 'HEART score ≤ 3 (low risk). < 2% MACE risk at 6 weeks. Consider discharge with outpatient follow-up if troponin normal and clinical picture consistent.';
+    recommendation = 'HEART score ≤ 3 (low risk) after reviewed ECG and troponin. Continue chest-pain evaluation per the treating clinician; this draft is not a discharge order.';
   } else if (totalScore <= 6) {
     tier = 'Moderate Risk';
     category = 'urgent';
@@ -490,9 +518,10 @@ function evaluateHeartScoreProtocol(context) {
     priority,
     title: `HEART Score: ${totalScore}/10 — ${tier}`,
     description: recommendation,
-    rationale: `HEART score components: History=${components.history}, ECG=${components.ecg} (pending review), Age=${components.age}, Risk Factors=${components.riskFactors}, Troponin=${components.troponin}. Note: ECG score defaults to 1 (non-specific) pending physician review.`,
+    rationale: `HEART score components: History=${components.history}, ECG=${components.ecg}, Age=${components.age}, Risk Factors=${components.riskFactors}, Troponin=${components.troponin}.`,
     suggested_action: {
       protocol: 'HEART_SCORE',
+      incomplete: false,
       score: totalScore,
       components,
       ...ecgReview,
@@ -645,9 +674,29 @@ async function evaluatePatientContext(encounterId, patientId, context) {
 
 async function executeSuggestion(suggestionId, encounterId, patientId, providerName) {
   const suggestion = await db.getSuggestionById(suggestionId);
-  if (!suggestion) throw new Error('Suggestion not found');
+  if (!suggestion) {
+    const err = new Error('Suggestion not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
 
-  await db.updateSuggestionStatus(suggestionId, 'accepted');
+  const boundPatientId = Number(suggestion.patient_id);
+  const boundEncounterId = Number(suggestion.encounter_id);
+  if (!Number.isFinite(boundPatientId) || !Number.isFinite(boundEncounterId)) {
+    const err = new Error('Suggestion is missing a bound patient or encounter');
+    err.code = 'UNBOUND_SUGGESTION';
+    throw err;
+  }
+  if (patientId != null && Number(patientId) !== boundPatientId) {
+    const err = new Error('patient_id does not match the stored suggestion');
+    err.code = 'PATIENT_MISMATCH';
+    throw err;
+  }
+  if (encounterId != null && Number(encounterId) !== boundEncounterId) {
+    const err = new Error('encounter_id does not match the stored suggestion');
+    err.code = 'ENCOUNTER_MISMATCH';
+    throw err;
+  }
 
   let actionData;
   try {
@@ -655,7 +704,7 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
       ? JSON.parse(suggestion.suggested_action)
       : suggestion.suggested_action;
   } catch {
-    return { type: 'info', message: 'Suggestion accepted (no automated action)' };
+    return { type: 'info', message: 'Suggestion has no executable action', accepted: false };
   }
 
   const results = [];
@@ -664,8 +713,8 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
 
   for (const action of actions) {
     const payload = action.payload || {};
-    payload.patient_id = patientId;
-    payload.encounter_id = encounterId;
+    payload.patient_id = boundPatientId;
+    payload.encounter_id = boundEncounterId;
 
     try {
       switch (action.type) {
@@ -680,9 +729,9 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
         case 'create_prescription': {
           payload.prescriber = payload.prescriber || providerName;
           payload.prescribed_date = payload.prescribed_date || today;
-          payload.status = payload.status || 'signed';
+          payload.status = 'draft';
           const rxResult = await db.createPrescription(payload);
-          results.push({ type: 'prescription', id: rxResult.id, description: action.description });
+          results.push({ type: 'prescription', id: rxResult.id, status: 'draft', description: action.description });
           break;
         }
 
@@ -719,7 +768,12 @@ async function executeSuggestion(suggestionId, encounterId, patientId, providerN
     }
   }
 
-  return { suggestion_id: suggestionId, executed: results };
+  const hasError = results.some((r) => r.type === 'error');
+  if (!hasError) {
+    await db.updateSuggestionStatus(suggestionId, 'accepted');
+  }
+
+  return { suggestion_id: suggestionId, executed: results, accepted: !hasError };
 }
 
 // ==========================================
