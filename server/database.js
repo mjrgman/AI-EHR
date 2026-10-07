@@ -277,7 +277,7 @@ function initializeDatabase() {
           'medication','medication_adjustment','referral',
           'allergy_alert','interaction_alert','vital_alert',
           'preventive_care','dose_adjustment',
-          'prescribing_advisory','clinical_protocol'
+          'prescribing_advisory','clinical_protocol','interaction_screening_unavailable'
         )),
         category TEXT DEFAULT 'routine',
         priority INTEGER DEFAULT 50,

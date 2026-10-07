@@ -137,7 +137,7 @@ async function request(url, options = {}, meta = {}) {
     throw new Error('Network connection lost. Please check your connection and try again.');
   }
 
-  const { retryCount = 0, suppressUnauthorizedRedirect = false } = meta;
+  const { retryCount = 0, suppressUnauthorizedRedirect = false, retryNetwork = true } = meta;
   const auditHeaders = {};
   if (auditSessionId) auditHeaders['X-Audit-Session-Id'] = auditSessionId;
 
@@ -159,7 +159,7 @@ async function request(url, options = {}, meta = {}) {
       headers,
     });
   } catch (networkErr) {
-    if (retryCount < 1) {
+    if (retryNetwork && retryCount < 1) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       return request(url, options, { ...meta, retryCount: retryCount + 1 });
     }
@@ -188,6 +188,9 @@ async function request(url, options = {}, meta = {}) {
     const err = await parseResponse(res).catch(() => null);
     const error = new Error(err?.error || 'Session expired. Please log in again.');
     error.status = res.status;
+    error.details = err;
+    error.code = err?.code;
+    error.retrySafe = err?.retrySafe;
     throw error;
   }
 
@@ -202,6 +205,9 @@ async function request(url, options = {}, meta = {}) {
     const err = await parseResponse(res).catch(() => null);
     const error = new Error(err?.error || err?.message || res.statusText || 'Request failed');
     error.status = res.status;
+    error.details = err;
+    error.code = err?.code;
+    error.retrySafe = err?.retrySafe;
     throw error;
   }
 
@@ -303,7 +309,8 @@ export const api = {
   // Sign-time Rx-from-speech: returns { prescriptions: [{ ...rxData, id, safety }] }.
   // Each prescription carries the warn-and-allow drug-safety screen; the caller
   // must surface `safety` (interactions / boxed warnings / screening-unavailable).
-  generatePrescriptionsFromSpeech: (data) => request('/prescriptions/from-speech', { method: 'POST', body: JSON.stringify(data) }),
+  generatePrescriptionsFromSpeech: (data) => request('/prescriptions/from-speech',
+    { method: 'POST', body: JSON.stringify(data) }, { retryNetwork: false }),
   extractData: (data) => request('/ai/extract-data', { method: 'POST', body: JSON.stringify(data) }),
   generateNote: (data) => request('/ai/generate-note', { method: 'POST', body: JSON.stringify(data) }),
   getWorkflow: (encounterId) => request(`/workflow/${encounterId}`),

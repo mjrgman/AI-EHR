@@ -668,7 +668,8 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
       assert(s.id > 0, 'Suggestion should be persisted with ID');
       assert(s.title, 'Suggestion should have title');
       assert(s.description, 'Suggestion should have description');
-      assert(s.source === 'rule_engine', 'Source should be rule_engine');
+      assert(['rule_engine', 'curated_ddi', 'interaction_screening'].includes(s.source),
+        'Source should identify a rule, limited curated finding, or incomplete-screen warning');
     }
   });
 

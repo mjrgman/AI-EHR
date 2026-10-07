@@ -14,6 +14,7 @@ const ICONS = {
   lab_order: FlaskConical,
   allergy_alert: AlertTriangle,
   interaction_alert: Pill,
+  interaction_screening_unavailable: AlertTriangle,
   differential_diagnosis: Search,
   preventive_care: ShieldCheck,
   medication: Pill,
@@ -25,9 +26,11 @@ export default function CDSSuggestionCard({ suggestion, onAccept, onReject }) {
   const [acting, setActing] = useState(null);
   const Icon = ICONS[suggestion.suggestion_type] || Lightbulb;
   const isUrgent = suggestion.category === 'urgent';
+  const unsaved = !suggestion.id || suggestion.persistence?.status === 'failed';
+  const operationalWarning = suggestion.suggestion_type === 'interaction_screening_unavailable';
 
-  async function doAccept() { setActing('a'); try { await onAccept(suggestion.id); } finally { setActing(null); } }
-  async function doReject() { setActing('r'); try { await onReject(suggestion.id); } finally { setActing(null); } }
+  async function doAccept() { if (unsaved) return; setActing('a'); try { await onAccept(suggestion.id); } finally { setActing(null); } }
+  async function doReject() { if (unsaved) return; setActing('r'); try { await onReject(suggestion.id); } finally { setActing(null); } }
 
   if (suggestion.status === 'accepted') {
     return (
@@ -52,15 +55,17 @@ export default function CDSSuggestionCard({ suggestion, onAccept, onReject }) {
           <div className="flex items-center gap-2 flex-wrap">
             <h4 className="font-semibold text-sm text-navy-700">{suggestion.title}</h4>
             {isUrgent && <Badge variant="urgent">Urgent</Badge>}
+            {operationalWarning && <Badge variant="warning">Verify manually</Badge>}
             {suggestion.source === 'provider_learning' && <Badge variant="primary">Your Pattern</Badge>}
           </div>
           <p className="text-xs text-slate-600 mt-1">{suggestion.description}</p>
           {suggestion.rationale && <p className="text-xs text-slate-400 mt-0.5 italic">{suggestion.rationale}</p>}
+          {unsaved && <p role="alert" className="text-xs text-danger-700 mt-1">Not saved. Re-evaluate before approval.</p>}
         </div>
       </div>
       <div className="flex gap-2 mt-3 ml-[38px]">
-        <TouchButton size="sm" variant="success" onClick={doAccept} loading={acting === 'a'} disabled={!!acting}>Accept</TouchButton>
-        <TouchButton size="sm" variant="danger" onClick={doReject} loading={acting === 'r'} disabled={!!acting}>Skip</TouchButton>
+        <TouchButton size="sm" variant="success" onClick={doAccept} loading={acting === 'a'} disabled={!!acting || unsaved}>Accept</TouchButton>
+        <TouchButton size="sm" variant="danger" onClick={doReject} loading={acting === 'r'} disabled={!!acting || unsaved}>Skip</TouchButton>
       </div>
     </div>
   );

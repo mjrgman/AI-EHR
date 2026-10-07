@@ -4,10 +4,10 @@
  * Drug Safety Service — Drug Interactions + Safety Alerts
  *
  * Integrates:
- *   1. NLM RxNorm Interaction API — drug-drug interaction checking with severity
+ *   1. Limited curated interaction findings; comprehensive screening unavailable
  *   2. OpenFDA Drug Label API — black box warnings, contraindications, adverse reactions
  *
- * Both APIs are free with no licensing fees.
+ * Interaction coverage is limited; label lookup is a separate assessment.
  */
 
 const https = require('https');
@@ -63,15 +63,13 @@ function fdaGet(queryParams) {
 
 /**
  * Check interactions for a new drug against all active medications.
- * Uses RxNorm interaction API for real pharmacological data.
+ * Uses limited curated findings and explicit unavailable markers.
  *
  * @param {string} newDrugName - Drug being prescribed
  * @param {Array<{medication_name: string, rxnorm_cui?: string}>} activeMeds
  * @returns {Promise<Array<{drug1, drug2, severity, description, source}>>}
  */
 async function checkDrugInteractions(newDrugName, activeMeds) {
-  if (!newDrugName || !activeMeds || activeMeds.length === 0) return [];
-
   const interactions = await rxnorm.checkInteractionsAgainstList(newDrugName, activeMeds);
 
   return interactions.map(i => {
@@ -104,6 +102,8 @@ async function checkDrugInteractions(newDrugName, activeMeds) {
         description: i.description,
         source: i.source || 'Curated DDI (interim)',
         curated: true,
+        limitedCoverage: true,
+        comparisonId: i.comparisonId,
         rxcui1: i.rxcui1 || null,
         rxcui2: i.rxcui2 || null
       };
@@ -111,6 +111,7 @@ async function checkDrugInteractions(newDrugName, activeMeds) {
     return {
       drug1: i.drug1,
       drug2: i.drug2,
+      comparisonId: i.comparisonId,
       severity: classifySeverity(i.severity),
       description: i.description,
       source: i.source || 'NLM RxNorm',
@@ -206,7 +207,7 @@ async function checkBoxedWarning(drugName) {
 async function fullSafetyCheck(drugName, activeMeds, allergies) {
   // Run interaction check and FDA lookup in parallel
   const [interactions, labelSafety] = await Promise.all([
-    checkDrugInteractions(drugName, activeMeds || []),
+    checkDrugInteractions(drugName, activeMeds),
     getDrugLabelSafety(drugName)
   ]);
 
@@ -266,15 +267,37 @@ async function fullSafetyCheck(drugName, activeMeds, allergies) {
   // Sort by severity (critical first). 'warning' (unavailable) ranks just
   // above the lowest tier so it stays visible without masking real findings.
   const severityOrder = { critical: 0, serious: 1, moderate: 2, warning: 2.5, minor: 3 };
-  alerts.sort((a, b) => (severityOrder[a.severity] || 3) - (severityOrder[b.severity] || 3));
+  alerts.sort((a, b) => (severityOrder[a.severity] ?? 3) - (severityOrder[b.severity] ?? 3));
 
   // Fail-closed flag: when true, the interaction screen could NOT be completed
   // and the empty/partial interaction list must not be read as "no interactions."
-  const interactionScreeningUnavailable = isScreeningUnavailable(interactions);
+  const noComparisons = typeof drugName === 'string' && drugName.trim().length > 0
+    && Array.isArray(activeMeds) && activeMeds.length === 0;
+  // Curated positives are useful findings, never a comprehensive completed screen.
+  const interactionScreeningUnavailable = !noComparisons;
+  const interactionScreening = {
+    status: noComparisons ? 'not_applicable' : 'incomplete',
+    reason: noComparisons ? 'no_pairwise_comparisons' : 'comprehensive_provider_unavailable',
+    findings: interactions.filter(i => !i.unavailable),
+    inputComplete: typeof drugName === 'string' && drugName.trim().length > 0
+      && Array.isArray(activeMeds) && activeMeds.every(m => m
+        && typeof m.medication_name === 'string' && m.medication_name.trim().length > 0)
+  };
+  if (interactionScreeningUnavailable && !alerts.some(a => a.unavailable)) {
+    alerts.push({
+      type: 'interaction_screening_unavailable',
+      severity: 'warning',
+      title: `Interaction check incomplete: ${drugName}`,
+      description: 'Only limited curated findings are available. Comprehensive interaction screening is unavailable; verify manually.',
+      source: 'screening-unavailable',
+      unavailable: true
+    });
+  }
 
   return {
     interactions,
     interactionScreeningUnavailable,
+    interactionScreening,
     boxedWarning: {
       hasBoxedWarning: !!labelSafety.boxedWarning,
       warning: labelSafety.boxedWarning

@@ -4,6 +4,7 @@
  */
 
 const db = require('./database');
+const { isMedicationRecord, selectActiveMedications } = require('./pharma/medication-history');
 
 // Pharmaceutical knowledge base (graceful fallback if unavailable)
 let drugSafetyService = null;
@@ -541,70 +542,59 @@ function evaluateHeartScoreProtocol(context) {
 // ==========================================
 
 /**
- * Check drug interactions using the drug-safety service (curated table + the
- * now-retired NLM RxNav /interaction API). Supplements local rule-based
- * checking with real pharmacological data.
- *
- * FAIL-CLOSED at the CDS boundary: the NLM /interaction endpoints were retired
- * Jan-2024, so live screening is effectively always UNAVAILABLE. The
- * drug-safety service distinguishes three states (curated/real interaction,
- * source-reachable-zero-interactions, and UNAVAILABLE-sentinel). We:
- *   - emit a CDS suggestion ONLY for a real, graded interaction (curated/live),
- *   - SKIP the UNAVAILABLE sentinel entirely (it is NOT a finding and must not
- *     be persisted as a CDS suggestion — the "verify manually" warning is
- *     surfaced at the prescribing/safety-service layer, not as rule_engine
- *     output). This keeps the dead-API error from leaking a spurious non-
- *     rule_engine suggestion into the evaluation result while still NEVER
- *     treating an unavailable screen as "no interactions."
- *
- * Returns CDS suggestions for any REAL interactions found.
+ * Preserve limited findings and surface incomplete screening as a distinct
+ * operational warning. Missing history is never treated as an empty list.
  */
 async function evaluateRxNormInteractions(medications) {
-  if (!drugSafetyService || !medications || medications.length < 2) return [];
-
+  const activeMeds = selectActiveMedications(medications);
   const suggestions = [];
-  const activeMeds = medications.filter(m => m.status === 'active');
-  const checked = new Set();
+  let incomplete = !Array.isArray(activeMeds) || activeMeds.some(m => !isMedicationRecord(m));
+  const validMeds = Array.isArray(activeMeds) ? activeMeds.filter(isMedicationRecord) : [];
+  const checkedPairs = new Set();
 
-  for (const med of activeMeds) {
-    const key = med.medication_name.toLowerCase();
-    if (checked.has(key)) continue;
-    checked.add(key);
-
-    const otherMeds = activeMeds.filter(m => m.medication_name.toLowerCase() !== key);
-    if (otherMeds.length === 0) continue;
-
-    try {
-      const interactions = await drugSafetyService.checkDrugInteractions(
-        med.medication_name, otherMeds
-      );
-      for (const interaction of interactions) {
-        // Fail-closed sentinel: screening could not be completed for this pair.
-        // This is NOT a clinical finding — skip it so it is never persisted as
-        // a CDS suggestion (the "interaction check unavailable — verify
-        // manually" warning lives in the safety-service alert path, not here).
-        if (interaction && interaction.unavailable) continue;
-
-        const pairKey = [interaction.drug1, interaction.drug2].sort().join('|');
-        if (checked.has(pairKey)) continue;
-        checked.add(pairKey);
-
-        suggestions.push({
-          suggestion_type: 'interaction_alert',
-          category: interaction.severity === 'critical' ? 'urgent' : 'routine',
-          priority: interaction.severity === 'critical' ? 1 : interaction.severity === 'serious' ? 2 : 3,
-          title: `${interaction.drug1} ↔ ${interaction.drug2} (${interaction.severity})`,
-          description: interaction.description,
-          rationale: `Source: ${interaction.source}. Severity: ${interaction.severity}.`,
-          suggested_action: [],
-          source: 'rxnorm_api'
-        });
+  if (validMeds.length >= 2) {
+    // The curated table has limited coverage even when all queried pairs hit.
+    incomplete = true;
+    for (let i = 0; i < validMeds.length - 1; i++) {
+      const med = validMeds[i];
+      if (!drugSafetyService) continue;
+      try {
+        const interactions = await drugSafetyService.checkDrugInteractions(
+          med.medication_name, validMeds.slice(i + 1)
+        );
+        for (const interaction of interactions) {
+          if (!interaction || interaction.unavailable) continue;
+          const pairKey = [interaction.drug1, interaction.drug2].sort().join('|');
+          if (checkedPairs.has(pairKey)) continue;
+          checkedPairs.add(pairKey);
+          suggestions.push({
+            suggestion_type: 'interaction_alert',
+            category: interaction.severity === 'critical' ? 'urgent' : 'routine',
+            priority: interaction.severity === 'critical' ? 1 : interaction.severity === 'serious' ? 2 : 3,
+            title: `${interaction.drug1} ↔ ${interaction.drug2} (${interaction.severity})`,
+            description: interaction.description,
+            rationale: `Limited finding from ${interaction.source}; comprehensive screening remains unavailable.`,
+            suggested_action: [],
+            source: 'curated_ddi'
+          });
+        }
+      } catch (err) {
+        console.warn(`[CDS] Interaction check failed: ${err.message}`);
       }
-    } catch (err) {
-      console.warn(`[CDS] RxNorm interaction check failed for ${med.medication_name}: ${err.message}`);
     }
   }
-
+  if (incomplete) {
+    suggestions.push({
+      suggestion_type: 'interaction_screening_unavailable',
+      category: 'routine',
+      priority: 4,
+      title: 'Interaction screening incomplete — verify manually',
+      description: 'Medication history or comprehensive interaction screening is unavailable. Any curated findings are limited; verify medication interactions manually.',
+      rationale: 'An incomplete screen cannot establish absence of interactions.',
+      suggested_action: [],
+      source: 'interaction_screening'
+    });
+  }
   return suggestions;
 }
 
@@ -615,13 +605,16 @@ async function evaluateRxNormInteractions(medications) {
 async function evaluatePatientContext(encounterId, patientId, context) {
   const rules = await db.getAllClinicalRules();
   const suggestions = [];
+  // Preserve original history for completeness; legacy rules receive valid rows.
+  const ruleMedications = Array.isArray(context.medications)
+    ? context.medications.filter(isMedicationRecord) : [];
 
   suggestions.push(...evaluateVitalRules(rules, context.vitals, context));
   suggestions.push(...evaluateLabRules(rules, context.labs, context));
-  suggestions.push(...evaluateDrugInteractionRules(rules, context.medications, context.allergies, context));
+  suggestions.push(...evaluateDrugInteractionRules(rules, ruleMedications, context.allergies, context));
   suggestions.push(...evaluateDifferentialRules(rules, context.chiefComplaint, context.transcript, context));
   suggestions.push(...evaluateScreeningRules(rules, context.problems, context.labs, context));
-  suggestions.push(...evaluatePrescribingAdvisoryRules(rules, context.medications, context.chiefComplaint, context.transcript, context));
+  suggestions.push(...evaluatePrescribingAdvisoryRules(rules, ruleMedications, context.chiefComplaint, context.transcript, context));
   suggestions.push(...evaluateHeartScoreProtocol(context));
 
   // RxNorm-based interaction checking (supplements local rules)
@@ -645,24 +638,38 @@ async function evaluatePatientContext(encounterId, patientId, context) {
   // Sort by priority (lower number = higher priority)
   unique.sort((a, b) => a.priority - b.priority);
 
-  // Persist to database (with deduplication against existing pending suggestions)
-  const saved = [];
-  for (const s of unique) {
-    const existing = await db.dbGet(
-      'SELECT * FROM cds_suggestions WHERE encounter_id = ? AND title = ? AND status = ?',
-      [encounterId, s.title, 'pending']
-    );
-    if (existing) {
-      saved.push(existing);
-      continue;
-    }
+  return persistSuggestions(encounterId, patientId, unique);
+}
 
-    const result = await db.createSuggestion({
-      encounter_id: encounterId,
-      patient_id: patientId,
-      ...s
-    });
-    saved.push({ id: result.id, ...s });
+async function persistSuggestions(encounterId, patientId, suggestions) {
+  // Evaluation and persistence are independent outcomes. Keep every finding,
+  // even if a later insert fails; unsaved findings have no approvable record ID.
+  const saved = [];
+  for (const s of suggestions) {
+    try {
+      const existing = await db.dbGet(
+        'SELECT * FROM cds_suggestions WHERE encounter_id = ? AND title = ? AND status = ?',
+        [encounterId, s.title, 'pending']
+      );
+      if (existing) {
+        saved.push({ ...existing, persistence: { status: 'saved' }, approvable: true });
+        continue;
+      }
+
+      const result = await db.createSuggestion({
+        encounter_id: encounterId,
+        patient_id: patientId,
+        ...s
+      });
+      saved.push({ ...s, id: result.id, status: 'pending',
+        persistence: { status: 'saved' }, approvable: true });
+    } catch (err) {
+      console.error('[CDS] Suggestion persistence failed:', err.code || 'SAVE_FAILED');
+      saved.push({ ...s, encounter_id: encounterId, patient_id: patientId,
+        status: 'unsaved', approvable: false,
+        persistence: { status: 'failed', code: err.code || 'SAVE_FAILED',
+          message: 'Finding evaluated but not saved. Re-evaluate before approval.' } });
+    }
   }
 
   return saved;
@@ -810,6 +817,7 @@ async function buildPatientContext(patientId, encounterId) {
 
 module.exports = {
   evaluatePatientContext,
+  persistSuggestions,
   executeSuggestion,
   buildPatientContext,
   evaluateVitalRules,

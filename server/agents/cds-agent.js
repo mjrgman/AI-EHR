@@ -137,7 +137,7 @@ class CDSAgent extends BaseAgent {
         {
           vitals: context.vitals || {},
           labs: context.labs || [],
-          medications: context.medications || [],
+          medications: context.medications,
           allergies: context.allergies || [],
           problems: context.problems || [],
           chiefComplaint: context.encounter?.chief_complaint || '',
@@ -186,6 +186,7 @@ class CDSAgent extends BaseAgent {
 
     return {
       suggestions: unique,
+      persistenceFailures: unique.filter(s => s.persistence?.status === 'failed').length,
       byCategory,
       counts: {
         total: unique.length,
@@ -254,7 +255,8 @@ class CDSAgent extends BaseAgent {
    * Check for medication reconciliation issues.
    */
   _checkMedicationReconciliation(context) {
-    const meds = context.medications || [];
+    const meds = Array.isArray(context.medications) ? context.medications.filter(m =>
+      m && typeof m.medication_name === 'string' && m.medication_name.trim()) : [];
     const problems = context.problems || [];
     const suggestions = [];
 

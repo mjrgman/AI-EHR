@@ -3,7 +3,7 @@ import { Sparkles } from 'lucide-react';
 import CDSSuggestionCard from './CDSSuggestionCard';
 
 export default function CDSSuggestionList({ suggestions = [], onAccept, onReject }) {
-  const pending = suggestions.filter(s => s.status === 'pending');
+  const pending = suggestions.filter(s => s.status === 'pending' || s.status === 'unsaved');
   const accepted = suggestions.filter(s => s.status === 'accepted');
 
   if (suggestions.length === 0) {
@@ -19,7 +19,7 @@ export default function CDSSuggestionList({ suggestions = [], onAccept, onReject
 
   return (
     <div className="space-y-2">
-      {pending.map(s => <CDSSuggestionCard key={s.id} suggestion={s} onAccept={onAccept} onReject={onReject} />)}
+      {pending.map(s => <CDSSuggestionCard key={s.id || `unsaved-${s.title}`} suggestion={s} onAccept={onAccept} onReject={onReject} />)}
       {accepted.length > 0 && pending.length > 0 && (
         <div className="border-t border-slate-100 pt-2 mt-3">
           <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Accepted</p>

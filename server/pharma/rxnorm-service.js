@@ -4,7 +4,7 @@
  * RxNorm Service — NLM RxNorm REST API Integration
  *
  * Provides canonical drug identification (RxCUI), brand/generic mapping,
- * drug interaction checking, and form/strength lookups using the free
+ * limited curated interaction findings, and form/strength lookups using the free
  * NLM RxNorm API (https://rxnav.nlm.nih.gov/REST/).
  *
  * All lookups are cached in SQLite with a configurable TTL (default 30 days).
@@ -19,12 +19,8 @@ const RXNORM_BASE = 'https://rxnav.nlm.nih.gov/REST';
 const CACHE_TTL_DAYS = 30;
 const REQUEST_TIMEOUT_MS = 5000;
 
-// The NLM RxNav /interaction endpoints were retired Jan-2024 (see getInteractions
-// and buildUnavailableInteraction). Calling the dead endpoint only yields a non-JSON
-// response and a "[RxNorm] Invalid JSON" warning before we fail closed anyway, and it
-// makes the test suite depend on a live network call. Default OFF; set
-// RXNORM_INTERACTION_ENABLED=true to re-enable if NLM restores the API.
-const RXNORM_INTERACTION_ENABLED = process.env.RXNORM_INTERACTION_ENABLED === 'true';
+// Legacy RXNORM_INTERACTION_ENABLED is intentionally ignored. The retired
+// interaction endpoint and its unversioned cache cannot provide a valid screen.
 
 // Master switch for ALL outbound RxNav traffic, not just /interaction.
 // Default OFF: this is a local synthetic demo and must not reach the public
@@ -272,9 +268,9 @@ function buildUnavailableInteraction(reason) {
 }
 
 /**
- * True if an interactions array represents an unavailable-screening result
- * rather than a completed screen. Use this to decide whether an empty list
- * may be trusted as "no interactions."
+ * True when an interactions array contains an unavailable marker.
+ * False does not establish completed screening: curated findings have limited
+ * coverage, and an empty supplied history has no pairwise comparisons.
  *
  * @param {Array} interactions
  * @returns {boolean}
@@ -285,173 +281,66 @@ function isScreeningUnavailable(interactions) {
 }
 
 /**
- * Check drug-drug interactions between two RxCUIs.
- *
- * Order of resolution:
- *   1. CURATED TABLE (by name) — if drug names are supplied and the pair is in
- *      the interim curated high-severity table (server/pharma/curated-ddi.js),
- *      return that real interaction. This is the working path now that NLM's
- *      live /interaction API is retired.
- *   2. Live RxNav /interaction API (by RxCUI) — retired Jan-2024, so in practice
- *      this returns null.
- *   3. FAIL-CLOSED sentinel — on any upstream error / unreachable source, return
- *      a single-element array containing the "screening unavailable" sentinel
- *      (see buildUnavailableInteraction). A genuinely-empty array is returned
- *      ONLY when the source responded successfully with zero interaction pairs.
- *
- * IMPORTANT: a curated MISS does NOT mean "no interaction" — when the curated
- * table has no entry AND the live source is unreachable, we still return the
- * UNAVAILABLE sentinel (fail closed), never an empty/clean result.
- *
- * @param {string} rxcui1 - First drug RxCUI
- * @param {string} rxcui2 - Second drug RxCUI
- * @param {string} [name1] - First drug name (enables curated-table lookup)
- * @param {string} [name2] - Second drug name (enables curated-table lookup)
- * @returns {Promise<Array<{severity: string, description: string, source: string, status?: string}>>}
+ * Return limited curated findings, or an explicit unavailable marker.
+ * The retired interaction endpoint and legacy interaction cache are quarantined
+ * regardless of environment flags. A curated miss is never a negative screen.
  */
 async function getInteractions(rxcui1, rxcui2, name1, name2) {
-  if (!rxcui1 || !rxcui2) return [];
-
-  // 1. Curated table (by name). A hit is a real, graded interaction.
-  if (name1 && name2) {
+  if (typeof name1 === 'string' && name1.trim()
+      && typeof name2 === 'string' && name2.trim()) {
     const curated = curatedDdi.lookupCuratedInteraction(name1, name2);
     if (curated) {
       return [{
         severity: curated.severity,
         description: curated.description,
         source: curated.source,
-        curated: true
+        curated: true,
+        limitedCoverage: true
       }];
     }
   }
-
-  // The live NLM RxNav /interaction API was retired Jan-2024. Skip the dead
-  // network call (and its noisy "[RxNorm] Invalid JSON" warning) unless explicitly
-  // re-enabled — the outcome is identical: we only reach here on a curated MISS, and
-  // a retired source means we fail CLOSED with the UNAVAILABLE sentinel either way.
-  // Set RXNORM_INTERACTION_ENABLED=true to restore the live path if NLM revives it.
-  if (!RXNORM_INTERACTION_ENABLED) {
-    return [buildUnavailableInteraction('NLM /interaction API retired 2024-01')];
-  }
-
-  const sorted = [rxcui1, rxcui2].sort();
-  const key = `interaction:${sorted[0]}:${sorted[1]}`;
-
-  const cached = await getCached(key);
-  // Never serve an "unavailable" sentinel from cache — re-attempt each time so
-  // a restored source recovers immediately. Only cache genuine results.
-  if (cached && !isScreeningUnavailable(cached)) return cached;
-
-  const data = await rxnormGet(
-    `/interaction/list.json?rxcuis=${sorted[0]}+${sorted[1]}`
-  );
-
-  // FAIL CLOSED: a null/absent response means the upstream source was
-  // unreachable or returned an error (the NLM /interaction API was retired
-  // Jan-2024, so this is the live path). Surface "unavailable", never empty.
-  // (We only reach here when the curated table had no entry for this pair —
-  // a curated MISS is NOT "no interaction," so we still fail closed.)
-  if (!data) {
-    return [buildUnavailableInteraction('upstream source unreachable')];
-  }
-
-  // A well-formed response with no interaction group = source reachable,
-  // genuinely zero interactions. Safe to return empty (and cache it).
-  if (!data.fullInteractionTypeGroup) {
-    await setCache(key, []);
-    return [];
-  }
-
-  const interactions = [];
-  for (const group of data.fullInteractionTypeGroup) {
-    for (const type of (group.fullInteractionType || [])) {
-      for (const pair of (type.interactionPair || [])) {
-        interactions.push({
-          severity: pair.severity || 'unknown',
-          description: pair.description || '',
-          source: group.sourceName || 'NLM'
-        });
-      }
-    }
-  }
-
-  await setCache(key, interactions);
-  return interactions;
+  return [buildUnavailableInteraction(
+    !rxcui1 || !rxcui2
+      ? 'no curated finding; pair identifiers missing; comprehensive screening unavailable'
+      : 'no curated finding; NLM /interaction API retired 2024-01'
+  )];
 }
 
 /**
- * Check interactions for a drug against a list of active medications.
- * Resolves drug names to RxCUIs first if needed.
- *
- * @param {string} drugName - The new drug being prescribed
- * @param {Array<{medication_name: string, rxnorm_cui?: string}>} activeMeds - Current medications
- * @returns {Promise<Array<{drug1: string, drug2: string, severity: string, description: string, source: string}>>}
+ * Screen independent entries without discarding findings when history is invalid.
+ * An explicit empty list has no pairwise comparisons; it is not a safety claim.
+ * No identifier lookup is needed for this limited, name-based interaction path.
  */
 async function checkInteractionsAgainstList(drugName, activeMeds) {
-  if (!drugName || !activeMeds || activeMeds.length === 0) return [];
-
-  // Resolve the new drug to an RxCUI (best-effort). Since the NLM resolution
-  // API may be unreachable, a failed resolve does NOT short-circuit the whole
-  // screen — the curated table is keyed by NAME and works without an RxCUI.
-  const newDrug = await lookupByName(drugName);
-  const newRxcui = newDrug ? newDrug.rxcui : null;
-
+  if (typeof drugName !== 'string' || !drugName.trim()) {
+    return [buildUnavailableInteraction('new drug name missing or invalid')];
+  }
+  if (!Array.isArray(activeMeds)) {
+    return [buildUnavailableInteraction('medication history missing or invalid')];
+  }
   const allInteractions = [];
-
   for (const med of activeMeds) {
-    // CURATED TABLE FIRST (by name) — works offline and catches the textbook
-    // high-severity pairs even when RxCUI resolution / the live API is dead.
-    const curated = curatedDdi.lookupCuratedInteraction(drugName, med.medication_name);
-    if (curated) {
+    if (!med || typeof med !== 'object' || Array.isArray(med)
+        || typeof med.medication_name !== 'string' || !med.medication_name.trim()) {
       allInteractions.push({
         drug1: drugName,
-        drug2: med.medication_name,
-        rxcui1: newRxcui,
-        rxcui2: med.rxnorm_cui || null,
-        severity: curated.severity,
-        description: curated.description,
-        source: curated.source,
-        curated: true
+        drug2: null,
+        ...buildUnavailableInteraction('medication history contains an invalid entry')
       });
       continue;
     }
-
-    // No curated hit. Try RxCUI-based resolution + the (retired) live API.
-    let medRxcui = med.rxnorm_cui;
-    if (!medRxcui) {
-      const lookup = await lookupByName(med.medication_name);
-      if (lookup) medRxcui = lookup.rxcui;
-    }
-    if (medRxcui && newRxcui && medRxcui === newRxcui) continue;
-
-    // Could not resolve to RxCUIs and no curated entry → cannot screen this
-    // pair. FAIL CLOSED: emit an explicit "unavailable" marker (never treat the
-    // absence of a curated hit as "no interaction").
-    if (!medRxcui || !newRxcui) {
-      allInteractions.push({
-        drug1: drugName,
-        drug2: med.medication_name,
-        rxcui1: newRxcui,
-        rxcui2: medRxcui || null,
-        ...buildUnavailableInteraction(
-          `no curated entry and could not resolve "${!newRxcui ? drugName : med.medication_name}" to a drug identifier`
-        )
-      });
-      continue;
-    }
-
-    const interactions = await getInteractions(newRxcui, medRxcui, drugName, med.medication_name);
+    const interactions = await getInteractions(null, med.rxnorm_cui, drugName, med.medication_name);
     for (const interaction of interactions) {
       allInteractions.push({
         drug1: drugName,
         drug2: med.medication_name,
-        rxcui1: newRxcui,
-        rxcui2: medRxcui,
+        comparisonId: med.comparisonId,
+        rxcui1: null,
+        rxcui2: med.rxnorm_cui || null,
         ...interaction
       });
     }
   }
-
   return allInteractions;
 }
 

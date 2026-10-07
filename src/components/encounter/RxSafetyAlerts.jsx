@@ -116,7 +116,8 @@ export default function RxSafetyAlerts({ safety, medicationName }) {
   // synthetic warning row if the flag is set but no explicit alert came back
   // (defensive — keeps "fail closed" visible even on an unexpected shape).
   const showScreeningWarning =
-    unavailable.length > 0 || safety.interactionScreeningUnavailable === true;
+    unavailable.length > 0 || safety.interactionScreeningUnavailable === true
+    || safety.interactionScreening?.status === 'incomplete';
 
   if (critical.length === 0 && !showScreeningWarning) return null;
 

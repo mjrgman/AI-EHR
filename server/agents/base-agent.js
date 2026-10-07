@@ -33,7 +33,7 @@ const { getModuleDefinition } = require('./module-registry');
  * @property {Object} encounter - Current encounter (id, date, type, chief_complaint, transcript, status, provider)
  * @property {Object} vitals - Current vitals (systolic_bp, diastolic_bp, heart_rate, etc.)
  * @property {Array} problems - Active problem list [{problem_name, icd10_code, status}]
- * @property {Array} medications - Active medications [{medication_name, dose, route, frequency, status}]
+ * @property {Array|null|undefined} medications - Medication history; missing is distinct from an explicitly empty list
  * @property {Array} allergies - Allergies [{allergen, reaction, severity}]
  * @property {Array} labs - Recent lab results [{test_name, result_value, reference_range, result_date}]
  * @property {Array} labOrders - Pending lab orders [{test_name, status, order_date}]

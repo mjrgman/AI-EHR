@@ -11,6 +11,8 @@ const aiClient = require('./ai-client');
 const workflow = require('./workflow-engine');
 const cds = require('./cds-engine');
 const drugSafety = require('./pharma/drug-safety-service');
+const { selectActiveMedications } = require('./pharma/medication-history');
+const { validateExtractedMedications, screenPrescriptionBatch } = require('./pharma/prescription-batch');
 const providerLearning = require('./provider-learning');
 const audit = require('./audit-logger');
 const logger = require('./utils/logger');
@@ -898,11 +900,12 @@ app.post('/api/prescriptions', async (req, res) => {
         db.getPatientMedications(patientId),
         db.getPatientAllergies(patientId)
       ]);
-      const activeMeds = (allMeds || []).filter(m => m.status === 'active');
+      const activeMeds = selectActiveMedications(allMeds);
       const check = await drugSafety.fullSafetyCheck(rxData.medication_name, activeMeds, allergies || []);
       safety = {
         alerts: check.alerts,
         interactionScreeningUnavailable: check.interactionScreeningUnavailable,
+        interactionScreening: check.interactionScreening,
         boxedWarning: check.boxedWarning
       };
     } catch (safetyErr) {
@@ -918,6 +921,7 @@ app.post('/api/prescriptions', async (req, res) => {
           unavailable: true
         }],
         interactionScreeningUnavailable: true,
+        interactionScreening: { status: 'incomplete', reason: 'safety_check_failed', findings: [], inputComplete: false },
         boxedWarning: { hasBoxedWarning: false, warning: null }
       };
     }
@@ -972,88 +976,58 @@ app.post('/api/prescriptions', async (req, res) => {
 app.post('/api/prescriptions/from-speech', async (req, res) => {
   try {
     const { transcript, patient_id, encounter_id } = req.body;
-    if (!transcript || typeof transcript !== 'string') {
+    if (typeof transcript !== 'string' || !transcript.trim()) {
       return res.status(400).json({ error: 'transcript is required' });
     }
-
     const patientId = validateId(patient_id);
-    if (!patientId) {
-      return res.status(400).json({ error: 'Valid patient_id is required' });
-    }
+    if (!patientId) return res.status(400).json({ error: 'Valid patient_id is required' });
     await requireExistingPatient(patientId);
     const encId = encounter_id ? validateId(encounter_id) : null;
     await requireMatchingEncounterPatient(encId, patientId);
+
     const medications = aiClient.extractMedications(transcript);
-    const prescriptions = [];
-
-    // Fetch patient meds + allergies once for the warn-and-allow safety screen below.
-    const [allMeds, allergies] = await Promise.all([
-      db.getPatientMedications(patientId),
-      db.getPatientAllergies(patientId)
+    validateExtractedMedications(medications);
+    const text = transcript.toLowerCase();
+    const drafts = medications.filter(m => text.includes('start') && text.includes(m.name.trim().toLowerCase()))
+      .map(med => ({
+        patient_id: patientId, encounter_id: encId,
+        medication_name: med.name.trim(), generic_name: med.name.trim(),
+        dose: med.dose.trim(), route: med.route.trim(), frequency: med.frequency.trim(),
+        quantity: med.frequency.trim() === 'weekly' ? 4 : 30, refills: 0,
+        instructions: 'Take ' + med.dose.trim() + ' ' + med.route.trim() + ' ' + med.frequency.trim(),
+        prescriber: process.env.PROVIDER_NAME || 'Dr. Provider',
+        prescribed_date: new Date().toISOString().split('T')[0], status: 'draft'
+      }));
+    const [history, allergies] = await Promise.all([
+      db.getPatientMedications(patientId), db.getPatientAllergies(patientId)
     ]);
-    const activeMeds = (allMeds || []).filter(m => m.status === 'active');
-
-    for (const med of medications) {
-      const isNew = transcript.toLowerCase().includes('start') &&
-                    transcript.toLowerCase().includes(med.name.toLowerCase());
-
-      if (isNew) {
-        const rxData = {
-          patient_id: patientId,
-          encounter_id: encId,
-          medication_name: med.name,
-          generic_name: med.name,
-          dose: med.dose,
-          route: med.route,
-          frequency: med.frequency,
-          quantity: med.frequency === 'weekly' ? 4 : 30,
-          refills: 0,
-          instructions: `Take ${med.dose} ${med.route} ${med.frequency}`,
-          prescriber: process.env.PROVIDER_NAME || 'Dr. Provider',
-          prescribed_date: new Date().toISOString().split('T')[0],
-          status: 'draft'
-        };
-
-        // Warn-and-allow drug-safety screen (never blocks the script; fails closed).
-        let safety = null;
-        try {
-          const check = await drugSafety.fullSafetyCheck(rxData.medication_name, activeMeds, allergies || []);
-          safety = {
-            alerts: check.alerts,
-            interactionScreeningUnavailable: check.interactionScreeningUnavailable,
-            boxedWarning: check.boxedWarning
-          };
-        } catch (safetyErr) {
-          console.error('Drug-safety screening error (non-fatal, fail-closed):', safetyErr.message);
-          safety = {
-            alerts: [{
-              type: 'interaction_screening_unavailable',
-              severity: 'warning',
-              title: `Interaction check unavailable: ${rxData.medication_name}`,
-              description: 'Automated drug-safety screening could not be completed. Verify interactions, boxed warnings, and allergies manually.',
-              source: 'drug-safety-service',
-              unavailable: true
-            }],
-            interactionScreeningUnavailable: true,
-            boxedWarning: { hasBoxedWarning: false, warning: null }
-          };
-        }
-
-        const result = await db.createPrescription(rxData);
-        prescriptions.push({ ...rxData, id: result.id, safety });
+    const batch = await screenPrescriptionBatch(drafts, history, allergies || [], drugSafety);
+    const prescriptions = [];
+    // All drafts have been validated and screened before the first write.
+    // Report successful IDs on a partial failure; never retry a create operation.
+    for (let i = 0; i < batch.checked.length; i++) {
+      const { draft, safety } = batch.checked[i];
+      try {
+        const result = await db.createPrescription(draft);
+        prescriptions.push({ ...draft, id: result.id, safety, review: batch.review,
+          persistence: { status: 'saved' } });
+      } catch (err) {
+        console.error('Prescription batch persistence failed:', err.code || 'SAVE_FAILED');
+        return res.status(500).json({ error: 'Prescription batch was not fully saved',
+          code: 'BATCH_PERSISTENCE_FAILED', retrySafe: false, prescriptions,
+          failedIndex: i, unsavedPrescriptions: batch.checked.slice(i).map((item, index) => ({
+            ...item.draft, safety: item.safety, review: batch.review,
+            persistence: { status: index === 0 ? 'failed' : 'not_attempted' }
+          })), findings: batch.findings, review: batch.review });
       }
     }
-
-    res.json({ prescriptions });
+    res.json({ prescriptions, findings: batch.findings, review: batch.review });
   } catch (error) {
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message, code: error.code });
-    }
+    if (error.status) return res.status(error.status).json({ error: error.message, code: error.code });
     console.error('Error generating prescriptions:', error);
-    res.status(500).json({ error: 'Failed to generate prescriptions' });
+    res.status(500).json({ error: 'Failed to generate prescriptions', retrySafe: false });
   }
 });
-
 // ==========================================
 // LAB ORDER ENDPOINTS
 // ==========================================
@@ -1605,19 +1579,11 @@ app.post('/api/cds/evaluate', async (req, res) => {
       ruleSuggestions = await db.getEncounterSuggestions(encounterId, 'pending');
     }
 
-    // Persist provider suggestions too
-    const savedProvSuggestions = [];
-    for (const s of provSuggestions) {
-      const result = await db.createSuggestion({
-        encounter_id: encounterId,
-        patient_id: patientId,
-        ...s
-      });
-      savedProvSuggestions.push({ id: result.id, ...s });
-    }
+    const savedProvSuggestions = await cds.persistSuggestions(encounterId, patientId, provSuggestions);
 
     res.json({
       suggestions: [...ruleSuggestions, ...savedProvSuggestions],
+      persistenceFailures: [...ruleSuggestions, ...savedProvSuggestions].filter(s => s.persistence?.status === 'failed').length,
       context_summary: {
         patient: context.patient ? `${context.patient.first_name} ${context.patient.last_name}` : 'Unknown',
         problems_count: (context.problems || []).length,

@@ -268,7 +268,10 @@ function extractMedications(transcript) {
 
   let match;
   while ((match = medPattern.exec(text)) !== null) {
-    const name = match[1].trim();
+    // The fallback can capture the command "Start warfarin" after the known
+    // drug pass already found Warfarin. Strip the command so the existing
+    // name/dose/route/frequency key deduplicates that same extraction only.
+    const name = match[1].trim().replace(/^start\s+/i, '');
     const dose = match[2].replace(/\s+/g, '');
 
     const skipWords = ['patient', 'doctor', 'nurse', 'blood', 'heart', 'stage', 'type', 'about', 'around', 'level', 'result', 'value'];
@@ -282,15 +285,16 @@ function extractMedications(transcript) {
 
     const contextAfter = lowerText.substring(match.index, match.index + 140);
     let frequency = 'daily';
+    let explicitFrequency = false;
     for (const [keyword, freqCode] of sortedFreqs) {
-      if (contextAfter.includes(keyword)) { frequency = freqCode; break; }
+      if (contextAfter.includes(keyword)) { frequency = freqCode; explicitFrequency = true; break; }
     }
 
     // Check if this is a known medication and apply smart defaults
     const knownMed = COMMON_MEDICATIONS[name.toLowerCase()];
     if (knownMed) {
       if (route === 'PO' && knownMed.route !== 'PO') route = knownMed.route;
-      if (frequency === 'daily' && knownMed.freq !== 'daily') frequency = knownMed.freq;
+      if (!explicitFrequency && knownMed.freq !== 'daily') frequency = knownMed.freq;
     }
 
     const dedupeKey = `${name.toLowerCase()}|${dose}|${route}|${frequency}`;

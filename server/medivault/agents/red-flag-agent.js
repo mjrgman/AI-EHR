@@ -445,21 +445,29 @@ class RedFlagAgent extends BaseAgent {
       [patientId]
     );
 
-    if (medDocs.length === 0) return alerts;
+    const unknownHistory = documentId => ({
+      severity: 'serious', type: 'medication_interaction_unavailable',
+      description: 'Medication history missing or malformed — verify medication interactions manually.',
+      details: { documentId, unavailable: true, inputComplete: false }
+    });
+    if (!Array.isArray(medDocs) || medDocs.length === 0) return [unknownHistory(null)];
 
-    const text = medDocs[0].ocr_text || '';
+    const text = typeof medDocs[0]?.ocr_text === 'string' ? medDocs[0].ocr_text : '';
     const lines = text.split(/\n/).filter(l => l.trim());
 
     // Extract medication names
     const medications = [];
+    let invalidInput = lines.length === 0;
     for (const line of lines) {
       const medMatch = line.match(/^\s*[-*]?\s*([A-Za-z][A-Za-z\s-]+?)(?:\s+\d|\s*$)/);
       if (medMatch) {
         medications.push(medMatch[1].trim());
+      } else {
+        invalidInput = true;
       }
     }
 
-    if (medications.length < 2) return alerts;
+    if (medications.length < 2) return invalidInput ? [unknownHistory(medDocs[0]?.id)] : alerts;
 
     // Use drug safety service if available.
     //
@@ -471,7 +479,7 @@ class RedFlagAgent extends BaseAgent {
     if (drugSafetyService && typeof drugSafetyService.checkDrugInteractions === 'function') {
       try {
         const seenPairs = new Set();
-        let screeningUnavailable = false;
+        let screeningUnavailable = invalidInput;
 
         for (let i = 0; i < medications.length; i++) {
           const subject = medications[i];
@@ -485,6 +493,7 @@ class RedFlagAgent extends BaseAgent {
           for (const interaction of (interactions || [])) {
             // Fail-closed: the source could not complete screening. Record once
             // and surface as a WARNING — never treat as "no interactions."
+            if (interaction.curated || interaction.limitedCoverage) screeningUnavailable = true;
             if (interaction.unavailable) {
               screeningUnavailable = true;
               continue;
@@ -525,7 +534,8 @@ class RedFlagAgent extends BaseAgent {
             details: {
               medications: [...medications],
               documentId: medDocs[0].id,
-              unavailable: true
+              unavailable: true,
+              inputComplete: !invalidInput
             }
           });
         }

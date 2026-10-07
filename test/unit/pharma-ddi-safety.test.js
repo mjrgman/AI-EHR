@@ -73,14 +73,14 @@ describe('P0-3 rxnorm: checkInteractionsAgainstList fails closed', () => {
   // call rxnorm.checkInteractionsAgainstList through the exported reference)
   // and via the pure helper tests above. Here we only pin the input guards,
   // which are pure and network-free.
-  test('empty inputs short-circuit to [] (nothing to screen, not a failure)', async () => {
+  test('explicit empty history has no comparisons; missing drug is unavailable', async () => {
     assert.deepEqual(await rxnorm.checkInteractionsAgainstList('warfarin', []), []);
-    assert.deepEqual(await rxnorm.checkInteractionsAgainstList('', [{ medication_name: 'x' }]), []);
+    assert.equal(rxnorm.isScreeningUnavailable(await rxnorm.checkInteractionsAgainstList('', [{ medication_name: 'x' }])), true);
   });
 
-  test('getInteractions guard: missing rxcui short-circuits to [] (no network)', async () => {
-    assert.deepEqual(await rxnorm.getInteractions(null, '123'), []);
-    assert.deepEqual(await rxnorm.getInteractions('123', null), []);
+  test('getInteractions guard: missing rxcui fails closed (no network)', async () => {
+    assert.equal(rxnorm.isScreeningUnavailable(await rxnorm.getInteractions(null, '123')), true);
+    assert.equal(rxnorm.isScreeningUnavailable(await rxnorm.getInteractions('123', null)), true);
   });
 });
 
@@ -134,12 +134,10 @@ describe('P0-3 drug-safety: checkDrugInteractions arg contract + fail-closed', (
     assert.equal(drugSafety.isScreeningUnavailable(out), true);
   });
 
-  test('OLD BUG SHAPE: passing the med array as the first arg returns nothing', async () => {
-    // This reproduces the pre-fix MediVault call: checkDrugInteractions(medications).
-    // activeMeds is undefined → the guard returns [] (screening never runs).
-    // Pinned here so a regression to the broken call shape is caught.
+  test('invalid old call shape now explicitly fails closed', async () => {
+    // A malformed historical call shape must now surface unavailability.
     const out = await drugSafety.checkDrugInteractions(['warfarin', 'ibuprofen']);
-    assert.deepEqual(out, []);
+    assert.equal(drugSafety.isScreeningUnavailable(out), true);
   });
 });
 

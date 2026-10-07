@@ -20,6 +20,7 @@ import LabResults from '../components/patient/LabResults';
 import WorkflowTracker from '../components/workflow/WorkflowTracker';
 import CDSSuggestionList from '../components/encounter/CDSSuggestionList';
 import RxSafetyAlerts from '../components/encounter/RxSafetyAlerts';
+import SpeechPrescriptionSafety from '../components/encounter/SpeechPrescriptionSafety';
 import HRTPanel, { isHRTRelevant } from '../components/encounter/HRTPanel';
 import AgentPanel from '../components/agents/AgentPanel';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
@@ -315,6 +316,7 @@ export default function EncounterPage() {
   // SEES interactions / boxed warnings / "screening unavailable" before the
   // script is finalized (audit UR-001/A2: server computed it, UI ignored it).
   const [rxSafety, setRxSafety] = useState(null);          // manual Rx modal path
+  const [speechRxFailure, setSpeechRxFailure] = useState(null);
   const [speechRxSafety, setSpeechRxSafety] = useState([]); // from-speech path (one per Rx)
   const [generatingRx, setGeneratingRx] = useState(false);
 
@@ -558,9 +560,8 @@ export default function EncounterPage() {
         encounter_id: eid,
       });
       const created = Array.isArray(result?.prescriptions) ? result.prescriptions : [];
-      setSpeechRxSafety(
-        created.map(rx => ({ medication_name: rx.medication_name, safety: rx.safety }))
-      );
+      setSpeechRxSafety(created);
+      setSpeechRxFailure(null);
       await refreshEncounter();
       if (created.length === 0) {
         toast.info('No new prescriptions detected in the transcript');
@@ -569,6 +570,14 @@ export default function EncounterPage() {
       }
     } catch (e) {
       safeLog.error('Rx-from-speech failed:', e);
+      if (e.code === 'BATCH_PERSISTENCE_FAILED') {
+        setSpeechRxSafety([...(e.details?.prescriptions || []), ...(e.details?.unsavedPrescriptions || [])]);
+        setSpeechRxFailure('Batch was not fully saved. Review saved drafts and create only missing prescriptions; do not repeat the batch.');
+        await refreshEncounter();
+      } else if (!e.status) {
+        setSpeechRxFailure('Save outcome unknown. Review existing drafts before trying again.');
+        await refreshEncounter();
+      }
       toast.error('Failed to generate prescriptions from speech: ' + e.message);
     } finally {
       setGeneratingRx(false);
@@ -980,9 +989,7 @@ export default function EncounterPage() {
           {rxSafety && (
             <RxSafetyAlerts safety={rxSafety.safety} medicationName={rxSafety.medication_name} />
           )}
-          {speechRxSafety.map((rx, i) => (
-            <RxSafetyAlerts key={`speech-rx-${i}`} safety={rx.safety} medicationName={rx.medication_name} />
-          ))}
+          <SpeechPrescriptionSafety prescriptions={speechRxSafety} failure={speechRxFailure} />
 
           {/* Display created orders */}
           {totalOrders > 0 && (

@@ -547,64 +547,59 @@ async function migrateCdsRules(db) {
 // ==========================================
 
 /**
- * Expand cds_suggestions.suggestion_type CHECK constraint to include
- * 'prescribing_advisory' and 'clinical_protocol'.
- * Idempotent — checks constraint text before rebuilding.
+ * Widen the actual suggestion_type constraint, preserving the existing table's
+ * columns, relationships, indexes, triggers and AUTOINCREMENT high-water mark.
+ * Startup runs before request handling; do not run on a shared active transaction.
  */
 async function migrateSuggestionTypes(db) {
-  const row = await dbGetCompat(
-    db,
-    "SELECT sql FROM sqlite_master WHERE type='table' AND name='cds_suggestions'"
-  );
+  const row = await dbGetCompat(db,
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='cds_suggestions'");
+  if (!row) return;
+  const constraint = /CHECK\s*\(\s*suggestion_type\s+IN\s*\(([^)]*)\)\s*\)/i;
+  const match = row.sql.match(constraint);
+  if (!match) throw new Error('Unrecognized cds_suggestions suggestion_type constraint');
+  const required = ['prescribing_advisory', 'clinical_protocol', 'interaction_screening_unavailable'];
+  const missing = required.filter(type => !match[1].includes("'" + type + "'"));
+  if (!missing.length) return;
 
-  if (!row) return; // Table doesn't exist yet — initial schema already has correct types
-  if (row.sql.includes('clinical_protocol')) {
-    console.log('[MIGRATIONS] cds_suggestions suggestion_type constraint already current — skipping');
-    return;
-  }
-
-  console.log('[MIGRATIONS] Expanding cds_suggestions suggestion_type constraint...');
-  await dbRun(db, 'PRAGMA foreign_keys=OFF');
-  await dbRun(db, 'BEGIN TRANSACTION');
+  const foreignKeys = (await dbGetCompat(db, 'PRAGMA foreign_keys')).foreign_keys;
+  let inTransaction = false;
   try {
-    await dbRun(db, `
-      CREATE TABLE IF NOT EXISTS cds_suggestions_new (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        encounter_id INTEGER NOT NULL,
-        patient_id INTEGER NOT NULL,
-        suggestion_type TEXT NOT NULL CHECK(suggestion_type IN (
-          'differential_diagnosis','lab_order','imaging_order',
-          'medication','medication_adjustment','referral',
-          'allergy_alert','interaction_alert','vital_alert',
-          'preventive_care','dose_adjustment',
-          'prescribing_advisory','clinical_protocol'
-        )),
-        category TEXT DEFAULT 'routine',
-        priority INTEGER DEFAULT 50,
-        title TEXT NOT NULL,
-        description TEXT NOT NULL,
-        rationale TEXT,
-        suggested_action TEXT,
-        status TEXT NOT NULL CHECK(status IN (
-          'pending','accepted','rejected','deferred','expired','auto-applied'
-        )) DEFAULT 'pending',
-        provider_response_time DATETIME,
-        source TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (encounter_id) REFERENCES encounters(id) ON DELETE CASCADE,
-        FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
-      )
-    `);
-    await dbRun(db, `INSERT INTO cds_suggestions_new SELECT * FROM cds_suggestions`);
-    await dbRun(db, `DROP TABLE cds_suggestions`);
-    await dbRun(db, `ALTER TABLE cds_suggestions_new RENAME TO cds_suggestions`);
+    await dbRun(db, 'PRAGMA foreign_keys=OFF');
+    await dbRun(db, 'BEGIN IMMEDIATE');
+    inTransaction = true;
+    const objects = await dbAllCompat(db,
+      "SELECT sql FROM sqlite_master WHERE tbl_name='cds_suggestions' AND type IN ('index','trigger') AND sql IS NOT NULL");
+    const sequence = await dbGetCompat(db,
+      "SELECT seq FROM sqlite_sequence WHERE name='cds_suggestions'");
+    const widened = row.sql.replace(constraint,
+      'CHECK(suggestion_type IN (' + match[1] + ',' + missing.map(type => "'" + type + "'").join(',') + '))');
+    const createSql = widened.replace(
+      /^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\x22\x60\x5b]?cds_suggestions[\x22\x60\x5d]?/i,
+      'CREATE TABLE cds_suggestions_new');
+    if (createSql === widened) throw new Error('Unrecognized cds_suggestions table name');
+    await dbRun(db, createSql);
+    const columns = await dbAllCompat(db, 'PRAGMA table_info(cds_suggestions)');
+    const names = columns.map(col => '"' + col.name.replaceAll('"', '""') + '"').join(',');
+    await dbRun(db, 'INSERT INTO cds_suggestions_new (' + names + ') SELECT ' + names + ' FROM cds_suggestions');
+    // Drop, then rename the replacement. Renaming the old table first would
+    // rewrite foreign keys on child tables to a legacy table name.
+    await dbRun(db, 'DROP TABLE cds_suggestions');
+    await dbRun(db, 'ALTER TABLE cds_suggestions_new RENAME TO cds_suggestions');
+    if (sequence) {
+      await dbRun(db, "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name='cds_suggestions'", [sequence.seq]);
+    }
+    for (const object of objects) await dbRun(db, object.sql);
+    const violations = await dbAllCompat(db, 'PRAGMA foreign_key_check');
+    if (violations.length) throw new Error('Foreign-key integrity failed during CDS suggestion migration');
     await dbRun(db, 'COMMIT');
-    console.log('[MIGRATIONS] cds_suggestions constraint expanded successfully');
+    inTransaction = false;
   } catch (err) {
-    await dbRun(db, 'ROLLBACK');
+    if (inTransaction) await dbRun(db, 'ROLLBACK');
     throw err;
+  } finally {
+    await dbRun(db, 'PRAGMA foreign_keys=' + (foreignKeys ? 'ON' : 'OFF'));
   }
-  await dbRun(db, 'PRAGMA foreign_keys=ON');
 }
 
 // ==========================================

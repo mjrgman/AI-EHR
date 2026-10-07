@@ -14,7 +14,12 @@ export function useCDS(encounterId, patientId, options = {}) {
       // Normalize: the GET endpoint may return a bare array today, but guard
       // against a wrapped `{ suggestions: [...] }` shape or a null/undefined
       // body so the downstream `.filter()` calls never throw.
-      setSuggestions(Array.isArray(data) ? data : (data?.suggestions || []));
+      const stored = Array.isArray(data) ? data : (data?.suggestions || []);
+      // Polling cannot read unsaved findings from the DB. Keep their warning
+      // until a later evaluation/save resolves it, within this encounter only.
+      setSuggestions(previous => [...stored, ...previous.filter(s =>
+        s.persistence?.status === 'failed' && Number(s.encounter_id) === Number(encounterId)
+        && !stored.some(row => row.title === s.title && row.status === 'pending'))]);
       setError(null);
     } catch (err) {
       setError(err.message);

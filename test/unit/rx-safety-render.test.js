@@ -26,6 +26,8 @@ const clientPath = path.resolve(__dirname, '../../src/api/client.js');
 const encounterSrc = fs.readFileSync(encounterPath, 'utf8');
 const rxSafetySrc = fs.readFileSync(rxSafetyPath, 'utf8');
 const clientSrc = fs.readFileSync(clientPath, 'utf8');
+const speechSafetySrc = fs.readFileSync(path.resolve(__dirname,
+  '../../src/components/encounter/SpeechPrescriptionSafety.jsx'), 'utf8');
 
 describe('rx-safety-render: the server safety object now has real consumers in src/', () => {
   test('EncounterPage imports and renders the RxSafetyAlerts component', () => {
@@ -44,7 +46,7 @@ describe('rx-safety-render: the server safety object now has real consumers in s
   test('the bug premise is fixed: "safety" is now consumed, not just present in comments', () => {
     // Real consumers, not just the word "safety" in a comment.
     assert.match(encounterSrc, /result\?\.safety/, 'manual path must read result.safety from the response');
-    assert.match(encounterSrc, /rx\.safety/, 'from-speech path must read each prescription.safety');
+    assert.match(speechSafetySrc, /rx\.safety/, 'from-speech path must read each prescription.safety');
   });
 });
 
@@ -117,10 +119,12 @@ describe('rx-safety-render: FROM-SPEECH path is wired and surfaces safety at sig
 
   test('from-speech safety renders one RxSafetyAlerts per created prescription', () => {
     assert.match(
-      encounterSrc,
-      /speechRxSafety\.map\(\(rx, i\) => \(\s*<RxSafetyAlerts[^]*?safety=\{rx\.safety\}/,
+      speechSafetySrc,
+      /prescriptions\.map\(\(rx, i\) => \([^]*?<RxSafetyAlerts[^]*?safety=\{rx\.safety\}/,
       'each from-speech prescription must render through RxSafetyAlerts'
     );
+    assert.match(encounterSrc, /<SpeechPrescriptionSafety prescriptions=\{speechRxSafety\}/,
+      'EncounterPage must pass the retained prescription array to the safety component');
   });
 
   test('there is a UI trigger for the from-speech path', () => {

@@ -157,7 +157,7 @@ async function buildContext(patientId, encounterId, db) {
     encounter: encounter || {},
     vitals: (Array.isArray(vitals) && vitals.length > 0) ? vitals[0] : (vitals || {}),
     problems: problems || [],
-    medications: medications || [],
+    medications, // Preserve missing history; [] means an explicit empty result.
     allergies: allergies || [],
     labs: labs || [],
     labOrders,
