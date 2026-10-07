@@ -17,6 +17,12 @@ Scope: this working directory and all subdirectories.
 
 EHR (Electronic Health Records) workspace for development, testing, and evaluation artifacts. Inherits global rules from [`~/.claude/AGENTS.md`](C:\Users\micha\.claude\AGENTS.md).
 
+## GitHub Completion Policy — Owner Direction 2026-10-07
+
+- Michael requires completed EHR work to be committed and pushed to GitHub. Finish the relevant implementation and checks, make the commit, push the working branch, and verify that the remote commit SHA matches before claiming completion.
+- Carry this through without asking again for routine commit/push approval. A later explicit task instruction can override this policy. If an actual blocker prevents commit or push, preserve the work and report the exact blocker.
+- Preserve unrelated dirty work and exclude credentials, local databases, generated evidence, `_eval/`, and `_dispatch_archive/`. Respect repository checks and branch protections. Merge and deployment follow the explicit task scope.
+
 ## EHR Secrets Cycle — RESOLVED 2026-04-20
 
 Previously a recurring issue where `_eval/SECRETS_FINDINGS.md` would regenerate each cycle and re-expose credentials. Resolution locked in four layers:
