@@ -31,7 +31,7 @@ export default function ReviewPage() {
 
   const { encounter, orders, refresh: refreshEncounter } = useEncounter(eid);
   const { patient } = usePatient(encounter?.patient_id);
-  const { workflow, timeline, timelineEntries, transition } = useWorkflow(eid);
+  const { workflow, timeline, timelineEntries } = useWorkflow(eid);
   const { accepted, rejected } = useCDS(eid, encounter?.patient_id, { pollInterval: 0 });
 
   // --- Unsaved work protection ---
@@ -131,33 +131,9 @@ export default function ReviewPage() {
         await api.updateEncounter(encounterId, { soap_note: soapNote });
       }
 
-      // Advance through a legal path to signed. The workflow is not strictly
-      // linear because provider-examining can move directly to documentation
-      // or through orders-pending first.
-      const SIGN_PATHS = {
-        'scheduled': ['checked-in', 'roomed', 'vitals-recorded', 'provider-examining', 'documentation', 'signed'],
-        'checked-in': ['roomed', 'vitals-recorded', 'provider-examining', 'documentation', 'signed'],
-        'roomed': ['vitals-recorded', 'provider-examining', 'documentation', 'signed'],
-        'vitals-recorded': ['provider-examining', 'documentation', 'signed'],
-        'provider-examining': ['documentation', 'signed'],
-        'orders-pending': ['documentation', 'signed'],
-        'documentation': ['signed'],
-        'signed': [],
-      };
-      const currentState = workflow?.current_state;
-      const signPath = SIGN_PATHS[currentState];
-      if (!signPath) {
-        throw new Error(`Cannot sign encounter from workflow state: ${currentState || 'unknown'}`);
-      }
-      for (const targetState of signPath) {
-        await transition(targetState);
-      }
-
-      await api.updateEncounter(encounterId, {
-        status: 'signed',
-        signed_by: providerName,
-        signed_at: new Date().toISOString(),
-      });
+      // The server signs atomically: legal workflow progression and signature
+      // provenance commit together or roll back together.
+      await api.signEncounter(encounterId);
 
       toast.success('Encounter signed. Continue checkout to finalize the visit.');
       navigate('/checkout/' + encounterId);
