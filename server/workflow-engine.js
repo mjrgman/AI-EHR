@@ -93,7 +93,7 @@ async function transitionState(encounterId, targetState, metadata = {}, userRole
       requiredRole === 'provider' && maHandoffStates.includes(targetState);
     const roleMatches = isMaHandoff ||
       (requiredRole === 'provider'
-        ? ['physician', 'nurse_practitioner', 'provider'].includes(userRole)
+        ? ['physician', 'nurse_practitioner', 'physician_assistant', 'provider'].includes(userRole)
         : requiredRole === 'reception'
           ? ['front_desk', 'reception', 'admin'].includes(userRole)
           : requiredRole === 'ma'
