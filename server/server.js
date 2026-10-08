@@ -716,6 +716,12 @@ app.post('/api/encounters/:id/sign',
       const encounter = await db.getEncounterById(id);
       if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
 
+      const auditPatientId = validateId(req.body.patient_id);
+      if (!auditPatientId || auditPatientId !== encounter.patient_id) {
+        return res.status(400).json({ error: 'patient_id must match the encounter patient' });
+      }
+      req.auditPatientId = encounter.patient_id;
+
       const wf = await workflow.getCurrentState(id);
       const signPaths = {
         'provider-examining': ['documentation', 'signed'],
