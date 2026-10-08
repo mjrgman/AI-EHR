@@ -1458,8 +1458,8 @@ const db_helpers = {
                   duration_minutes=COALESCE(?,duration_minutes),
                   signed_by=COALESCE(?,signed_by),
                   signed_at=COALESCE(?,signed_at),
-                  follow_up_date=COALESCE(?,follow_up_date),
-                  billing_notes=COALESCE(?,billing_notes),
+                  follow_up_date=CASE WHEN ? = 1 THEN ? ELSE follow_up_date END,
+                  billing_notes=CASE WHEN ? = 1 THEN ? ELSE billing_notes END,
                   completed_at=CASE
                     WHEN ?='completed' THEN COALESCE(completed_at,CURRENT_TIMESTAMP)
                     ELSE completed_at
@@ -1467,7 +1467,9 @@ const db_helpers = {
                   WHERE id=?`,
       [
         transcript, soap_note, chief_complaint, encounter_type, status,
-        duration_minutes, signed_by, signed_at, follow_up_date, billing_notes,
+        duration_minutes, signed_by, signed_at,
+        Object.prototype.hasOwnProperty.call(updates, 'follow_up_date') ? 1 : 0, follow_up_date,
+        Object.prototype.hasOwnProperty.call(updates, 'billing_notes') ? 1 : 0, billing_notes,
         status, encounterId
       ])
       .then(r => ({ changes: r.changes }));
