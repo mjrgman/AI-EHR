@@ -43,6 +43,7 @@ async function runMigrations(db) {
     await migrateSuggestionTypes(db);
     await createAppointmentsTable(db);
     await createChargesTable(db);
+    await addEncounterLifecycleColumns(db);
     await createFhirIngestTables(db);
     await addRxNormColumns(db);
     await createLabCorpTokensTable(db);
@@ -771,6 +772,33 @@ async function createChargesTable(db) {
 }
 
 // ==========================================
+// ENCOUNTER LIFECYCLE COLUMNS
+// ==========================================
+
+/**
+ * Persist encounter lifecycle fields that the clinician workflow writes.
+ *
+ * Existing databases created before these columns were introduced must be
+ * upgraded in place. The PRAGMA + ALTER pattern is idempotent.
+ */
+async function addEncounterLifecycleColumns(db) {
+  const columns = [
+    { name: 'signed_by', type: 'TEXT' },
+    { name: 'signed_at', type: 'DATETIME' },
+    { name: 'follow_up_date', type: 'DATE' },
+    { name: 'billing_notes', type: 'TEXT' },
+  ];
+  const cols = await dbAllCompat(db, 'PRAGMA table_info(encounters)');
+  if (!cols.length) return;
+  for (const col of columns) {
+    if (!cols.some((existing) => existing.name === col.name)) {
+      await dbRun(db, `ALTER TABLE encounters ADD COLUMN ${col.name} ${col.type}`);
+      console.log(`[MIGRATIONS] Added ${col.name} column to encounters`);
+    }
+  }
+}
+
+// ==========================================
 // FHIR INGESTION STAGING TABLES
 // ==========================================
 
@@ -1130,6 +1158,7 @@ module.exports = {
   migrateSuggestionTypes,
   createAppointmentsTable,
   createChargesTable,
+  addEncounterLifecycleColumns,
   createFhirIngestTables,
   addRxNormColumns,
   createLabCorpTokensTable,
