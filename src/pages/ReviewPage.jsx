@@ -166,8 +166,8 @@ export default function ReviewPage() {
         signed_at: new Date().toISOString(),
       });
 
-      toast.success('Encounter signed successfully.');
-      navigate('/visit/' + encounterId);
+      toast.success('Encounter signed. Continue checkout to finalize the visit.');
+      navigate('/checkout/' + encounterId);
     } catch (err) {
       toast.error('Signing failed: ' + err.message);
     } finally {
