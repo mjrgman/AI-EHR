@@ -40,7 +40,7 @@ describe('patient journey routing: entry through terminal checkout', () => {
   test('sign action is server-atomic and hands off to checkout', () => {
     const reviewSrc = read(reviewPath);
     const serverSrc = read(serverPath);
-    assert.match(reviewSrc, /api\.signEncounter\(encounterId\)/);
+    assert.match(reviewSrc, /api\.signEncounter\(encounterId, encounter\.patient_id\)/);
     assert.match(reviewSrc, /navigate\('\/checkout\/' \+ encounterId\)/);
     assert.ok(!reviewSrc.includes("navigate('/visit/' + encounterId)"), 'ReviewPage must not bypass checkout');
     assert.match(serverSrc, /app\.post\('\/api\/encounters\/:id\/sign'/);
@@ -105,6 +105,17 @@ describe('patient journey routing: entry through terminal checkout', () => {
     assert.match(src, /app\.post\('\/api\/encounters\/:id\/checkout',[^\n]*'front_desk'/);
     assert.doesNotMatch(src, /app\.post\('\/api\/encounters\/:id\/charge',[^\n]*'front_desk'/);
     assert.match(src, /Front-desk checkout may not override the E\/M code/);
+  });
+
+  test('MA orders-pending resume opens the close-out worklist', () => {
+    const src = read(stateRoutePath);
+    assert.match(src, /state === 'orders-pending'[\s\S]*\['ma', 'medical_assistant'\]\.includes\(userRole\)[\s\S]*return '\/decisions'/);
+  });
+
+  test('sign route is explicitly classified as durable SIGN audit activity', () => {
+    const auditSrc = read(path.resolve(__dirname, '../../server/audit-logger.js'));
+    assert.match(auditSrc, /'POST \/api\/encounters\/:id\/sign':[\s\S]*action: 'SIGN'/);
+    assert.match(auditSrc, /DURABLE_AUDIT_ACTIONS = new Set\(\['EXPORT', 'SIGN', 'PRESCRIBE'\]\)/);
   });
 
   test('checkout success exposes the completed visit summary', () => {
