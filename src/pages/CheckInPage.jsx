@@ -311,7 +311,7 @@ export default function CheckInPage() {
                 <div className="flex items-center gap-2">
                   <span className="label-clinical">Date:</span>
                   <span className="text-navy-700 font-medium">
-                    {formatDateShort(previousEncounter.date || previousEncounter.created_at)}
+                    {formatDateShort(previousEncounter.encounter_date || previousEncounter.created_at)}
                   </span>
                 </div>
                 {previousEncounter.chief_complaint && (
