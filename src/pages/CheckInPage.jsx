@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api, { safeLog } from '../api/client';
 import { usePatient } from '../hooks/usePatient';
@@ -58,6 +58,7 @@ export default function CheckInPage() {
   const [chiefComplaint, setChiefComplaint] = useState('');
   const [appointmentType, setAppointmentType] = useState('Follow-Up');
   const [submitting, setSubmitting] = useState(false);
+  const [previousEncounter, setPreviousEncounter] = useState(null);
   const [arrivalTime] = useState(() => new Date());
 
   const { workflow, timeline, transition } = useWorkflow(encounterId);
@@ -91,15 +92,29 @@ export default function CheckInPage() {
     return () => { cancelled = true; };
   }, [encounterId, toast]);
 
-  // Determine if patient has previous encounters
-  const previousEncounter = useMemo(() => {
-    if (!patient?.encounters || patient.encounters.length === 0) return null;
-    // Find the most recent encounter that is NOT the current one
-    const sorted = [...patient.encounters]
-      .filter((e) => String(e.id) !== String(encounterId))
-      .sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0));
-    return sorted[0] || null;
-  }, [patient, encounterId]);
+  // Load the prior encounter explicitly; the patient demographics endpoint
+  // intentionally does not embed encounter history.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPreviousEncounter() {
+      if (!encounter?.patient_id) {
+        setPreviousEncounter(null);
+        return;
+      }
+      try {
+        const encounters = await api.getEncounters({ patient_id: encounter.patient_id });
+        if (cancelled) return;
+        const previous = (Array.isArray(encounters) ? encounters : [])
+          .filter((item) => String(item.id) !== String(encounterId))
+          .sort((a, b) => new Date(b.encounter_date || b.created_at || 0) - new Date(a.encounter_date || a.created_at || 0))[0] || null;
+        setPreviousEncounter(previous);
+      } catch (err) {
+        if (!cancelled) safeLog.error('Previous encounter load failed:', err);
+      }
+    }
+    loadPreviousEncounter();
+    return () => { cancelled = true; };
+  }, [encounter?.patient_id, encounterId]);
 
   // Allergies
   const allergies = patient?.allergies || [];
