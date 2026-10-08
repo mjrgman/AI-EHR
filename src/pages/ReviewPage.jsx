@@ -133,7 +133,7 @@ export default function ReviewPage() {
 
       // The server signs atomically: legal workflow progression and signature
       // provenance commit together or roll back together.
-      await api.signEncounter(encounterId);
+      await api.signEncounter(encounterId, encounter.patient_id);
 
       toast.success('Encounter signed. Continue checkout to finalize the visit.');
       navigate('/checkout/' + encounterId);
