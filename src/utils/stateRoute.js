@@ -16,7 +16,8 @@ const STATE_PREFIX_MAP = {
   'scheduled':           '/checkin/',
   'checked-in':          '/checkin/',
   'roomed':              '/ma/',
-  'vitals-recorded':     '/ma/',
+  // Vitals complete is the MA -> provider handoff.
+  'vitals-recorded':     '/encounter/',
   'provider-examining':  '/encounter/',
   'orders-pending':      '/encounter/',
   'documentation':       '/encounter/',
