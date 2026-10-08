@@ -657,6 +657,12 @@ app.patch('/api/encounters/:id', async (req, res) => {
       if (!allowedStatuses.includes(req.body.status)) {
         return res.status(400).json({ error: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}` });
       }
+      if (req.body.status === 'signed') {
+        return res.status(409).json({ error: 'Use the encounter sign endpoint to persist signature provenance and workflow state together.' });
+      }
+      if (req.body.status === 'completed') {
+        return res.status(409).json({ error: 'Use the checkout endpoint to complete the encounter and linked workflow atomically.' });
+      }
     }
 
     const updates = {};
@@ -666,8 +672,6 @@ app.patch('/api/encounters/:id', async (req, res) => {
     if (req.body.encounter_type !== undefined) updates.encounter_type = sanitizeString(req.body.encounter_type, 100);
     if (req.body.status !== undefined) updates.status = req.body.status;
     if (req.body.duration_minutes !== undefined) updates.duration_minutes = parseInt(req.body.duration_minutes, 10) || null;
-    if (req.body.signed_by !== undefined) updates.signed_by = sanitizeString(req.body.signed_by, 200);
-    if (req.body.signed_at !== undefined) updates.signed_at = req.body.signed_at || null;
     if (req.body.follow_up_date !== undefined) updates.follow_up_date = req.body.follow_up_date || null;
     if (req.body.billing_notes !== undefined) updates.billing_notes = sanitizeString(req.body.billing_notes, 2000);
 
