@@ -2587,7 +2587,7 @@ app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_pract
 });
 
 // Capture charge (creates/updates draft — does not finalize)
-app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
+app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
