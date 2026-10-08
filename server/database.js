@@ -81,10 +81,6 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   else console.log('Connected to SQLite database at:', DB_PATH);
 });
 
-// Await PRAGMAs via promisified interface
-dbRun('PRAGMA journal_mode = WAL').catch(err => console.error('PRAGMA WAL error:', err.message));
-dbRun('PRAGMA foreign_keys = ON').catch(err => console.error('PRAGMA FK error:', err.message));
-
 // ==========================================
 // PROMISIFIED DB HELPERS + SHARED-CONNECTION TRANSACTION OWNERSHIP
 // ==========================================
@@ -162,6 +158,12 @@ async function withTransaction(work) {
     }
   }));
 }
+
+// Initialize connection PRAGMAs only after the transaction/queue helpers exist.
+// Calling dbRun above the AsyncLocalStorage declaration triggers the temporal
+// dead zone during module load and prevents every database consumer from loading.
+dbRun('PRAGMA journal_mode = WAL').catch(err => console.error('PRAGMA WAL error:', err.message));
+dbRun('PRAGMA foreign_keys = ON').catch(err => console.error('PRAGMA FK error:', err.message));
 
 // ==========================================
 // SCHEMA INITIALIZATION
