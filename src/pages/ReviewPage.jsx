@@ -31,7 +31,7 @@ export default function ReviewPage() {
 
   const { encounter, orders, refresh: refreshEncounter } = useEncounter(eid);
   const { patient } = usePatient(encounter?.patient_id);
-  const { workflow, timeline, transition } = useWorkflow(eid);
+  const { workflow, timeline, timelineEntries, transition } = useWorkflow(eid);
   const { accepted, rejected } = useCDS(eid, encounter?.patient_id, { pollInterval: 0 });
 
   // --- Unsaved work protection ---
@@ -65,16 +65,15 @@ export default function ReviewPage() {
 
   // --- Timestamps ---
   const timestamps = useMemo(() => {
-    if (!timeline) return {};
-    const events = Array.isArray(timeline) ? timeline : timeline?.events || [];
+    if (!timelineEntries.length) return {};
     let checkIn = null;
     let examStart = null;
-    for (const ev of events) {
-      const ts = ev.transitioned_at || ev.timestamp || ev.created_at;
-      if (ev.to_state === 'checked-in' || ev.to_state === 'arrived') {
+    for (const ev of timelineEntries) {
+      const ts = ev.timestamp || ev.transitioned_at || ev.created_at;
+      if (ev.state === 'checked-in') {
         checkIn = ts;
       }
-      if (ev.to_state === 'provider-examining') {
+      if (ev.state === 'provider-examining') {
         examStart = ts;
       }
     }
@@ -91,7 +90,7 @@ export default function ReviewPage() {
       }
     }
     return { checkIn, examStart, duration };
-  }, [timeline]);
+  }, [timelineEntries]);
 
   function formatTime(ts) {
     if (!ts) return '--';
