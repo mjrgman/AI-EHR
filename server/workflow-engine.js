@@ -142,6 +142,9 @@ async function getWorkflowTimeline(encounterId) {
 
     if (state === wf.current_state) {
       entry.status = 'current';
+      if (config.timeField && wf[config.timeField]) {
+        entry.timestamp = wf[config.timeField];
+      }
     } else if (stateOrder.indexOf(state) < stateOrder.indexOf(wf.current_state)) {
       entry.status = 'completed';
       if (config.timeField && wf[config.timeField]) {
