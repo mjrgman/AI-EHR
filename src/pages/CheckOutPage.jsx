@@ -285,6 +285,14 @@ export default function CheckOutPage() {
                 {/* Action buttons (hidden on print) */}
                 <div className="no-print space-y-2">
                   <TouchButton
+                    variant="success"
+                    icon={<CheckCircle2 className="w-4 h-4" strokeWidth={2.25} />}
+                    onClick={() => navigate('/visit/' + encounterId)}
+                    className="w-full"
+                  >
+                    View Completed Visit
+                  </TouchButton>
+                  <TouchButton
                     variant="secondary"
                     icon={<Printer className="w-4 h-4" strokeWidth={2.25} />}
                     onClick={handlePrint}
@@ -293,7 +301,7 @@ export default function CheckOutPage() {
                     Print After-Visit Summary
                   </TouchButton>
                   <TouchButton
-                    variant="primary"
+                    variant="secondary"
                     icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
                     onClick={() => navigate('/')}
                     className="w-full"
