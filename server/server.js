@@ -2176,7 +2176,7 @@ app.get('/api/encounters/:id/orders', requireAnyResourceAccess('lab_orders', 'im
 });
 
 // Get CPT code suggestions for an encounter
-app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2546,7 +2546,7 @@ app.delete('/api/appointments/:id', async (req, res) => {
 // ==========================================
 
 // Get charge for an encounter (or compute E/M suggestion without saving)
-app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2570,7 +2570,7 @@ app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_pract
 });
 
 // Capture charge (creates/updates draft — does not finalize)
-app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2597,7 +2597,7 @@ app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_prac
 });
 
 // Checkout — finalizes charge and marks encounter checked-out
-app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
