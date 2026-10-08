@@ -21,12 +21,27 @@ import {
 } from 'lucide-react';
 
 const APPOINTMENT_TYPES = [
-  'Follow-Up',
-  'New Patient',
-  'Urgent',
-  'Procedure',
-  'Annual Wellness',
+  { value: 'follow_up', label: 'Follow-Up' },
+  { value: 'new_patient', label: 'New Patient' },
+  { value: 'sick_visit', label: 'Sick Visit' },
+  { value: 'wellness', label: 'Annual Wellness' },
+  { value: 'procedure', label: 'Procedure' },
+  { value: 'telehealth', label: 'Telehealth' },
+  { value: 'referral', label: 'Referral' },
+  { value: 'urgent', label: 'Urgent' },
 ];
+
+function normalizeEncounterType(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const aliases = {
+    office_visit: 'follow_up',
+    office_visit_follow_up: 'follow_up',
+    followup: 'follow_up',
+    annual_wellness: 'wellness',
+  };
+  const normalized = aliases[raw] || raw;
+  return APPOINTMENT_TYPES.some((type) => type.value === normalized) ? normalized : 'follow_up';
+}
 
 function formatTimestamp(date) {
   return new Intl.DateTimeFormat('en-US', {
@@ -56,7 +71,7 @@ export default function CheckInPage() {
   const [encounter, setEncounter] = useState(null);
   const [encounterLoading, setEncounterLoading] = useState(true);
   const [chiefComplaint, setChiefComplaint] = useState('');
-  const [appointmentType, setAppointmentType] = useState('Follow-Up');
+  const [appointmentType, setAppointmentType] = useState('follow_up');
   const [submitting, setSubmitting] = useState(false);
   const [previousEncounter, setPreviousEncounter] = useState(null);
   const [arrivalTime] = useState(() => new Date());
@@ -74,10 +89,7 @@ export default function CheckInPage() {
         setEncounter(enc);
         setChiefComplaint(enc.chief_complaint || '');
         if (enc.encounter_type) {
-          const match = APPOINTMENT_TYPES.find(
-            (t) => t.toLowerCase() === (enc.encounter_type || '').toLowerCase()
-          );
-          if (match) setAppointmentType(match);
+          setAppointmentType(normalizeEncounterType(enc.encounter_type));
         }
       } catch (err) {
         if (!cancelled) {
@@ -342,8 +354,8 @@ export default function CheckInPage() {
                     onChange={(e) => setAppointmentType(e.target.value)}
                   >
                     {APPOINTMENT_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
+                      <option key={type.value} value={type.value}>
+                        {type.label}
                       </option>
                     ))}
                   </select>
