@@ -76,6 +76,37 @@ describe('patient journey routing: entry through terminal checkout', () => {
     assert.match(read(workflowPath), /'physician_assistant'/);
   });
 
+  test('MA decision close-out can hand orders-pending back to documentation', () => {
+    const src = read(workflowPath);
+    assert.match(src, /isMaCloseoutHandoff/);
+    assert.match(src, /wf\.current_state === 'orders-pending'/);
+    assert.match(src, /targetState === 'documentation'/);
+  });
+
+  test('signing cannot bypass a decided item awaiting MA close-out', () => {
+    const src = read(serverPath);
+    assert.match(src, /decisionItem\.status === 'decided'/);
+    assert.match(src, /decisionItem\.ma_status === 'awaiting'/);
+    assert.match(src, /Cannot sign while a provider decision is awaiting MA close-out/);
+  });
+
+  test('appointment check-in status is committed with the workflow transition', () => {
+    const serverSrc = read(serverPath);
+    const scheduleSrc = read(schedulePath);
+    assert.match(serverSrc, /target_state === 'checked-in'[\s\S]*BEGIN IMMEDIATE TRANSACTION/);
+    assert.match(serverSrc, /UPDATE appointments[\s\S]*status = 'checked-in'/);
+    assert.match(scheduleSrc, /if \(appt\.encounter_id\)[\s\S]*navigate\('\/checkin\/' \+ appt\.encounter_id\)/);
+    assert.ok(!/updateAppointment\(appt\.id, \{ status: 'checked-in'/.test(scheduleSrc));
+  });
+
+  test('front desk can complete checkout but cannot edit a draft charge', () => {
+    const src = read(serverPath);
+    assert.match(src, /app\.get\('\/api\/encounters\/:id\/charge',[^\n]*'front_desk'/);
+    assert.match(src, /app\.post\('\/api\/encounters\/:id\/checkout',[^\n]*'front_desk'/);
+    assert.doesNotMatch(src, /app\.post\('\/api\/encounters\/:id\/charge',[^\n]*'front_desk'/);
+    assert.match(src, /Front-desk checkout may not override the E\/M code/);
+  });
+
   test('checkout success exposes the completed visit summary', () => {
     const src = read(checkoutPath);
     assert.match(src, /View Completed Visit/);
