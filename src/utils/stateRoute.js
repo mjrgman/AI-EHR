@@ -36,7 +36,13 @@ const STATE_PREFIX_MAP = {
  * @param {string} state  — workflow engine state string
  * @returns {string}       — full path (e.g. "/encounter/42")
  */
-export function stateRoute(encounterId, state) {
+export function stateRoute(encounterId, state, userRole = null) {
+  // orders-pending is the MA close-out queue when viewed by an MA. Providers
+  // can still reopen the encounter workspace for clinical context.
+  if (state === 'orders-pending' && ['ma', 'medical_assistant'].includes(userRole)) {
+    return '/decisions';
+  }
+
   const prefix = STATE_PREFIX_MAP[state] || '/encounter/';
   return prefix + encounterId;
 }
