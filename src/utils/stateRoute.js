@@ -25,6 +25,8 @@ const STATE_PREFIX_MAP = {
   // Signed is pre-checkout; checked-out is the terminal read-only state.
   'signed':              '/checkout/',
   'checked-out':         '/visit/',
+  // Defensive alias for the encounter-table terminal status.
+  'completed':           '/visit/',
 };
 
 /**
