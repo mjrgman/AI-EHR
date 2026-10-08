@@ -91,7 +91,11 @@ async function transitionState(encounterId, targetState, metadata = {}, userRole
     const maHandoffStates = ['vitals-recorded', 'provider-examining'];
     const isMaHandoff = ['ma', 'medical_assistant'].includes(userRole) &&
       requiredRole === 'provider' && maHandoffStates.includes(targetState);
-    const roleMatches = isMaHandoff ||
+    const isMaCloseoutHandoff = ['ma', 'medical_assistant'].includes(userRole) &&
+      requiredRole === 'provider' &&
+      wf.current_state === 'orders-pending' &&
+      targetState === 'documentation';
+    const roleMatches = isMaHandoff || isMaCloseoutHandoff ||
       (requiredRole === 'provider'
         ? ['physician', 'nurse_practitioner', 'physician_assistant', 'provider'].includes(userRole)
         : requiredRole === 'reception'
