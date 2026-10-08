@@ -4,8 +4,9 @@
  * Single source of truth for both QueueDashboard and PatientPage (and any
  * future screen that needs to navigate to a live or completed encounter).
  *
- * Terminal states (signed / checked-out) route to the read-only Visit Summary
- * screen (/visit/:id) rather than to the Check-Out billing page.
+ * Signed encounters route to Check-Out so billing, follow-up planning, and
+ * the final workflow transition can be completed. Only checked-out encounters
+ * route to the read-only Visit Summary screen (/visit/:id).
  *
  * In-progress states map to the active workflow step so clinicians land at the
  * right stage of the encounter pipeline.
@@ -20,8 +21,8 @@ const STATE_PREFIX_MAP = {
   'orders-pending':      '/encounter/',
   'documentation':       '/encounter/',
   'review-pending':      '/review/',
-  // Terminal — read-only visit summary
-  'signed':              '/visit/',
+  // Signed is pre-checkout; checked-out is the terminal read-only state.
+  'signed':              '/checkout/',
   'checked-out':         '/visit/',
 };
 
