@@ -23,7 +23,7 @@ import {
 const STATUS_LABELS = {
   scheduled: { label: 'Scheduled', variant: 'routine' },
   confirmed: { label: 'Confirmed', variant: 'success' },
-  arrived: { label: 'Arrived', variant: 'purple' },
+  'checked-in': { label: 'Checked In', variant: 'purple' },
   completed: { label: 'Completed', variant: 'success' },
   'no-show': { label: 'No-Show', variant: 'danger' },
   cancelled: { label: 'Cancelled', variant: 'warning' },
@@ -532,7 +532,7 @@ export default function SchedulePage() {
                                   No-Show
                                 </button>
                               </>
-                            ) : appt.status === 'arrived' && appt.encounter_id ? (
+                            ) : appt.status === 'checked-in' && appt.encounter_id ? (
                               <button
                                 onClick={() => navigate('/checkin/' + appt.encounter_id)}
                                 className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 active:bg-ivory-200 transition-colors font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"
