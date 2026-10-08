@@ -147,6 +147,7 @@ function filterEncounterForRole(req, encounter) {
   const filtered = { ...encounter };
   delete filtered.transcript;
   delete filtered.soap_note;
+  if (!rbac.canAccess(role, 'billing')) delete filtered.billing_notes;
   return filtered;
 }
 
