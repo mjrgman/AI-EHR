@@ -132,32 +132,26 @@ export default function ReviewPage() {
         await api.updateEncounter(encounterId, { soap_note: soapNote });
       }
 
-      // Advance workflow through all states up to and including 'signed'.
-      // The state machine only accepts one-step transitions, so we walk the
-      // full ordered chain from the current state to 'signed', skipping states
-      // already passed.
-      const STATE_CHAIN = [
-        'scheduled',
-        'checked-in',
-        'roomed',
-        'vitals-recorded',
-        'provider-examining',
-        'documentation',
-        'signed',
-      ];
+      // Advance through a legal path to signed. The workflow is not strictly
+      // linear because provider-examining can move directly to documentation
+      // or through orders-pending first.
+      const SIGN_PATHS = {
+        'scheduled': ['checked-in', 'roomed', 'vitals-recorded', 'provider-examining', 'documentation', 'signed'],
+        'checked-in': ['roomed', 'vitals-recorded', 'provider-examining', 'documentation', 'signed'],
+        'roomed': ['vitals-recorded', 'provider-examining', 'documentation', 'signed'],
+        'vitals-recorded': ['provider-examining', 'documentation', 'signed'],
+        'provider-examining': ['documentation', 'signed'],
+        'orders-pending': ['documentation', 'signed'],
+        'documentation': ['signed'],
+        'signed': [],
+      };
       const currentState = workflow?.current_state;
-      const currentIdx = STATE_CHAIN.indexOf(currentState);
-      const signedIdx = STATE_CHAIN.indexOf('signed');
-      if (currentIdx < signedIdx) {
-        for (let i = currentIdx + 1; i <= signedIdx; i++) {
-          try {
-            await transition(STATE_CHAIN[i]);
-          } catch (e) {
-            // If transition fails for a state we've already passed, continue.
-            // Re-throw only if we couldn't reach 'signed'.
-            if (i === signedIdx) throw e;
-          }
-        }
+      const signPath = SIGN_PATHS[currentState];
+      if (!signPath) {
+        throw new Error(`Cannot sign encounter from workflow state: ${currentState || 'unknown'}`);
+      }
+      for (const targetState of signPath) {
+        await transition(targetState);
       }
 
       await api.updateEncounter(encounterId, {
