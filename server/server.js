@@ -150,6 +150,21 @@ function filterEncounterForRole(req, encounter) {
   return filtered;
 }
 
+function filterChargeForRole(req, charge) {
+  if (!charge) return charge;
+  if (getRequestRole(req) !== 'front_desk') return charge;
+
+  // Reception needs workflow readiness, not diagnosis/coding PHI. Keep this
+  // projection deliberately minimal so checkout can proceed without exposing
+  // ICD/CPT/MDM detail that front-desk RBAC does not permit.
+  return {
+    encounter_id: charge.encounter_id,
+    status: charge.status || 'draft',
+    coding_locked: true,
+    charge_ready: true,
+  };
+}
+
 function filterPatientBundleForRole(req, payload) {
   if (!payload || typeof payload !== 'object') return payload;
 
@@ -2589,15 +2604,26 @@ app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_pract
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
 
-    const existing = await db.getChargeByEncounter(encounterId);
-    if (existing) {
-      return res.json(existing);
-    }
-
-    // No charge yet — return E/M suggestion for preview
     const encounter = await db.getEncounterById(encounterId);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+    req.auditPatientId = encounter.patient_id ?? null;
 
+    const existing = await db.getChargeByEncounter(encounterId);
+    if (existing) {
+      return res.json(filterChargeForRole(req, existing));
+    }
+
+    if (req.user?.role === 'front_desk') {
+      // Do not build or disclose a clinical MDM suggestion to reception.
+      return res.json({
+        encounter_id: encounterId,
+        status: 'draft',
+        coding_locked: true,
+        charge_ready: false,
+      });
+    }
+
+    // No charge yet — return E/M suggestion for provider/billing preview.
     const context = await billing.buildBillingContext(encounterId, encounter.patient_id);
     const suggestion = billing.assessMDM(context);
     res.json({ encounter_id: encounterId, status: 'draft', em_suggestion: suggestion, charge: null });
@@ -2643,25 +2669,40 @@ app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_pr
     const encounter = await db.getEncounterById(encounterId);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
 
-    if (req.user?.role === 'front_desk' && req.body.em_level) {
-      return res.status(403).json({ error: 'Front-desk checkout may not override the E/M code.' });
+    const isFrontDesk = req.user?.role === 'front_desk';
+    const codingFields = ['em_level', 'cpt_codes', 'icd10_codes'];
+    if (isFrontDesk && codingFields.some((field) => req.body[field] !== undefined)) {
+      return res.status(403).json({ error: 'Front-desk checkout may not supply or override diagnosis or procedure coding.' });
     }
+
+    req.auditPatientId = encounter.patient_id ?? null;
 
     const charge = await billing.finalizeCheckout(
       encounterId,
       encounter.patient_id,
       req.user?.name || encounter.provider,
-      {
-        em_level: req.body.em_level || null,
-        cpt_codes: req.body.cpt_codes || [],
-        icd10_codes: req.body.icd10_codes || null,
-        notes: req.body.notes || null,
-        follow_up_date: req.body.follow_up_date || null,
-        billing_notes: req.body.billing_notes || req.body.notes || null
-      }
+      isFrontDesk
+        ? {
+            preserve_existing_coding: true,
+            notes: req.body.notes || null,
+            follow_up_date: req.body.follow_up_date || null,
+            billing_notes: req.body.billing_notes || req.body.notes || null,
+          }
+        : {
+            em_level: req.body.em_level || null,
+            cpt_codes: req.body.cpt_codes || [],
+            icd10_codes: req.body.icd10_codes || null,
+            notes: req.body.notes || null,
+            follow_up_date: req.body.follow_up_date || null,
+            billing_notes: req.body.billing_notes || req.body.notes || null,
+          }
     );
     const completedEncounter = await db.getEncounterById(encounterId);
-    res.json({ message: 'Checkout complete', charge, encounter: completedEncounter });
+    res.json({
+      message: 'Checkout complete',
+      charge: filterChargeForRole(req, charge),
+      encounter: filterEncounterForRole(req, completedEncounter),
+    });
   } catch (err) {
     logger.error('Error processing checkout', { error: err.message });
     if (err.code === 'INVALID_CHECKOUT_STATE') {
