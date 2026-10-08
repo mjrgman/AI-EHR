@@ -230,8 +230,7 @@ async function finalizeCheckout(encounterId, patientId, providerName, overrides 
     throw error;
   }
 
-  await db.dbRun('BEGIN IMMEDIATE TRANSACTION');
-  try {
+  await db.withTransaction(async () => {
     await captureCharge(encounterId, patientId, providerName, overrides);
     await db.finalizeCharge(encounterId);
 
@@ -244,7 +243,9 @@ async function finalizeCheckout(encounterId, patientId, providerName, overrides 
     // claim that an appointment was scheduled.
     await db.updateEncounter(encounterId, {
       status: 'completed',
-      follow_up_date: overrides.follow_up_date || null,
+      follow_up_date: Object.prototype.hasOwnProperty.call(overrides, 'follow_up_date')
+        ? overrides.follow_up_date
+        : undefined,
       billing_notes: overrides.billing_notes || overrides.notes || null,
     });
     await db.dbRun(
@@ -253,12 +254,7 @@ async function finalizeCheckout(encounterId, patientId, providerName, overrides 
        WHERE encounter_id = ? AND status = 'checked-in'`,
       [encounterId]
     );
-
-    await db.dbRun('COMMIT');
-  } catch (err) {
-    await db.dbRun('ROLLBACK').catch(() => {});
-    throw err;
-  }
+  });
 
   return db.getChargeByEncounter(encounterId);
 }
