@@ -755,8 +755,7 @@ app.post('/api/encounters/:id/sign',
       );
       const signedAt = new Date().toISOString();
 
-      await db.dbRun('BEGIN IMMEDIATE TRANSACTION');
-      try {
+      await db.withTransaction(async () => {
         for (const targetState of pathToSigned) {
           await workflow.transitionState(id, targetState, {}, req.user?.role || null);
         }
@@ -765,11 +764,7 @@ app.post('/api/encounters/:id/sign',
           signed_by: signedBy,
           signed_at: signedAt,
         });
-        await db.dbRun('COMMIT');
-      } catch (err) {
-        await db.dbRun('ROLLBACK').catch(() => {});
-        throw err;
-      }
+      });
 
       req.auditPatientId = encounter.patient_id ?? null;
       const updated = await db.getEncounterById(id);
@@ -1513,8 +1508,7 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
       // Keep the scheduled appointment and encounter workflow synchronized.
       // Linking the encounter happens when the front desk opens Check-In; the
       // appointment only becomes checked-in when this transition succeeds.
-      await db.dbRun('BEGIN IMMEDIATE TRANSACTION');
-      try {
+      await db.withTransaction(async () => {
         result = await workflow.transitionState(encounterId, req.body.target_state, {
           assigned_ma: req.body.assigned_ma,
           assigned_provider: req.body.assigned_provider
@@ -1525,11 +1519,7 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
            WHERE encounter_id = ? AND status IN ('scheduled','confirmed')`,
           [encounterId]
         );
-        await db.dbRun('COMMIT');
-      } catch (transitionErr) {
-        await db.dbRun('ROLLBACK').catch(() => {});
-        throw transitionErr;
-      }
+      });
     } else {
       result = await workflow.transitionState(encounterId, req.body.target_state, {
         assigned_ma: req.body.assigned_ma,
