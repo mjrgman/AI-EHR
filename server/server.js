@@ -2622,6 +2622,10 @@ app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_pr
     const encounter = await db.getEncounterById(encounterId);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
 
+    if (req.user?.role === 'front_desk' && req.body.em_level) {
+      return res.status(403).json({ error: 'Front-desk checkout may not override the E/M code.' });
+    }
+
     const charge = await billing.finalizeCheckout(
       encounterId,
       encounter.patient_id,
