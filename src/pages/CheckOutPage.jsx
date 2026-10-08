@@ -4,6 +4,7 @@ import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useEncounter } from '../hooks/useEncounter';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
@@ -52,6 +53,8 @@ export default function CheckOutPage() {
   const eid = parseInt(encounterId, 10);
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
+  const canEditCoding = ['physician', 'nurse_practitioner', 'physician_assistant', 'billing'].includes(user?.role);
 
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkedOut, setCheckedOut] = useState(false);
@@ -148,7 +151,7 @@ export default function CheckOutPage() {
     try {
       // Finalize charge via billing engine (captures E/M code + ICD-10 codes + finalizes)
       const checkoutPayload = {};
-      if (emOverride) checkoutPayload.em_level = emOverride;
+      if (canEditCoding && emOverride) checkoutPayload.em_level = emOverride;
       if (billingNotes) {
         checkoutPayload.notes = billingNotes;
         checkoutPayload.billing_notes = billingNotes;
@@ -524,25 +527,29 @@ export default function CheckOutPage() {
                   ))}
                 </div>
 
-                {/* Provider override */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
-                    Provider Override <span className="normal-case font-normal text-slate-500">(leave blank to accept suggestion)</span>
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
-                    value={emOverride}
-                    onChange={(e) => setEmOverride(e.target.value)}
-                  >
-                    <option value="">Use suggestion ({charge.em_suggestion.code})</option>
-                    <optgroup label="New Patient">
-                      {['99202','99203','99204','99205'].map(c => <option key={c} value={c}>{c}</option>)}
-                    </optgroup>
-                    <optgroup label="Established Patient">
-                      {['99211','99212','99213','99214','99215'].map(c => <option key={c} value={c}>{c}</option>)}
-                    </optgroup>
-                  </select>
-                </div>
+                {/* Coding override is intentionally limited to provider/billing roles. */}
+                {canEditCoding ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                      Coding Override <span className="normal-case font-normal text-slate-500">(leave blank to accept suggestion)</span>
+                    </label>
+                    <select
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
+                      value={emOverride}
+                      onChange={(e) => setEmOverride(e.target.value)}
+                    >
+                      <option value="">Use suggestion ({charge.em_suggestion.code})</option>
+                      <optgroup label="New Patient">
+                        {['99202','99203','99204','99205'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </optgroup>
+                      <optgroup label="Established Patient">
+                        {['99211','99212','99213','99214','99215'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </optgroup>
+                    </select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">Coding is read-only for front-desk checkout.</p>
+                )}
               </>
             ) : (
               <p className="text-sm text-slate-500 italic">E/M suggestion unavailable — billing engine requires a signed encounter with clinical data.</p>
