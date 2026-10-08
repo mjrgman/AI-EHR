@@ -44,7 +44,7 @@ describe('patient journey routing: entry through terminal checkout', () => {
     assert.match(reviewSrc, /navigate\('\/checkout\/' \+ encounterId\)/);
     assert.ok(!reviewSrc.includes("navigate('/visit/' + encounterId)"), 'ReviewPage must not bypass checkout');
     assert.match(serverSrc, /app\.post\('\/api\/encounters\/:id\/sign'/);
-    assert.match(serverSrc, /BEGIN IMMEDIATE TRANSACTION/);
+    assert.match(serverSrc, /db\.withTransaction\(async \(\) =>/);
   });
 
   test('encounter persistence includes check-in edits and signature provenance', () => {
@@ -69,7 +69,7 @@ describe('patient journey routing: entry through terminal checkout', () => {
     assert.match(src, /wf\.current_state !== 'signed'/);
     assert.match(src, /workflow\.transitionState\(encounterId, 'checked-out'\)/);
     assert.match(src, /UPDATE appointments[\s\S]*status = 'completed'/);
-    assert.match(src, /ROLLBACK/);
+    assert.match(src, /db\.withTransaction\(async \(\) =>/);
   });
 
   test('physician assistants are recognized as providers in workflow authorization', () => {
@@ -93,7 +93,7 @@ describe('patient journey routing: entry through terminal checkout', () => {
   test('appointment check-in status is committed with the workflow transition', () => {
     const serverSrc = read(serverPath);
     const scheduleSrc = read(schedulePath);
-    assert.match(serverSrc, /target_state === 'checked-in'[\s\S]*BEGIN IMMEDIATE TRANSACTION/);
+    assert.match(serverSrc, /target_state === 'checked-in'[\s\S]*db\.withTransaction\(async \(\) =>/);
     assert.match(serverSrc, /UPDATE appointments[\s\S]*status = 'checked-in'/);
     assert.match(scheduleSrc, /if \(appt\.encounter_id\)[\s\S]*navigate\('\/checkin\/' \+ appt\.encounter_id\)/);
     assert.ok(!/updateAppointment\(appt\.id, \{ status: 'checked-in'/.test(scheduleSrc));
@@ -104,7 +104,9 @@ describe('patient journey routing: entry through terminal checkout', () => {
     assert.match(src, /app\.get\('\/api\/encounters\/:id\/charge',[^\n]*'front_desk'/);
     assert.match(src, /app\.post\('\/api\/encounters\/:id\/checkout',[^\n]*'front_desk'/);
     assert.doesNotMatch(src, /app\.post\('\/api\/encounters\/:id\/charge',[^\n]*'front_desk'/);
-    assert.match(src, /Front-desk checkout may not override the E\/M code/);
+    assert.match(src, /Front-desk checkout may not supply or override diagnosis or procedure coding/);
+    assert.match(src, /filterChargeForRole/);
+    assert.match(src, /filterEncounterForRole\(req, completedEncounter\)/);
   });
 
   test('MA orders-pending resume opens the close-out worklist', () => {
@@ -116,6 +118,38 @@ describe('patient journey routing: entry through terminal checkout', () => {
     const auditSrc = read(path.resolve(__dirname, '../../server/audit-logger.js'));
     assert.match(auditSrc, /'POST \/api\/encounters\/:id\/sign':[\s\S]*action: 'SIGN'/);
     assert.match(auditSrc, /DURABLE_AUDIT_ACTIONS = new Set\(\['EXPORT', 'SIGN', 'PRESCRIBE'\]\)/);
+  });
+
+  test('shared SQLite transactions are serialized through one owner', () => {
+    const src = read(databasePath);
+    assert.match(src, /AsyncLocalStorage/);
+    assert.match(src, /function withTransaction\(work\)/);
+    assert.match(src, /enqueueDbOperation/);
+    assert.match(src, /BEGIN IMMEDIATE TRANSACTION/);
+  });
+
+  test('follow-up date can be explicitly cleared', () => {
+    const src = read(databasePath);
+    assert.match(src, /follow_up_date=CASE WHEN \? = 1 THEN \? ELSE follow_up_date END/);
+    assert.match(src, /hasOwnProperty\.call\(updates, 'follow_up_date'\)/);
+  });
+
+  test('check-in preserves canonical encounter types used by billing', () => {
+    const src = read(path.resolve(__dirname, '../../src/pages/CheckInPage.jsx'));
+    assert.match(src, /\{ value: 'new_patient', label: 'New Patient' \}/);
+    assert.match(src, /normalizeEncounterType/);
+    assert.match(src, /value=\{type\.value\}/);
+  });
+
+  test('completed visit renders rejected CDS from persisted fields', () => {
+    const src = read(visitPath);
+    assert.match(src, /cdsRejected\.map/);
+    assert.match(src, /s\.title \|\| s\.description \|\| 'Suggestion'/);
+  });
+
+  test('check-in prior visit uses the clinical encounter date', () => {
+    const src = read(path.resolve(__dirname, '../../src/pages/CheckInPage.jsx'));
+    assert.match(src, /previousEncounter\.encounter_date \|\| previousEncounter\.created_at/);
   });
 
   test('checkout success exposes the completed visit summary', () => {
