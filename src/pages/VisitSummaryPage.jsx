@@ -12,6 +12,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ClipboardCheck, FlaskConical, Activity, CreditCard, CheckCircle2 } from 'lucide-react';
 import api from '../api/client';
+import { usePatient } from '../hooks/usePatient';
+import PatientBanner from '../components/patient/PatientBanner';
 import TouchButton from '../components/common/TouchButton';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import Badge from '../components/common/Badge';
@@ -45,6 +47,7 @@ export default function VisitSummaryPage() {
   const [charge, setCharge] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { patient } = usePatient(encounter?.patient_id);
 
   useEffect(() => {
     async function load() {
@@ -89,9 +92,13 @@ export default function VisitSummaryPage() {
   const vitals = encounter.vitals || {};
   const cdsAccepted = (encounter.cds_suggestions || []).filter((s) => s.status === 'accepted');
   const cdsRejected = (encounter.cds_suggestions || []).filter((s) => s.status === 'rejected');
+  const terminalState = encounter.current_state || encounter.workflow_state || encounter.status || '';
+  const isCompleted = terminalState === 'checked-out' || terminalState === 'completed';
 
   return (
-    <div className="mc-page mc-reveal-stagger space-y-4 pb-8">
+    <div>
+      {patient && <PatientBanner patient={patient} />}
+      <div className="mc-page mc-reveal-stagger space-y-4 pb-8">
       {/* Header */}
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
@@ -108,7 +115,7 @@ export default function VisitSummaryPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="success">Signed</Badge>
+          <Badge variant="success">{isCompleted ? 'Completed' : 'Signed'}</Badge>
           <span className="text-xs text-slate-500">Enc #{eid}</span>
         </div>
       </div>
@@ -253,6 +260,7 @@ export default function VisitSummaryPage() {
           </CardBody>
         </Card>
       )}
+      </div>
     </div>
   );
 }
