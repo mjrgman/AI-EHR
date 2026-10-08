@@ -272,6 +272,7 @@ export const api = {
 
   getPatients: () => request('/patients'),
   getPatient: (id) => request(`/patients/${id}`),
+  getPatientVitals: (id) => request(`/patients/${id}/vitals`),
   createPatient: (data) => request('/patients', { method: 'POST', body: JSON.stringify(data) }),
   getEncounters: (params) => {
     const q = new URLSearchParams(params).toString();
