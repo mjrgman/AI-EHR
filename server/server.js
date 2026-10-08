@@ -1501,10 +1501,35 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
     if (err) return res.status(400).json({ error: err });
 
     const userRole = req.user?.role || req.session?.userRole || null;
-    const result = await workflow.transitionState(encounterId, req.body.target_state, {
-      assigned_ma: req.body.assigned_ma,
-      assigned_provider: req.body.assigned_provider
-    }, userRole);
+    let result;
+
+    if (req.body.target_state === 'checked-in') {
+      // Keep the scheduled appointment and encounter workflow synchronized.
+      // Linking the encounter happens when the front desk opens Check-In; the
+      // appointment only becomes checked-in when this transition succeeds.
+      await db.dbRun('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        result = await workflow.transitionState(encounterId, req.body.target_state, {
+          assigned_ma: req.body.assigned_ma,
+          assigned_provider: req.body.assigned_provider
+        }, userRole);
+        await db.dbRun(
+          `UPDATE appointments
+           SET status = 'checked-in', updated_at = CURRENT_TIMESTAMP
+           WHERE encounter_id = ? AND status IN ('scheduled','confirmed')`,
+          [encounterId]
+        );
+        await db.dbRun('COMMIT');
+      } catch (transitionErr) {
+        await db.dbRun('ROLLBACK').catch(() => {});
+        throw transitionErr;
+      }
+    } else {
+      result = await workflow.transitionState(encounterId, req.body.target_state, {
+        assigned_ma: req.body.assigned_ma,
+        assigned_provider: req.body.assigned_provider
+      }, userRole);
+    }
 
     // If transitioning to 'vitals-recorded' or 'provider-examining', run initial CDS
     let cdsSuggestions = [];
