@@ -147,7 +147,23 @@ function filterEncounterForRole(req, encounter) {
   const filtered = { ...encounter };
   delete filtered.transcript;
   delete filtered.soap_note;
+  if (!rbac.canAccess(role, 'billing')) delete filtered.billing_notes;
   return filtered;
+}
+
+function filterChargeForRole(req, charge) {
+  if (!charge) return charge;
+  if (getRequestRole(req) !== 'front_desk') return charge;
+
+  // Reception needs workflow readiness, not diagnosis/coding PHI. Keep this
+  // projection deliberately minimal so checkout can proceed without exposing
+  // ICD/CPT/MDM detail that front-desk RBAC does not permit.
+  return {
+    encounter_id: charge.encounter_id,
+    status: charge.status || 'draft',
+    coding_locked: true,
+    charge_ready: true,
+  };
 }
 
 function filterPatientBundleForRole(req, payload) {
@@ -553,22 +569,31 @@ app.get('/api/encounters', async (req, res) => {
       const pid = validateId(patient_id);
       if (!pid) return res.status(400).json({ error: 'Invalid patient_id' });
       encounters = await db.dbAll(
-        `SELECT e.*, p.first_name, p.last_name, p.mrn
-         FROM encounters e JOIN patients p ON e.patient_id = p.id
+        `SELECT e.*, p.first_name, p.last_name, p.mrn,
+                ws.current_state AS workflow_state
+         FROM encounters e
+         JOIN patients p ON e.patient_id = p.id
+         LEFT JOIN workflow_state ws ON ws.encounter_id = e.id
          WHERE e.patient_id = ? ORDER BY e.encounter_date DESC`,
         [pid]
       );
     } else if (status) {
       encounters = await db.dbAll(
-        `SELECT e.*, p.first_name, p.last_name, p.mrn
-         FROM encounters e JOIN patients p ON e.patient_id = p.id
+        `SELECT e.*, p.first_name, p.last_name, p.mrn,
+                ws.current_state AS workflow_state
+         FROM encounters e
+         JOIN patients p ON e.patient_id = p.id
+         LEFT JOIN workflow_state ws ON ws.encounter_id = e.id
          WHERE e.status = ? ORDER BY e.encounter_date DESC`,
         [status]
       );
     } else {
       encounters = await db.dbAll(
-        `SELECT e.*, p.first_name, p.last_name, p.mrn
-         FROM encounters e JOIN patients p ON e.patient_id = p.id
+        `SELECT e.*, p.first_name, p.last_name, p.mrn,
+                ws.current_state AS workflow_state
+         FROM encounters e
+         JOIN patients p ON e.patient_id = p.id
+         LEFT JOIN workflow_state ws ON ws.encounter_id = e.id
          ORDER BY e.encounter_date DESC LIMIT 50`
       );
     }
@@ -648,14 +673,23 @@ app.patch('/api/encounters/:id', async (req, res) => {
       if (!allowedStatuses.includes(req.body.status)) {
         return res.status(400).json({ error: `Invalid status. Must be one of: ${allowedStatuses.join(', ')}` });
       }
+      if (req.body.status === 'signed') {
+        return res.status(409).json({ error: 'Use the encounter sign endpoint to persist signature provenance and workflow state together.' });
+      }
+      if (req.body.status === 'completed') {
+        return res.status(409).json({ error: 'Use the checkout endpoint to complete the encounter and linked workflow atomically.' });
+      }
     }
 
     const updates = {};
     if (req.body.transcript !== undefined) updates.transcript = sanitizeString(req.body.transcript, 50000);
     if (req.body.soap_note !== undefined) updates.soap_note = sanitizeString(req.body.soap_note, 50000);
     if (req.body.chief_complaint !== undefined) updates.chief_complaint = sanitizeString(req.body.chief_complaint, 500);
+    if (req.body.encounter_type !== undefined) updates.encounter_type = sanitizeString(req.body.encounter_type, 100);
     if (req.body.status !== undefined) updates.status = req.body.status;
     if (req.body.duration_minutes !== undefined) updates.duration_minutes = parseInt(req.body.duration_minutes, 10) || null;
+    if (req.body.follow_up_date !== undefined) updates.follow_up_date = req.body.follow_up_date || null;
+    if (req.body.billing_notes !== undefined) updates.billing_notes = sanitizeString(req.body.billing_notes, 2000);
 
     const result = await db.updateEncounter(id, updates);
 
@@ -686,6 +720,83 @@ app.patch('/api/encounters/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to update encounter' });
   }
 });
+
+// Sign encounter atomically: workflow state + signature provenance must agree.
+app.post('/api/encounters/:id/sign',
+  rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant'),
+  async (req, res) => {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    try {
+      const encounter = await db.getEncounterById(id);
+      if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+
+      const auditPatientId = validateId(req.body.patient_id);
+      if (!auditPatientId || auditPatientId !== encounter.patient_id) {
+        return res.status(400).json({ error: 'patient_id must match the encounter patient' });
+      }
+      req.auditPatientId = encounter.patient_id;
+
+      const wf = await workflow.getCurrentState(id);
+      const signPaths = {
+        'provider-examining': ['documentation', 'signed'],
+        'orders-pending': ['documentation', 'signed'],
+        'documentation': ['signed'],
+        'signed': [],
+      };
+      const pathToSigned = signPaths[wf.current_state];
+      if (!pathToSigned) {
+        return res.status(409).json({
+          error: `Cannot sign encounter from workflow state '${wf.current_state}'. Complete the provider encounter first.`
+        });
+      }
+
+      if (wf.current_state === 'orders-pending') {
+        const decisionItem = await db.getDecisionQueueItemByEncounter(id);
+        if (decisionItem && decisionItem.status === 'decided' && decisionItem.ma_status === 'awaiting') {
+          return res.status(409).json({
+            error: 'Cannot sign while a provider decision is awaiting MA close-out. Complete the close-out first.'
+          });
+        }
+      }
+
+      if (wf.current_state === 'signed' && encounter.status === 'signed' && encounter.signed_at) {
+        return res.json({ encounter, workflow: wf });
+      }
+
+      const signedBy = sanitizeString(
+        req.user?.name || req.user?.full_name || req.user?.username || encounter.provider || 'Provider',
+        200
+      );
+      const signedAt = new Date().toISOString();
+
+      await db.withTransaction(async () => {
+        for (const targetState of pathToSigned) {
+          await workflow.transitionState(id, targetState, {}, req.user?.role || null);
+        }
+        await db.updateEncounter(id, {
+          status: 'signed',
+          signed_by: signedBy,
+          signed_at: signedAt,
+        });
+      });
+
+      req.auditPatientId = encounter.patient_id ?? null;
+      const updated = await db.getEncounterById(id);
+      res.json({ encounter: updated, workflow: await workflow.getCurrentState(id) });
+    } catch (error) {
+      if (error.message.includes('cannot transition')) {
+        return res.status(403).json({ error: error.message });
+      }
+      if (error.message.includes('Invalid transition')) {
+        return res.status(409).json({ error: error.message });
+      }
+      logger.error('Error signing encounter', { encounter_id: id, error: error.message });
+      res.status(500).json({ error: 'Failed to sign encounter' });
+    }
+  }
+);
 
 // ==========================================
 // AI/CLINICAL DATA ENDPOINTS
@@ -1407,10 +1518,30 @@ app.post('/api/workflow/:encounterId/transition', async (req, res) => {
     if (err) return res.status(400).json({ error: err });
 
     const userRole = req.user?.role || req.session?.userRole || null;
-    const result = await workflow.transitionState(encounterId, req.body.target_state, {
-      assigned_ma: req.body.assigned_ma,
-      assigned_provider: req.body.assigned_provider
-    }, userRole);
+    let result;
+
+    if (req.body.target_state === 'checked-in') {
+      // Keep the scheduled appointment and encounter workflow synchronized.
+      // Linking the encounter happens when the front desk opens Check-In; the
+      // appointment only becomes checked-in when this transition succeeds.
+      await db.withTransaction(async () => {
+        result = await workflow.transitionState(encounterId, req.body.target_state, {
+          assigned_ma: req.body.assigned_ma,
+          assigned_provider: req.body.assigned_provider
+        }, userRole);
+        await db.dbRun(
+          `UPDATE appointments
+           SET status = 'checked-in', updated_at = CURRENT_TIMESTAMP
+           WHERE encounter_id = ? AND status IN ('scheduled','confirmed')`,
+          [encounterId]
+        );
+      });
+    } else {
+      result = await workflow.transitionState(encounterId, req.body.target_state, {
+        assigned_ma: req.body.assigned_ma,
+        assigned_provider: req.body.assigned_provider
+      }, userRole);
+    }
 
     // If transitioning to 'vitals-recorded' or 'provider-examining', run initial CDS
     let cdsSuggestions = [];
@@ -2099,7 +2230,7 @@ app.get('/api/encounters/:id/orders', requireAnyResourceAccess('lab_orders', 'im
 });
 
 // Get CPT code suggestions for an encounter
-app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2469,20 +2600,31 @@ app.delete('/api/appointments/:id', async (req, res) => {
 // ==========================================
 
 // Get charge for an encounter (or compute E/M suggestion without saving)
-app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
 
-    const existing = await db.getChargeByEncounter(encounterId);
-    if (existing) {
-      return res.json(existing);
-    }
-
-    // No charge yet — return E/M suggestion for preview
     const encounter = await db.getEncounterById(encounterId);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+    req.auditPatientId = encounter.patient_id ?? null;
 
+    const existing = await db.getChargeByEncounter(encounterId);
+    if (existing) {
+      return res.json(filterChargeForRole(req, existing));
+    }
+
+    if (req.user?.role === 'front_desk') {
+      // Do not build or disclose a clinical MDM suggestion to reception.
+      return res.json({
+        encounter_id: encounterId,
+        status: 'draft',
+        coding_locked: true,
+        charge_ready: false,
+      });
+    }
+
+    // No charge yet — return E/M suggestion for provider/billing preview.
     const context = await billing.buildBillingContext(encounterId, encounter.patient_id);
     const suggestion = billing.assessMDM(context);
     res.json({ encounter_id: encounterId, status: 'draft', em_suggestion: suggestion, charge: null });
@@ -2493,7 +2635,7 @@ app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_pract
 });
 
 // Capture charge (creates/updates draft — does not finalize)
-app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2520,7 +2662,7 @@ app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_prac
 });
 
 // Checkout — finalizes charge and marks encounter checked-out
-app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_practitioner', 'billing'), async (req, res) => {
+app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2528,20 +2670,45 @@ app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_pr
     const encounter = await db.getEncounterById(encounterId);
     if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
 
+    const isFrontDesk = req.user?.role === 'front_desk';
+    const codingFields = ['em_level', 'cpt_codes', 'icd10_codes'];
+    if (isFrontDesk && codingFields.some((field) => req.body[field] !== undefined)) {
+      return res.status(403).json({ error: 'Front-desk checkout may not supply or override diagnosis or procedure coding.' });
+    }
+
+    req.auditPatientId = encounter.patient_id ?? null;
+
     const charge = await billing.finalizeCheckout(
       encounterId,
       encounter.patient_id,
       req.user?.name || encounter.provider,
-      {
-        em_level: req.body.em_level || null,
-        cpt_codes: req.body.cpt_codes || [],
-        icd10_codes: req.body.icd10_codes || null,
-        notes: req.body.notes || null
-      }
+      isFrontDesk
+        ? {
+            preserve_existing_coding: true,
+            notes: req.body.notes || null,
+            follow_up_date: req.body.follow_up_date || null,
+            billing_notes: req.body.billing_notes || req.body.notes || null,
+          }
+        : {
+            em_level: req.body.em_level || null,
+            cpt_codes: req.body.cpt_codes || [],
+            icd10_codes: req.body.icd10_codes || null,
+            notes: req.body.notes || null,
+            follow_up_date: req.body.follow_up_date || null,
+            billing_notes: req.body.billing_notes || req.body.notes || null,
+          }
     );
-    res.json({ message: 'Checkout complete', charge });
+    const completedEncounter = await db.getEncounterById(encounterId);
+    res.json({
+      message: 'Checkout complete',
+      charge: filterChargeForRole(req, charge),
+      encounter: filterEncounterForRole(req, completedEncounter),
+    });
   } catch (err) {
     logger.error('Error processing checkout', { error: err.message });
+    if (err.code === 'INVALID_CHECKOUT_STATE') {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to process checkout' });
   }
 });

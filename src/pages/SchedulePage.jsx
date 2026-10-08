@@ -23,7 +23,7 @@ import {
 const STATUS_LABELS = {
   scheduled: { label: 'Scheduled', variant: 'routine' },
   confirmed: { label: 'Confirmed', variant: 'success' },
-  arrived: { label: 'Arrived', variant: 'purple' },
+  'checked-in': { label: 'Checked In', variant: 'purple' },
   completed: { label: 'Completed', variant: 'success' },
   'no-show': { label: 'No-Show', variant: 'danger' },
   cancelled: { label: 'Cancelled', variant: 'warning' },
@@ -161,11 +161,11 @@ export default function SchedulePage() {
   async function handleDelete(apptId) {
     if (!window.confirm('Cancel this appointment?')) return;
     try {
-      await api.deleteAppointment(apptId);
+      await api.updateAppointment(apptId, { status: 'cancelled' });
       await loadSchedule();
       toast.success('Appointment cancelled');
     } catch (err) {
-      toast.error('Delete failed: ' + err.message);
+      toast.error('Cancellation failed: ' + err.message);
     }
   }
 
@@ -190,14 +190,24 @@ export default function SchedulePage() {
 
   async function handleCheckin(appt) {
     try {
+      if (appt.encounter_id) {
+        navigate('/checkin/' + appt.encounter_id);
+        return;
+      }
+
       const enc = await api.createEncounter({
         patient_id: appt.patient_id,
         chief_complaint: appt.chief_complaint || formatAppointmentType(appt.appointment_type) || 'Office Visit',
         encounter_date: selectedDate,
         encounter_type: appt.appointment_type === 'new_patient' ? 'new_patient' : 'office_visit',
+        provider: appt.provider_name || providerName || 'Dr. MJR',
       });
       const encId = enc.encounter_id || enc.id;
-      await api.updateAppointment(appt.id, { status: 'checked-in', encounter_id: encId });
+
+      // Link the appointment to the encounter, but do not mark the patient
+      // checked-in until the Check-In screen actually completes that workflow
+      // transition. Re-clicking Check In will reuse this encounter.
+      await api.updateAppointment(appt.id, { encounter_id: encId });
       navigate('/checkin/' + encId);
     } catch (err) {
       toast.error('Check-in failed: ' + err.message);
@@ -532,7 +542,7 @@ export default function SchedulePage() {
                                   No-Show
                                 </button>
                               </>
-                            ) : appt.status === 'arrived' && appt.encounter_id ? (
+                            ) : appt.status === 'checked-in' && appt.encounter_id ? (
                               <button
                                 onClick={() => navigate('/checkin/' + appt.encounter_id)}
                                 className="text-xs px-2.5 py-1.5 bg-slate-50 text-slate-700 border border-slate-100 rounded-lg hover:bg-ivory-200 active:bg-ivory-200 transition-colors font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-500 focus-visible:ring-offset-1"

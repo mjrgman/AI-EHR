@@ -31,7 +31,7 @@ export default function ReviewPage() {
 
   const { encounter, orders, refresh: refreshEncounter } = useEncounter(eid);
   const { patient } = usePatient(encounter?.patient_id);
-  const { workflow, timeline, transition } = useWorkflow(eid);
+  const { workflow, timeline, timelineEntries } = useWorkflow(eid);
   const { accepted, rejected } = useCDS(eid, encounter?.patient_id, { pollInterval: 0 });
 
   // --- Unsaved work protection ---
@@ -65,16 +65,15 @@ export default function ReviewPage() {
 
   // --- Timestamps ---
   const timestamps = useMemo(() => {
-    if (!timeline) return {};
-    const events = Array.isArray(timeline) ? timeline : timeline?.events || [];
+    if (!timelineEntries.length) return {};
     let checkIn = null;
     let examStart = null;
-    for (const ev of events) {
-      const ts = ev.transitioned_at || ev.timestamp || ev.created_at;
-      if (ev.to_state === 'checked-in' || ev.to_state === 'arrived') {
+    for (const ev of timelineEntries) {
+      const ts = ev.timestamp || ev.transitioned_at || ev.created_at;
+      if (ev.state === 'checked-in') {
         checkIn = ts;
       }
-      if (ev.to_state === 'provider-examining') {
+      if (ev.state === 'provider-examining') {
         examStart = ts;
       }
     }
@@ -91,7 +90,7 @@ export default function ReviewPage() {
       }
     }
     return { checkIn, examStart, duration };
-  }, [timeline]);
+  }, [timelineEntries]);
 
   function formatTime(ts) {
     if (!ts) return '--';
@@ -132,42 +131,12 @@ export default function ReviewPage() {
         await api.updateEncounter(encounterId, { soap_note: soapNote });
       }
 
-      // Advance workflow through all states up to and including 'signed'.
-      // The state machine only accepts one-step transitions, so we walk the
-      // full ordered chain from the current state to 'signed', skipping states
-      // already passed.
-      const STATE_CHAIN = [
-        'scheduled',
-        'checked-in',
-        'roomed',
-        'vitals-recorded',
-        'provider-examining',
-        'documentation',
-        'signed',
-      ];
-      const currentState = workflow?.current_state;
-      const currentIdx = STATE_CHAIN.indexOf(currentState);
-      const signedIdx = STATE_CHAIN.indexOf('signed');
-      if (currentIdx < signedIdx) {
-        for (let i = currentIdx + 1; i <= signedIdx; i++) {
-          try {
-            await transition(STATE_CHAIN[i]);
-          } catch (e) {
-            // If transition fails for a state we've already passed, continue.
-            // Re-throw only if we couldn't reach 'signed'.
-            if (i === signedIdx) throw e;
-          }
-        }
-      }
+      // The server signs atomically: legal workflow progression and signature
+      // provenance commit together or roll back together.
+      await api.signEncounter(encounterId, encounter.patient_id);
 
-      await api.updateEncounter(encounterId, {
-        status: 'signed',
-        signed_by: providerName,
-        signed_at: new Date().toISOString(),
-      });
-
-      toast.success('Encounter signed successfully.');
-      navigate('/visit/' + encounterId);
+      toast.success('Encounter signed. Continue checkout to finalize the visit.');
+      navigate('/checkout/' + encounterId);
     } catch (err) {
       toast.error('Signing failed: ' + err.message);
     } finally {

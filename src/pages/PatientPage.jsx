@@ -4,6 +4,7 @@ import { stateRoute } from '../utils/stateRoute';
 import { ArrowLeft, Plus, ChevronRight, CalendarPlus, Stethoscope, Pill, AlertTriangle, Activity, FlaskConical, ClipboardList } from 'lucide-react';
 import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
@@ -67,6 +68,7 @@ export default function PatientPage() {
   const pid = parseInt(patientId, 10);
   const navigate = useNavigate();
   const toast = useToast();
+  const { user, providerName } = useAuth();
   const { patient, loading, error, refresh } = usePatient(pid);
 
   // Encounter history
@@ -112,7 +114,7 @@ export default function PatientPage() {
         patient_id: pid,
         encounter_type: 'Office Visit - Follow-up',
         chief_complaint: '',
-        provider: 'Dr. MJR',
+        provider: providerName || 'Dr. Provider',
       });
       navigate('/checkin/' + enc.id);
     } catch (e) {
@@ -185,7 +187,7 @@ export default function PatientPage() {
 
   // --- Navigate to encounter at its workflow stage ---
   function goToEncounter(enc) {
-    navigate(stateRoute(enc.id, enc.workflow_state || enc.status));
+    navigate(stateRoute(enc.id, enc.workflow_state || enc.status, user?.role));
   }
 
   // --- Loading / Error ---

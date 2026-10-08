@@ -3,8 +3,8 @@
  *
  * Route: /visit/:encounterId
  *
- * Terminal-state navigation (signed, checked-out) from QueueDashboard and
- * PatientPage both route here via the shared stateRoute() util. This screen
+ * Terminal checked-out navigation from QueueDashboard and PatientPage routes
+ * here via the shared stateRoute() util. Signed encounters go to Check-Out first. This screen
  * shows the signed SOAP note, vitals taken, orders placed, CDS decisions,
  * E/M code billed, and signature line — all read-only.
  */
@@ -12,6 +12,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ClipboardCheck, FlaskConical, Activity, CreditCard, CheckCircle2 } from 'lucide-react';
 import api from '../api/client';
+import { usePatient } from '../hooks/usePatient';
+import PatientBanner from '../components/patient/PatientBanner';
 import TouchButton from '../components/common/TouchButton';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import Badge from '../components/common/Badge';
@@ -43,35 +45,49 @@ export default function VisitSummaryPage() {
   const [encounter, setEncounter] = useState(null);
   const [orders, setOrders] = useState([]);
   const [charge, setCharge] = useState(null);
+  const [workflow, setWorkflow] = useState(null);
+  const [vitals, setVitals] = useState(null);
+  const [cdsSuggestions, setCdsSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const { patient } = usePatient(encounter?.patient_id);
 
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
-        const [enc, rawOrds] = await Promise.all([
-          api.getEncounter(eid),
-          api.getEncounterOrders(eid).catch(() => null),
-        ]);
+        const enc = await api.getEncounter(eid);
         setEncounter(enc);
-        // getEncounterOrders returns { lab_orders, imaging_orders, referrals, prescriptions }
-        // Flatten all sub-arrays into one list; guard against null/non-array shapes.
+
+        const [rawOrds, wf, suggestions, chargeData, allVitals] = await Promise.all([
+          api.getEncounterOrders(eid).catch(() => null),
+          api.getTimeline(eid).catch(() => null),
+          api.getSuggestions(eid).catch(() => []),
+          api.getCharge(eid).catch(() => null),
+          enc?.patient_id ? api.getPatientVitals(enc.patient_id).catch(() => []) : Promise.resolve([]),
+        ]);
+
+        // getEncounterOrders returns { lab_orders, imaging_orders, referrals, prescriptions }.
         if (Array.isArray(rawOrds)) {
           setOrders(rawOrds);
         } else if (rawOrds && typeof rawOrds === 'object') {
-          const flat = [
+          setOrders([
             ...(Array.isArray(rawOrds.lab_orders) ? rawOrds.lab_orders.map(o => ({ ...o, order_type: o.order_type || 'lab' })) : []),
             ...(Array.isArray(rawOrds.imaging_orders) ? rawOrds.imaging_orders.map(o => ({ ...o, order_type: o.order_type || 'imaging' })) : []),
             ...(Array.isArray(rawOrds.referrals) ? rawOrds.referrals.map(o => ({ ...o, order_type: o.order_type || 'referral' })) : []),
             ...(Array.isArray(rawOrds.prescriptions) ? rawOrds.prescriptions.map(o => ({ ...o, order_type: o.order_type || 'prescription' })) : []),
-          ];
-          setOrders(flat);
+          ]);
         } else {
           setOrders([]);
         }
-        // Charge is non-critical — don't fail if absent
-        api.getCharge(eid).then(setCharge).catch(() => {});
+
+        setWorkflow(wf);
+        setCdsSuggestions(Array.isArray(suggestions) ? suggestions : []);
+        setCharge(chargeData);
+
+        const encounterVitals = (Array.isArray(allVitals) ? allVitals : [])
+          .find((row) => String(row.encounter_id) === String(eid));
+        setVitals(encounterVitals || null);
       } catch (err) {
         setError(err.message || 'Failed to load visit summary');
       } finally {
@@ -86,12 +102,15 @@ export default function VisitSummaryPage() {
   if (!encounter) return <div className="p-4 text-slate-600">Encounter not found</div>;
 
   const soapNote = encounter.soap_note || encounter.notes || '';
-  const vitals = encounter.vitals || {};
-  const cdsAccepted = (encounter.cds_suggestions || []).filter((s) => s.status === 'accepted');
-  const cdsRejected = (encounter.cds_suggestions || []).filter((s) => s.status === 'rejected');
+  const cdsAccepted = cdsSuggestions.filter((s) => s.status === 'accepted');
+  const cdsRejected = cdsSuggestions.filter((s) => s.status === 'rejected');
+  const terminalState = workflow?.current_state || encounter.workflow_state || encounter.status || '';
+  const isCompleted = terminalState === 'checked-out' || terminalState === 'completed';
 
   return (
-    <div className="mc-page mc-reveal-stagger space-y-4 pb-8">
+    <div>
+      {patient && <PatientBanner patient={patient} />}
+      <div className="mc-page mc-reveal-stagger space-y-4 pb-8">
       {/* Header */}
       <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <span className="pointer-events-none absolute inset-x-0 -top-2 h-px bg-gradient-to-r from-transparent via-gold-500/60 to-transparent" aria-hidden="true" />
@@ -108,7 +127,7 @@ export default function VisitSummaryPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant="success">Signed</Badge>
+          <Badge variant="success">{isCompleted ? 'Completed' : 'Signed'}</Badge>
           <span className="text-xs text-slate-500">Enc #{eid}</span>
         </div>
       </div>
@@ -132,12 +151,18 @@ export default function VisitSummaryPage() {
             </div>
             <div>
               <span className="label-clinical">Signed</span>
-              <p className="font-medium text-navy-700">{formatDate(encounter.signed_at || encounter.updated_at)}</p>
+              <p className="font-medium text-navy-700">{formatDate(encounter.signed_at)}</p>
             </div>
             <div>
               <span className="label-clinical">Status</span>
-              <p className="font-medium text-navy-700 capitalize">{encounter.current_state || encounter.status || '—'}</p>
+              <p className="font-medium text-navy-700 capitalize">{terminalState || '—'}</p>
             </div>
+            {encounter.follow_up_date && (
+              <div>
+                <span className="label-clinical">Follow-Up Due</span>
+                <p className="font-medium text-navy-700">{formatDate(encounter.follow_up_date)}</p>
+              </div>
+            )}
           </div>
         </CardBody>
       </Card>
@@ -153,30 +178,30 @@ export default function VisitSummaryPage() {
       ) : null}
 
       {/* Vitals */}
-      {Object.keys(vitals).length > 0 && (
+      {vitals && (
         <Card>
           <CardHeader><SectionLabel icon={Activity}>Vitals Recorded</SectionLabel></CardHeader>
           <CardBody>
             <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-4">
-              {vitals.bp_systolic && (
+              {vitals.systolic_bp && (
                 <div><span className="label-clinical">BP</span>
-                  <p className="font-medium text-navy-700">{vitals.bp_systolic}/{vitals.bp_diastolic} mmHg</p></div>
+                  <p className="font-medium text-navy-700">{vitals.systolic_bp}/{vitals.diastolic_bp} mmHg</p></div>
               )}
-              {vitals.pulse && (
+              {vitals.heart_rate && (
                 <div><span className="label-clinical">Pulse</span>
-                  <p className="font-medium text-navy-700">{vitals.pulse} bpm</p></div>
+                  <p className="font-medium text-navy-700">{vitals.heart_rate} bpm</p></div>
               )}
               {vitals.temperature && (
                 <div><span className="label-clinical">Temp</span>
                   <p className="font-medium text-navy-700">{vitals.temperature}°F</p></div>
               )}
-              {vitals.weight_lbs && (
+              {vitals.weight && (
                 <div><span className="label-clinical">Weight</span>
-                  <p className="font-medium text-navy-700">{vitals.weight_lbs} lbs</p></div>
+                  <p className="font-medium text-navy-700">{vitals.weight} lbs</p></div>
               )}
-              {vitals.o2_sat && (
+              {vitals.spo2 && (
                 <div><span className="label-clinical">O₂ Sat</span>
-                  <p className="font-medium text-navy-700">{vitals.o2_sat}%</p></div>
+                  <p className="font-medium text-navy-700">{vitals.spo2}%</p></div>
               )}
             </div>
           </CardBody>
@@ -208,16 +233,16 @@ export default function VisitSummaryPage() {
             <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-3">
               <div>
                 <span className="label-clinical">E/M Code</span>
-                <p className="font-semibold text-navy-700">{charge.em_code || '—'}</p>
+                <p className="font-semibold text-navy-700">{charge.em_level || '—'}</p>
               </div>
               <div>
                 <span className="label-clinical">MDM Level</span>
-                <p className="font-medium text-navy-700">{charge.mdm_level || '—'}</p>
+                <p className="font-medium text-navy-700">{charge.em_suggestion?.mdmLevel || '—'}</p>
               </div>
-              {charge.provider_notes && (
+              {charge.notes && (
                 <div className="col-span-2 sm:col-span-3">
                   <span className="label-clinical">Notes</span>
-                  <p className="font-medium text-slate-600">{charge.provider_notes}</p>
+                  <p className="font-medium text-slate-600">{charge.notes}</p>
                 </div>
               )}
             </div>
@@ -235,7 +260,7 @@ export default function VisitSummaryPage() {
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-success-600">Accepted ({cdsAccepted.length})</p>
                 <div className="space-y-1">
                   {cdsAccepted.map((s, i) => (
-                    <div key={i} className="rounded-lg bg-success-50 px-3 py-1.5 text-sm text-success-800">{s.suggestion_text || s.text}</div>
+                    <div key={i} className="rounded-lg bg-success-50 px-3 py-1.5 text-sm text-success-800">{s.title || s.description || 'Suggestion'}</div>
                   ))}
                 </div>
               </div>
@@ -245,7 +270,7 @@ export default function VisitSummaryPage() {
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Rejected ({cdsRejected.length})</p>
                 <div className="space-y-1">
                   {cdsRejected.map((s, i) => (
-                    <div key={i} className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm text-slate-500 line-through">{s.suggestion_text || s.text}</div>
+                    <div key={i} className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm text-slate-500 line-through">{s.title || s.description || 'Suggestion'}</div>
                   ))}
                 </div>
               </div>
@@ -253,6 +278,7 @@ export default function VisitSummaryPage() {
           </CardBody>
         </Card>
       )}
+      </div>
     </div>
   );
 }

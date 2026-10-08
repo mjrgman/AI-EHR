@@ -285,7 +285,7 @@ export default function EncounterPage() {
   // --- Hooks ---
   const { encounter, orders, update: updateEncounter, refresh: refreshEncounter } = useEncounter(eid);
   const { patient } = usePatient(encounter?.patient_id);
-  const { workflow, timeline, transition } = useWorkflow(eid);
+  const { workflow, timeline, timelineEntries, transition } = useWorkflow(eid);
   const {
     suggestions, pending, evaluate, accept, reject, refresh: refreshCDS, error: cdsError,
   } = useCDS(eid, encounter?.patient_id, { pollInterval: 5000, autoEvaluate: true });
@@ -359,15 +359,11 @@ export default function EncounterPage() {
 
   // Set exam start time from workflow timeline
   useEffect(() => {
-    if (timeline && Array.isArray(timeline)) {
-      const examEvent = timeline.find(
-        t => t.to_state === 'provider-examining' || t.target_state === 'provider-examining'
-      );
-      if (examEvent) {
-        setExamStartTime(examEvent.timestamp || examEvent.created_at);
-      }
+    const examEvent = timelineEntries.find((entry) => entry.state === 'provider-examining');
+    if (examEvent?.timestamp) {
+      setExamStartTime(examEvent.timestamp);
     }
-  }, [timeline]);
+  }, [timelineEntries]);
 
   // --- Append live speech to transcript ---
   useEffect(() => {

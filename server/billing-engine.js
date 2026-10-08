@@ -14,6 +14,7 @@
  */
 
 const db = require('./database');
+const workflow = require('./workflow-engine');
 
 // ==========================================
 // E/M LEVEL CONSTANTS
@@ -209,19 +210,64 @@ async function captureCharge(encounterId, patientId, providerName, overrides = {
  * Finalize charge at checkout — marks status 'finalized' and sets checkout time on workflow.
  */
 async function finalizeCheckout(encounterId, patientId, providerName, overrides = {}) {
-  const _charge = await captureCharge(encounterId, patientId, providerName, overrides);
-  await db.finalizeCharge(encounterId);
+  const wf = await db.getWorkflowState(encounterId);
+  if (!wf) {
+    const error = new Error(`Cannot checkout encounter ${encounterId}: workflow state is missing`);
+    error.code = 'INVALID_CHECKOUT_STATE';
+    throw error;
+  }
 
-  // Update workflow state to checked-out
-  try {
-    await db.updateWorkflowState(encounterId, { checkout_time: new Date().toISOString() });
+  // Idempotent read for an already-completed checkout.
+  if (wf.current_state === 'checked-out') {
+    return db.getChargeByEncounter(encounterId);
+  }
+
+  if (wf.current_state !== 'signed') {
+    const error = new Error(
+      `Cannot checkout encounter ${encounterId} from workflow state '${wf.current_state}'. Encounter must be signed first.`
+    );
+    error.code = 'INVALID_CHECKOUT_STATE';
+    throw error;
+  }
+
+  await db.withTransaction(async () => {
+    const existingCharge = await db.getChargeByEncounter(encounterId);
+    if (overrides.preserve_existing_coding && existingCharge) {
+      if (overrides.notes !== undefined) {
+        await db.updateCharge(encounterId, { notes: overrides.notes || null });
+      }
+    } else if (overrides.preserve_existing_coding) {
+      // Reception may trigger automatic draft generation when none exists, but
+      // cannot supply coding. The engine derives the draft from signed data.
+      await captureCharge(encounterId, patientId, providerName, {
+        notes: overrides.notes || null,
+      });
+    } else {
+      await captureCharge(encounterId, patientId, providerName, overrides);
+    }
+    await db.finalizeCharge(encounterId);
+
+    // Use the canonical workflow engine so checkout cannot bypass transition
+    // validation or silently manufacture a terminal state.
+    await workflow.transitionState(encounterId, 'checked-out');
+
+    // The encounter record and linked appointment must agree with the terminal
+    // workflow state. Persist follow-up as a due/recommended date, not as a
+    // claim that an appointment was scheduled.
+    await db.updateEncounter(encounterId, {
+      status: 'completed',
+      follow_up_date: Object.prototype.hasOwnProperty.call(overrides, 'follow_up_date')
+        ? overrides.follow_up_date
+        : undefined,
+      billing_notes: overrides.billing_notes || overrides.notes || null,
+    });
     await db.dbRun(
-      `UPDATE workflow_state SET current_state='checked-out' WHERE encounter_id=?`,
+      `UPDATE appointments
+       SET status = 'completed', updated_at = CURRENT_TIMESTAMP
+       WHERE encounter_id = ? AND status = 'checked-in'`,
       [encounterId]
     );
-  } catch (wfErr) {
-    console.error('[BILLING] Workflow state update error (non-fatal):', wfErr.message);
-  }
+  });
 
   return db.getChargeByEncounter(encounterId);
 }

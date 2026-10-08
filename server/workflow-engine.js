@@ -13,8 +13,8 @@ const STATES = {
   'provider-examining': { next: ['orders-pending', 'documentation'], role: 'provider', timeField: 'provider_start_time' },
   'orders-pending':     { next: ['documentation'], role: 'provider', timeField: null },
   'documentation':      { next: ['signed'], role: 'provider', timeField: null },
-  'signed':             { next: ['checked-out'], role: 'reception', timeField: 'signed_time' },
-  'checked-out':        { next: [], role: null, timeField: 'checkout_time' }
+  'signed':             { next: ['checked-out'], role: 'provider', timeField: 'signed_time' },
+  'checked-out':        { next: [], role: 'reception', timeField: 'checkout_time' }
 };
 
 async function createWorkflow(encounterId, patientId, metadata = {}) {
@@ -91,11 +91,15 @@ async function transitionState(encounterId, targetState, metadata = {}, userRole
     const maHandoffStates = ['vitals-recorded', 'provider-examining'];
     const isMaHandoff = ['ma', 'medical_assistant'].includes(userRole) &&
       requiredRole === 'provider' && maHandoffStates.includes(targetState);
-    const roleMatches = isMaHandoff ||
+    const isMaCloseoutHandoff = ['ma', 'medical_assistant'].includes(userRole) &&
+      requiredRole === 'provider' &&
+      wf.current_state === 'orders-pending' &&
+      targetState === 'documentation';
+    const roleMatches = isMaHandoff || isMaCloseoutHandoff ||
       (requiredRole === 'provider'
-        ? ['physician', 'nurse_practitioner', 'provider'].includes(userRole)
+        ? ['physician', 'nurse_practitioner', 'physician_assistant', 'provider'].includes(userRole)
         : requiredRole === 'reception'
-          ? ['front_desk', 'reception', 'admin'].includes(userRole)
+          ? ['front_desk', 'reception', 'billing', 'admin', 'physician', 'nurse_practitioner', 'physician_assistant'].includes(userRole)
           : requiredRole === 'ma'
             ? ['ma', 'medical_assistant'].includes(userRole)
             : userRole === requiredRole);
@@ -142,6 +146,9 @@ async function getWorkflowTimeline(encounterId) {
 
     if (state === wf.current_state) {
       entry.status = 'current';
+      if (config.timeField && wf[config.timeField]) {
+        entry.timestamp = wf[config.timeField];
+      }
     } else if (stateOrder.indexOf(state) < stateOrder.indexOf(wf.current_state)) {
       entry.status = 'completed';
       if (config.timeField && wf[config.timeField]) {

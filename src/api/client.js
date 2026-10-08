@@ -272,6 +272,7 @@ export const api = {
 
   getPatients: () => request('/patients'),
   getPatient: (id) => request(`/patients/${id}`),
+  getPatientVitals: (id) => request(`/patients/${id}/vitals`),
   createPatient: (data) => request('/patients', { method: 'POST', body: JSON.stringify(data) }),
   getEncounters: (params) => {
     const q = new URLSearchParams(params).toString();
@@ -280,6 +281,7 @@ export const api = {
   getEncounter: (id) => request(`/encounters/${id}`),
   createEncounter: (data) => request('/encounters', { method: 'POST', body: JSON.stringify(data) }),
   updateEncounter: (id, data) => request(`/encounters/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  signEncounter: (id, patientId) => request(`/encounters/${id}/sign`, { method: 'POST', body: JSON.stringify({ patient_id: patientId }) }),
   getEncounterOrders: (id) => request(`/encounters/${id}/orders`),
   addVitals: (data) => request('/vitals', { method: 'POST', body: JSON.stringify(data) }),
   addVitalsFromSpeech: (data) => request('/vitals/from-speech', { method: 'POST', body: JSON.stringify(data) }),

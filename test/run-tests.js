@@ -1077,8 +1077,8 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(charge.encounter_id, cdsEncId, 'Should link to encounter');
     assertEqual(charge.status, 'draft', 'Initial status should be draft');
     assert(charge.em_level, 'Should have E/M level');
-    assert(charge.cpt_codes, 'Should have CPT codes JSON');
-    const cpts = JSON.parse(charge.cpt_codes);
+    assert(charge.cpt_codes, 'Should have CPT codes');
+    const cpts = Array.isArray(charge.cpt_codes) ? charge.cpt_codes : JSON.parse(charge.cpt_codes);
     assert(cpts.length >= 1, 'Should have at least the E/M CPT code');
     assert(cpts[0].code, 'CPT entry should have a code');
   });
@@ -1094,10 +1094,17 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
   });
 
   await test('Checkout finalizes charge and sets status to finalized', async () => {
+    await workflowEngine.createWorkflow(cdsEncId, sarahId, { assigned_provider: 'Dr. Test Provider' });
+    for (const target of ['checked-in', 'roomed', 'vitals-recorded', 'provider-examining', 'documentation', 'signed']) {
+      await workflowEngine.transitionState(cdsEncId, target);
+    }
+
     const charge = await billingEngine.finalizeCheckout(cdsEncId, sarahId, 'Dr. Test Provider');
 
     assertEqual(charge.status, 'finalized', 'Status should be finalized after checkout');
     assert(charge.finalized_at, 'Should have finalized_at timestamp');
+    const wf = await workflowEngine.getCurrentState(cdsEncId);
+    assertEqual(wf.current_state, 'checked-out', 'Checkout should terminate the workflow');
   });
 
   await test('Billing worklist: getChargesByStatus returns finalized charges', async () => {
@@ -4613,15 +4620,22 @@ Doctor: Given your kidney function declining, let's start Ozempic 0.25 mg weekly
     assertEqual(res.status, 403, 'front desk must not access encounter orders');
   });
 
-  await test('Access boundary: front desk cannot access billing preview endpoints', async () => {
+  await test('Access boundary: front desk can read checkout preview but cannot edit charge coding', async () => {
     const login = await httpRequest('/api/auth/login', {
       method: 'POST',
       body: { username: 'test.frontdesk', password: 'SecurePass!234' }
     });
     assertEqual(login.status, 200);
 
-    const res = await httpRequest(`/api/encounters/${encounterId}/charge`, { token: login.body.token });
-    assertEqual(res.status, 403, 'front desk must not access charge preview');
+    const preview = await httpRequest(`/api/encounters/${encounterId}/charge`, { token: login.body.token });
+    assertEqual(preview.status, 200, 'front desk needs read-only charge preview to complete checkout');
+
+    const capture = await httpRequest(`/api/encounters/${encounterId}/charge`, {
+      method: 'POST',
+      token: login.body.token,
+      body: { em_level: '99215' }
+    });
+    assertEqual(capture.status, 403, 'front desk must not edit charge coding');
   });
 
   await test('Access boundary: physician can still access billing preview endpoints', async () => {

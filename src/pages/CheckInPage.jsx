@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api, { safeLog } from '../api/client';
 import { usePatient } from '../hooks/usePatient';
@@ -21,12 +21,27 @@ import {
 } from 'lucide-react';
 
 const APPOINTMENT_TYPES = [
-  'Follow-Up',
-  'New Patient',
-  'Urgent',
-  'Procedure',
-  'Annual Wellness',
+  { value: 'follow_up', label: 'Follow-Up' },
+  { value: 'new_patient', label: 'New Patient' },
+  { value: 'sick_visit', label: 'Sick Visit' },
+  { value: 'wellness', label: 'Annual Wellness' },
+  { value: 'procedure', label: 'Procedure' },
+  { value: 'telehealth', label: 'Telehealth' },
+  { value: 'referral', label: 'Referral' },
+  { value: 'urgent', label: 'Urgent' },
 ];
+
+function normalizeEncounterType(value) {
+  const raw = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const aliases = {
+    office_visit: 'follow_up',
+    office_visit_follow_up: 'follow_up',
+    followup: 'follow_up',
+    annual_wellness: 'wellness',
+  };
+  const normalized = aliases[raw] || raw;
+  return APPOINTMENT_TYPES.some((type) => type.value === normalized) ? normalized : 'follow_up';
+}
 
 function formatTimestamp(date) {
   return new Intl.DateTimeFormat('en-US', {
@@ -56,8 +71,9 @@ export default function CheckInPage() {
   const [encounter, setEncounter] = useState(null);
   const [encounterLoading, setEncounterLoading] = useState(true);
   const [chiefComplaint, setChiefComplaint] = useState('');
-  const [appointmentType, setAppointmentType] = useState('Follow-Up');
+  const [appointmentType, setAppointmentType] = useState('follow_up');
   const [submitting, setSubmitting] = useState(false);
+  const [previousEncounter, setPreviousEncounter] = useState(null);
   const [arrivalTime] = useState(() => new Date());
 
   const { workflow, timeline, transition } = useWorkflow(encounterId);
@@ -73,10 +89,7 @@ export default function CheckInPage() {
         setEncounter(enc);
         setChiefComplaint(enc.chief_complaint || '');
         if (enc.encounter_type) {
-          const match = APPOINTMENT_TYPES.find(
-            (t) => t.toLowerCase() === (enc.encounter_type || '').toLowerCase()
-          );
-          if (match) setAppointmentType(match);
+          setAppointmentType(normalizeEncounterType(enc.encounter_type));
         }
       } catch (err) {
         if (!cancelled) {
@@ -91,15 +104,29 @@ export default function CheckInPage() {
     return () => { cancelled = true; };
   }, [encounterId, toast]);
 
-  // Determine if patient has previous encounters
-  const previousEncounter = useMemo(() => {
-    if (!patient?.encounters || patient.encounters.length === 0) return null;
-    // Find the most recent encounter that is NOT the current one
-    const sorted = [...patient.encounters]
-      .filter((e) => String(e.id) !== String(encounterId))
-      .sort((a, b) => new Date(b.date || b.created_at || 0) - new Date(a.date || a.created_at || 0));
-    return sorted[0] || null;
-  }, [patient, encounterId]);
+  // Load the prior encounter explicitly; the patient demographics endpoint
+  // intentionally does not embed encounter history.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPreviousEncounter() {
+      if (!encounter?.patient_id) {
+        setPreviousEncounter(null);
+        return;
+      }
+      try {
+        const encounters = await api.getEncounters({ patient_id: encounter.patient_id });
+        if (cancelled) return;
+        const previous = (Array.isArray(encounters) ? encounters : [])
+          .filter((item) => String(item.id) !== String(encounterId))
+          .sort((a, b) => new Date(b.encounter_date || b.created_at || 0) - new Date(a.encounter_date || a.created_at || 0))[0] || null;
+        setPreviousEncounter(previous);
+      } catch (err) {
+        if (!cancelled) safeLog.error('Previous encounter load failed:', err);
+      }
+    }
+    loadPreviousEncounter();
+    return () => { cancelled = true; };
+  }, [encounter?.patient_id, encounterId]);
 
   // Allergies
   const allergies = patient?.allergies || [];
@@ -284,7 +311,7 @@ export default function CheckInPage() {
                 <div className="flex items-center gap-2">
                   <span className="label-clinical">Date:</span>
                   <span className="text-navy-700 font-medium">
-                    {formatDateShort(previousEncounter.date || previousEncounter.created_at)}
+                    {formatDateShort(previousEncounter.encounter_date || previousEncounter.created_at)}
                   </span>
                 </div>
                 {previousEncounter.chief_complaint && (
@@ -327,8 +354,8 @@ export default function CheckInPage() {
                     onChange={(e) => setAppointmentType(e.target.value)}
                   >
                     {APPOINTMENT_TYPES.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
+                      <option key={type.value} value={type.value}>
+                        {type.label}
                       </option>
                     ))}
                   </select>

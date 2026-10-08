@@ -36,6 +36,7 @@ const PHI_ROUTES = {
   'GET /api/encounters/:id':              { resource_type: 'encounter', action: 'READ', phi: true, phiFields: ['chief_complaint','transcript','soap_note'], extractPatientId: patientIdFromContextOrBody },
   'POST /api/encounters':                 { resource_type: 'encounter', action: 'CREATE', phi: true, phiFields: ['chief_complaint'], extractPatientId: (req) => req.body.patient_id },
   'PATCH /api/encounters/:id':            { resource_type: 'encounter', action: 'UPDATE', phi: true, phiFields: ['transcript','soap_note','chief_complaint'], extractPatientId: patientIdFromContextOrBody },
+  'POST /api/encounters/:id/sign':        { resource_type: 'encounter', action: 'SIGN', phi: true, phiFields: ['soap_note','signature'], extractPatientId: patientIdFromContextOrBody },
   'GET /api/encounters/:id/orders':       { resource_type: 'encounter_orders', action: 'READ', phi: true, phiFields: ['orders_summary'], extractPatientId: patientIdFromContextOrBody },
 
   // --- Vitals (PHI) ---

@@ -2,6 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 
 // ==========================================
 // PHI ENCRYPTION HELPERS
@@ -80,15 +81,25 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   else console.log('Connected to SQLite database at:', DB_PATH);
 });
 
-// Await PRAGMAs via promisified interface
-dbRun('PRAGMA journal_mode = WAL').catch(err => console.error('PRAGMA WAL error:', err.message));
-dbRun('PRAGMA foreign_keys = ON').catch(err => console.error('PRAGMA FK error:', err.message));
-
 // ==========================================
-// PROMISIFIED DB HELPERS
+// PROMISIFIED DB HELPERS + SHARED-CONNECTION TRANSACTION OWNERSHIP
 // ==========================================
 
-function dbRun(sql, params = []) {
+// sqlite3 uses one module-global connection. A transaction therefore owns the
+// whole connection, not merely the statements issued by one HTTP request.
+// Serialize public DB operations through one queue and let transaction-scoped
+// calls bypass that queue via AsyncLocalStorage. This prevents another request
+// from interleaving statements inside an open transaction or rolling it back.
+const transactionContext = new AsyncLocalStorage();
+let dbOperationTail = Promise.resolve();
+
+function enqueueDbOperation(operation) {
+  const run = dbOperationTail.then(operation, operation);
+  dbOperationTail = run.catch(() => {});
+  return run;
+}
+
+function rawDbRun(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) reject(err);
@@ -97,7 +108,7 @@ function dbRun(sql, params = []) {
   });
 }
 
-function dbGet(sql, params = []) {
+function rawDbGet(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) reject(err);
@@ -106,7 +117,7 @@ function dbGet(sql, params = []) {
   });
 }
 
-function dbAll(sql, params = []) {
+function rawDbAll(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) reject(err);
@@ -114,6 +125,45 @@ function dbAll(sql, params = []) {
     });
   });
 }
+
+function dbRun(sql, params = []) {
+  if (transactionContext.getStore()?.active) return rawDbRun(sql, params);
+  return enqueueDbOperation(() => rawDbRun(sql, params));
+}
+
+function dbGet(sql, params = []) {
+  if (transactionContext.getStore()?.active) return rawDbGet(sql, params);
+  return enqueueDbOperation(() => rawDbGet(sql, params));
+}
+
+function dbAll(sql, params = []) {
+  if (transactionContext.getStore()?.active) return rawDbAll(sql, params);
+  return enqueueDbOperation(() => rawDbAll(sql, params));
+}
+
+async function withTransaction(work) {
+  if (transactionContext.getStore()?.active) {
+    return work();
+  }
+
+  return enqueueDbOperation(() => transactionContext.run({ active: true }, async () => {
+    await rawDbRun('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      const result = await work();
+      await rawDbRun('COMMIT');
+      return result;
+    } catch (err) {
+      await rawDbRun('ROLLBACK').catch(() => {});
+      throw err;
+    }
+  }));
+}
+
+// Initialize connection PRAGMAs only after the transaction/queue helpers exist.
+// Calling dbRun above the AsyncLocalStorage declaration triggers the temporal
+// dead zone during module load and prevents every database consumer from loading.
+dbRun('PRAGMA journal_mode = WAL').catch(err => console.error('PRAGMA WAL error:', err.message));
+dbRun('PRAGMA foreign_keys = ON').catch(err => console.error('PRAGMA FK error:', err.message));
 
 // ==========================================
 // SCHEMA INITIALIZATION
@@ -181,6 +231,8 @@ function initializeDatabase() {
         transcript TEXT, soap_note TEXT,
         status TEXT CHECK(status IN ('in-progress','completed','signed')) DEFAULT 'in-progress',
         provider TEXT, duration_minutes INTEGER, completed_at DATETIME,
+        signed_by TEXT, signed_at DATETIME,
+        follow_up_date DATE, billing_notes TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
       )`);
@@ -1395,11 +1447,33 @@ const db_helpers = {
   },
 
   updateEncounter: (encounterId, updates) => {
-    const { transcript, soap_note, status, duration_minutes } = updates;
-    return dbRun(`UPDATE encounters SET transcript=COALESCE(?,transcript), soap_note=COALESCE(?,soap_note),
-                  status=COALESCE(?,status), duration_minutes=COALESCE(?,duration_minutes),
-                  completed_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP ELSE completed_at END WHERE id=?`,
-      [transcript, soap_note, status, duration_minutes, status, encounterId])
+    const {
+      transcript, soap_note, chief_complaint, encounter_type, status,
+      duration_minutes, signed_by, signed_at, follow_up_date, billing_notes
+    } = updates;
+    return dbRun(`UPDATE encounters SET
+                  transcript=COALESCE(?,transcript),
+                  soap_note=COALESCE(?,soap_note),
+                  chief_complaint=COALESCE(?,chief_complaint),
+                  encounter_type=COALESCE(?,encounter_type),
+                  status=COALESCE(?,status),
+                  duration_minutes=COALESCE(?,duration_minutes),
+                  signed_by=COALESCE(?,signed_by),
+                  signed_at=COALESCE(?,signed_at),
+                  follow_up_date=CASE WHEN ? = 1 THEN ? ELSE follow_up_date END,
+                  billing_notes=CASE WHEN ? = 1 THEN ? ELSE billing_notes END,
+                  completed_at=CASE
+                    WHEN ?='completed' THEN COALESCE(completed_at,CURRENT_TIMESTAMP)
+                    ELSE completed_at
+                  END
+                  WHERE id=?`,
+      [
+        transcript, soap_note, chief_complaint, encounter_type, status,
+        duration_minutes, signed_by, signed_at,
+        Object.prototype.hasOwnProperty.call(updates, 'follow_up_date') ? 1 : 0, follow_up_date,
+        Object.prototype.hasOwnProperty.call(updates, 'billing_notes') ? 1 : 0, billing_notes,
+        status, encounterId
+      ])
       .then(r => ({ changes: r.changes }));
   },
 
@@ -1468,7 +1542,18 @@ const db_helpers = {
   getWorkflowState: (encounterId) => dbGet('SELECT * FROM workflow_state WHERE encounter_id = ?', [encounterId]),
 
   updateWorkflowState: (encounterId, updates) => {
-    const ALLOWED_WORKFLOW_COLUMNS = ['current_state', 'previous_state', 'transitioned_by', 'transition_reason', 'updated_at'];
+    const ALLOWED_WORKFLOW_COLUMNS = [
+      'current_state',
+      'assigned_ma',
+      'assigned_provider',
+      'check_in_time',
+      'roomed_time',
+      'vitals_time',
+      'provider_start_time',
+      'provider_end_time',
+      'signed_time',
+      'checkout_time',
+    ];
     const fields = [];
     const params = [];
     for (const [key, value] of Object.entries(updates)) {
@@ -1746,7 +1831,17 @@ const billing_helpers = {
       .then(_r => dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])),
 
   getChargeByEncounter: (encounter_id) =>
-    dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id]),
+    dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])
+      .then((row) => {
+        if (!row) return row;
+        const parsed = { ...row };
+        for (const key of ['cpt_codes', 'icd10_codes', 'modifiers', 'em_suggestion']) {
+          if (typeof parsed[key] === 'string') {
+            try { parsed[key] = JSON.parse(parsed[key]); } catch { /* preserve legacy scalar */ }
+          }
+        }
+        return parsed;
+      }),
 
   updateCharge: (encounter_id, fields) => {
     const allowed = ['em_level','cpt_codes','icd10_codes','modifiers','em_suggestion',
@@ -1768,7 +1863,15 @@ const billing_helpers = {
 
   getChargesByStatus: (status) =>
     dbAll('SELECT c.*, e.encounter_date, e.chief_complaint, p.first_name, p.last_name, p.mrn FROM charges c JOIN encounters e ON c.encounter_id = e.id JOIN patients p ON c.patient_id = p.id WHERE c.status = ? ORDER BY c.created_at DESC',
-      [status])
+      [status]).then((rows) => rows.map((row) => {
+        const parsed = { ...row };
+        for (const key of ['cpt_codes', 'icd10_codes', 'modifiers', 'em_suggestion']) {
+          if (typeof parsed[key] === 'string') {
+            try { parsed[key] = JSON.parse(parsed[key]); } catch { /* preserve legacy scalar */ }
+          }
+        }
+        return parsed;
+      }))
 };
 
 // ==========================================
@@ -1795,7 +1898,7 @@ const ready = initializeDatabase()
   .catch(err => console.error('Database initialization error:', err));
 
 module.exports = {
-  db, dbRun, dbGet, dbAll,
+  db, dbRun, dbGet, dbAll, withTransaction,
   ready, close,
   ...db_helpers,
   ...decision_helpers,

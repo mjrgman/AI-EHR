@@ -4,6 +4,7 @@ import api from '../api/client';
 import { usePatient } from '../hooks/usePatient';
 import { useWorkflow } from '../hooks/useWorkflow';
 import { useEncounter } from '../hooks/useEncounter';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import Card, { CardHeader, CardBody } from '../components/common/Card';
 import TouchButton from '../components/common/TouchButton';
@@ -52,6 +53,8 @@ export default function CheckOutPage() {
   const eid = parseInt(encounterId, 10);
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
+  const canEditCoding = ['physician', 'nurse_practitioner', 'physician_assistant', 'billing'].includes(user?.role);
 
   const [checkingOut, setCheckingOut] = useState(false);
   const [checkedOut, setCheckedOut] = useState(false);
@@ -96,9 +99,13 @@ export default function CheckOutPage() {
   const instructions = useMemo(() => {
     const items = [];
     orders?.prescriptions?.forEach((rx) => {
+      const status = String(rx.status || '').toLowerCase();
+      const disposition = status === 'transmitted' || status === 'dispensed'
+        ? `Pick up ${rx.medication_name} ${rx.dose || ''} at your pharmacy.`
+        : `${rx.medication_name} ${rx.dose || ''} is recorded as ${status || 'signed'}; pharmacy transmission is not confirmed in this demo.`;
       items.push({
         type: 'pharmacy',
-        text: `Pick up ${rx.medication_name} ${rx.dose || ''} at your pharmacy. Take ${rx.frequency || 'as directed'}.`,
+        text: `${disposition} Take ${rx.frequency || 'as directed'}.`,
       });
     });
     orders?.lab_orders?.forEach((lab) => {
@@ -144,17 +151,17 @@ export default function CheckOutPage() {
     try {
       // Finalize charge via billing engine (captures E/M code + ICD-10 codes + finalizes)
       const checkoutPayload = {};
-      if (emOverride) checkoutPayload.em_level = emOverride;
-      if (billingNotes) checkoutPayload.notes = billingNotes;
+      if (canEditCoding && emOverride) checkoutPayload.em_level = emOverride;
+      if (billingNotes) {
+        checkoutPayload.notes = billingNotes;
+        checkoutPayload.billing_notes = billingNotes;
+      }
+      if (followUpDate) checkoutPayload.follow_up_date = followUpDate;
       await api.finalizeCheckout(encounterId, checkoutPayload);
 
-      // The checkout endpoint finalizes billing and moves the workflow to checked-out.
-      // Keep the client from issuing a duplicate workflow transition afterward.
-      // Mark encounter completed with follow-up date
-      const updateData = { status: 'completed' };
-      if (followUpDate) updateData.follow_up_date = followUpDate;
-      if (billingNotes) updateData.billing_notes = billingNotes;
-      await api.updateEncounter(encounterId, updateData);
+      // Checkout is server-authoritative: charge finalization, workflow
+      // transition, encounter completion, follow-up persistence, and linked
+      // appointment completion succeed or fail together.
 
       setCheckedOut(true);
       toast.success('Patient checked out successfully.');
@@ -176,6 +183,7 @@ export default function CheckOutPage() {
   if (checkedOut) {
     return (
       <div className="min-h-screen">
+        {patient && <div className="no-print"><PatientBanner patient={patient} /></div>}
         {/* Print styles are handled via @media print below */}
         <style>{`
           @media print {
@@ -285,6 +293,14 @@ export default function CheckOutPage() {
                 {/* Action buttons (hidden on print) */}
                 <div className="no-print space-y-2">
                   <TouchButton
+                    variant="success"
+                    icon={<CheckCircle2 className="w-4 h-4" strokeWidth={2.25} />}
+                    onClick={() => navigate('/visit/' + encounterId)}
+                    className="w-full"
+                  >
+                    View Completed Visit
+                  </TouchButton>
+                  <TouchButton
                     variant="secondary"
                     icon={<Printer className="w-4 h-4" strokeWidth={2.25} />}
                     onClick={handlePrint}
@@ -293,7 +309,7 @@ export default function CheckOutPage() {
                     Print After-Visit Summary
                   </TouchButton>
                   <TouchButton
-                    variant="primary"
+                    variant="secondary"
                     icon={<ArrowLeft className="w-4 h-4" strokeWidth={2.25} />}
                     onClick={() => navigate('/')}
                     className="w-full"
@@ -376,8 +392,11 @@ export default function CheckOutPage() {
                   <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Pharmacy Pickups</h4>
                   {orders.prescriptions.map((rx, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
-                      <Badge variant="success">Rx</Badge>
-                      <span>Pick up <span className="font-medium">{rx.medication_name}</span> {rx.dose || ''} - take {rx.frequency || 'as directed'}</span>
+                      <Badge variant={['transmitted', 'dispensed'].includes(String(rx.status || '').toLowerCase()) ? 'success' : 'warning'}>Rx</Badge>
+                      <span>
+                        <span className="font-medium">{rx.medication_name}</span> {rx.dose || ''} - take {rx.frequency || 'as directed'}.
+                        {!['transmitted', 'dispensed'].includes(String(rx.status || '').toLowerCase()) && ' Transmission to the pharmacy is not confirmed in this demo.'}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -428,7 +447,7 @@ export default function CheckOutPage() {
 
         {/* Follow-up Scheduling */}
         <Card>
-          <CardHeader><span className="mc-section-label mb-0">Follow-Up Scheduling</span></CardHeader>
+          <CardHeader><span className="mc-section-label mb-0">Follow-Up Plan</span></CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -445,7 +464,7 @@ export default function CheckOutPage() {
                 </select>
               </div>
               <div>
-                <label className="label-clinical block mb-1">Follow-Up Date</label>
+                <label className="label-clinical block mb-1">Recommended Follow-Up Date</label>
                 <input
                   type="date"
                   className="input-clinical w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
@@ -458,7 +477,7 @@ export default function CheckOutPage() {
             {followUpDate && (
               <p className="inline-flex items-center gap-1.5 text-sm text-slate-600 mt-2">
                 <CalendarClock className="w-4 h-4 text-slate-400" strokeWidth={2} aria-hidden="true" />
-                Follow-up scheduled for <span className="font-semibold text-navy-700">{formatDate(followUpDate)}</span>
+                Follow-up recommended for <span className="font-semibold text-navy-700">{formatDate(followUpDate)}</span>
               </p>
             )}
           </CardBody>
@@ -468,7 +487,12 @@ export default function CheckOutPage() {
         <Card>
           <CardHeader><span className="mc-section-label mb-0">Billing &amp; E/M Coding</span></CardHeader>
           <CardBody className="space-y-4">
-            {chargeLoading ? (
+            {!canEditCoding ? (
+              <div className="rounded-xl border border-slate-100 bg-ivory-100 px-4 py-3">
+                <p className="text-sm font-semibold text-navy-700">Coding managed by provider / billing</p>
+                <p className="mt-1 text-xs text-slate-500">Diagnosis, procedure codes, and MDM detail are hidden from reception checkout.</p>
+              </div>
+            ) : chargeLoading ? (
               <p className="text-sm text-slate-500 animate-pulse">Computing E/M level...</p>
             ) : charge?.em_suggestion ? (
               <>
@@ -508,25 +532,29 @@ export default function CheckOutPage() {
                   ))}
                 </div>
 
-                {/* Provider override */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
-                    Provider Override <span className="normal-case font-normal text-slate-500">(leave blank to accept suggestion)</span>
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
-                    value={emOverride}
-                    onChange={(e) => setEmOverride(e.target.value)}
-                  >
-                    <option value="">Use suggestion ({charge.em_suggestion.code})</option>
-                    <optgroup label="New Patient">
-                      {['99202','99203','99204','99205'].map(c => <option key={c} value={c}>{c}</option>)}
-                    </optgroup>
-                    <optgroup label="Established Patient">
-                      {['99211','99212','99213','99214','99215'].map(c => <option key={c} value={c}>{c}</option>)}
-                    </optgroup>
-                  </select>
-                </div>
+                {/* Coding override is intentionally limited to provider/billing roles. */}
+                {canEditCoding ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                      Coding Override <span className="normal-case font-normal text-slate-500">(leave blank to accept suggestion)</span>
+                    </label>
+                    <select
+                      className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
+                      value={emOverride}
+                      onChange={(e) => setEmOverride(e.target.value)}
+                    >
+                      <option value="">Use suggestion ({charge.em_suggestion.code})</option>
+                      <optgroup label="New Patient">
+                        {['99202','99203','99204','99205'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </optgroup>
+                      <optgroup label="Established Patient">
+                        {['99211','99212','99213','99214','99215'].map(c => <option key={c} value={c}>{c}</option>)}
+                      </optgroup>
+                    </select>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">Coding is read-only for front-desk checkout.</p>
+                )}
               </>
             ) : (
               <p className="text-sm text-slate-500 italic">E/M suggestion unavailable — billing engine requires a signed encounter with clinical data.</p>

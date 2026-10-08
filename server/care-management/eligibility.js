@@ -71,16 +71,29 @@ function consentValid(consent, today = new Date()) {
   if (!consent || !consent.consent_date) return { valid: false, reason: 'No consent record on file.' };
   const consentDate = new Date(consent.consent_date);
   if (isNaN(consentDate.getTime())) return { valid: false, reason: 'Invalid consent date.' };
-  // Annual consent renewal required
-  const oneYearAgo = new Date(today);
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  if (consentDate < oneYearAgo) {
+
+  // Consent is a calendar-date fact, not an instant-in-time comparison.
+  // Normalize both sides to UTC midnight before applying the 12-month boundary
+  // so a test/request a few milliseconds later on the anniversary does not
+  // incorrectly expire otherwise-valid consent.
+  const consentDay = new Date(Date.UTC(
+    consentDate.getUTCFullYear(),
+    consentDate.getUTCMonth(),
+    consentDate.getUTCDate()
+  ));
+  const oneYearAgo = new Date(Date.UTC(
+    today.getUTCFullYear() - 1,
+    today.getUTCMonth(),
+    today.getUTCDate()
+  ));
+
+  if (consentDay < oneYearAgo) {
     return {
       valid: false,
-      reason: `Consent dated ${consentDate.toISOString().slice(0, 10)} is older than 12 months; annual renewal required.`
+      reason: `Consent dated ${consentDay.toISOString().slice(0, 10)} is older than 12 months; annual renewal required.`
     };
   }
-  return { valid: true, consentDate: consentDate.toISOString().slice(0, 10) };
+  return { valid: true, consentDate: consentDay.toISOString().slice(0, 10) };
 }
 
 // ==========================================
