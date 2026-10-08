@@ -231,7 +231,20 @@ async function finalizeCheckout(encounterId, patientId, providerName, overrides 
   }
 
   await db.withTransaction(async () => {
-    await captureCharge(encounterId, patientId, providerName, overrides);
+    const existingCharge = await db.getChargeByEncounter(encounterId);
+    if (overrides.preserve_existing_coding && existingCharge) {
+      if (overrides.notes !== undefined) {
+        await db.updateCharge(encounterId, { notes: overrides.notes || null });
+      }
+    } else if (overrides.preserve_existing_coding) {
+      // Reception may trigger automatic draft generation when none exists, but
+      // cannot supply coding. The engine derives the draft from signed data.
+      await captureCharge(encounterId, patientId, providerName, {
+        notes: overrides.notes || null,
+      });
+    } else {
+      await captureCharge(encounterId, patientId, providerName, overrides);
+    }
     await db.finalizeCharge(encounterId);
 
     // Use the canonical workflow engine so checkout cannot bypass transition
