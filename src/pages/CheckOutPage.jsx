@@ -176,6 +176,7 @@ export default function CheckOutPage() {
   if (checkedOut) {
     return (
       <div className="min-h-screen">
+        {patient && <div className="no-print"><PatientBanner patient={patient} /></div>}
         {/* Print styles are handled via @media print below */}
         <style>{`
           @media print {
