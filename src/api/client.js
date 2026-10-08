@@ -281,6 +281,7 @@ export const api = {
   getEncounter: (id) => request(`/encounters/${id}`),
   createEncounter: (data) => request('/encounters', { method: 'POST', body: JSON.stringify(data) }),
   updateEncounter: (id, data) => request(`/encounters/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  signEncounter: (id) => request(`/encounters/${id}/sign`, { method: 'POST', body: JSON.stringify({}) }),
   getEncounterOrders: (id) => request(`/encounters/${id}/orders`),
   addVitals: (data) => request('/vitals', { method: 'POST', body: JSON.stringify(data) }),
   addVitalsFromSpeech: (data) => request('/vitals/from-speech', { method: 'POST', body: JSON.stringify(data) }),
