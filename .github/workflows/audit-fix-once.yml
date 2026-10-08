@@ -1,4 +1,5 @@
 name: One-off dependency remediation
+# Final remediation pass after patient-journey tests are green
 
 on:
   push:
