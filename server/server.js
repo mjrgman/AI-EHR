@@ -553,22 +553,31 @@ app.get('/api/encounters', async (req, res) => {
       const pid = validateId(patient_id);
       if (!pid) return res.status(400).json({ error: 'Invalid patient_id' });
       encounters = await db.dbAll(
-        `SELECT e.*, p.first_name, p.last_name, p.mrn
-         FROM encounters e JOIN patients p ON e.patient_id = p.id
+        `SELECT e.*, p.first_name, p.last_name, p.mrn,
+                ws.current_state AS workflow_state
+         FROM encounters e
+         JOIN patients p ON e.patient_id = p.id
+         LEFT JOIN workflow_state ws ON ws.encounter_id = e.id
          WHERE e.patient_id = ? ORDER BY e.encounter_date DESC`,
         [pid]
       );
     } else if (status) {
       encounters = await db.dbAll(
-        `SELECT e.*, p.first_name, p.last_name, p.mrn
-         FROM encounters e JOIN patients p ON e.patient_id = p.id
+        `SELECT e.*, p.first_name, p.last_name, p.mrn,
+                ws.current_state AS workflow_state
+         FROM encounters e
+         JOIN patients p ON e.patient_id = p.id
+         LEFT JOIN workflow_state ws ON ws.encounter_id = e.id
          WHERE e.status = ? ORDER BY e.encounter_date DESC`,
         [status]
       );
     } else {
       encounters = await db.dbAll(
-        `SELECT e.*, p.first_name, p.last_name, p.mrn
-         FROM encounters e JOIN patients p ON e.patient_id = p.id
+        `SELECT e.*, p.first_name, p.last_name, p.mrn,
+                ws.current_state AS workflow_state
+         FROM encounters e
+         JOIN patients p ON e.patient_id = p.id
+         LEFT JOIN workflow_state ws ON ws.encounter_id = e.id
          ORDER BY e.encounter_date DESC LIMIT 50`
       );
     }
@@ -654,8 +663,13 @@ app.patch('/api/encounters/:id', async (req, res) => {
     if (req.body.transcript !== undefined) updates.transcript = sanitizeString(req.body.transcript, 50000);
     if (req.body.soap_note !== undefined) updates.soap_note = sanitizeString(req.body.soap_note, 50000);
     if (req.body.chief_complaint !== undefined) updates.chief_complaint = sanitizeString(req.body.chief_complaint, 500);
+    if (req.body.encounter_type !== undefined) updates.encounter_type = sanitizeString(req.body.encounter_type, 100);
     if (req.body.status !== undefined) updates.status = req.body.status;
     if (req.body.duration_minutes !== undefined) updates.duration_minutes = parseInt(req.body.duration_minutes, 10) || null;
+    if (req.body.signed_by !== undefined) updates.signed_by = sanitizeString(req.body.signed_by, 200);
+    if (req.body.signed_at !== undefined) updates.signed_at = req.body.signed_at || null;
+    if (req.body.follow_up_date !== undefined) updates.follow_up_date = req.body.follow_up_date || null;
+    if (req.body.billing_notes !== undefined) updates.billing_notes = sanitizeString(req.body.billing_notes, 2000);
 
     const result = await db.updateEncounter(id, updates);
 
@@ -2536,12 +2550,18 @@ app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_pr
         em_level: req.body.em_level || null,
         cpt_codes: req.body.cpt_codes || [],
         icd10_codes: req.body.icd10_codes || null,
-        notes: req.body.notes || null
+        notes: req.body.notes || null,
+        follow_up_date: req.body.follow_up_date || null,
+        billing_notes: req.body.billing_notes || req.body.notes || null
       }
     );
-    res.json({ message: 'Checkout complete', charge });
+    const completedEncounter = await db.getEncounterById(encounterId);
+    res.json({ message: 'Checkout complete', charge, encounter: completedEncounter });
   } catch (err) {
     logger.error('Error processing checkout', { error: err.message });
+    if (err.code === 'INVALID_CHECKOUT_STATE') {
+      return res.status(409).json({ error: err.message });
+    }
     res.status(500).json({ error: 'Failed to process checkout' });
   }
 });
