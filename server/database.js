@@ -1779,7 +1779,17 @@ const billing_helpers = {
       .then(_r => dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])),
 
   getChargeByEncounter: (encounter_id) =>
-    dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id]),
+    dbGet('SELECT * FROM charges WHERE encounter_id = ?', [encounter_id])
+      .then((row) => {
+        if (!row) return row;
+        const parsed = { ...row };
+        for (const key of ['cpt_codes', 'icd10_codes', 'modifiers', 'em_suggestion']) {
+          if (typeof parsed[key] === 'string') {
+            try { parsed[key] = JSON.parse(parsed[key]); } catch { /* preserve legacy scalar */ }
+          }
+        }
+        return parsed;
+      }),
 
   updateCharge: (encounter_id, fields) => {
     const allowed = ['em_level','cpt_codes','icd10_codes','modifiers','em_suggestion',
@@ -1801,7 +1811,15 @@ const billing_helpers = {
 
   getChargesByStatus: (status) =>
     dbAll('SELECT c.*, e.encounter_date, e.chief_complaint, p.first_name, p.last_name, p.mrn FROM charges c JOIN encounters e ON c.encounter_id = e.id JOIN patients p ON c.patient_id = p.id WHERE c.status = ? ORDER BY c.created_at DESC',
-      [status])
+      [status]).then((rows) => rows.map((row) => {
+        const parsed = { ...row };
+        for (const key of ['cpt_codes', 'icd10_codes', 'modifiers', 'em_suggestion']) {
+          if (typeof parsed[key] === 'string') {
+            try { parsed[key] = JSON.parse(parsed[key]); } catch { /* preserve legacy scalar */ }
+          }
+        }
+        return parsed;
+      }))
 };
 
 // ==========================================
