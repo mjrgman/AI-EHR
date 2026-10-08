@@ -13,7 +13,7 @@ mechanical enforcement is described, and where the known gaps are listed
 honestly. Other documents in this repository point here rather than restating
 it.
 
-Last verified: 2026-08-07 against commit on `claude/ehr-ultraplan-hardening`.
+Last verified: 2026-10-08 on `agent/patient-journey-eval-ui-2026-10-08`.
 
 ---
 
@@ -108,10 +108,18 @@ could not fail the build. It has been replaced.
   `@anthropic-ai/sdk@0.39.0`, so anyone running `pnpm install` would have
   silently reinstalled the SDK and undone the boundary in §1. It remains
   recoverable from git history.
-- **Advisories:** 0 critical, 0 high, 0 moderate, 0 low as of 2026-08-07. The
-  CI threshold is `moderate`. **Do not raise the threshold to obtain a green
-  run.** The correct response to a finding is a fix, or a dated exception
-  recorded in §7 with dependency path, exposure analysis and an owner.
+- **Advisories:** the 2026-10-08 remediation applied every non-breaking
+  `npm audit fix` available. The remaining report is **8 advisories
+  (6 high, 2 moderate)** in the builder/development toolchain rooted in
+  Tailwind CSS 3.x / nodemon through `braces`, `chokidar`,
+  `fast-glob`, `micromatch`, `postcss-nested`, and
+  `postcss-selector-parser`. npm's available automatic remediation requires
+  the breaking Tailwind 4 migration. The production image installs with
+  `npm ci --omit=dev`, so CI keeps **runtime dependencies as a hard gate at
+  moderate severity** using `npm audit --omit=dev --audit-level=moderate`
+  while the full development-tree audit remains visible as a warning. This is
+  a scoped, dated exception recorded in §7; it is not a severity-threshold
+  increase.
 - **esbuild:** the override is pinned to `^0.25.12`. The previous open
   `>=0.25.0` resolved to 0.28.1, outside the `^0.25.0` that vite 6.4.3
   supports, which broke the production build.
@@ -145,6 +153,7 @@ this becomes a commercial product.
 | 8 | **Measured, with a ratchet.** `npm run coverage` runs the unit suite under Node's built-in coverage and enforces a global floor (lines 55%, branches 65%, functions 40%) plus per-file line minimums for the modules that decide who may see what and whether it was recorded — `log-safe` 95%, `endpoint-throttle` and `scope-check` and `phi-encryption` 85%, `audit-logger` and `rbac` 80%, `database` 75%. Measured 2026-08-08: **58.28% lines, 70.10% branches, 42.54% functions** over 90 server files. LCOV is published as a CI artifact. **Read the numbers correctly:** this measures the `node --test` suite only. The custom runner drives the HTTP surface in a separate process, so route files like `patient-portal.js` read far lower here than they are actually exercised. Residual: no coverage measurement for `src/` at all, and some tests still assert source text rather than behavior. | `scripts/check-coverage.js`, `test/` |
 | 9 | ~~A patient request is not distinguished from a confirmed appointment.~~ **Closed.** A portal booking now persists as `requested`, not `scheduled`. The schema admits `requested` and `declined` (migration rebuilds the CHECK constraint), the portal payload carries explicit `awaiting_staff_confirmation` / `is_confirmed` flags, the UI labels it "Requested — not yet confirmed" and tells the patient not to travel, check-in stays gated to accepted appointments, and the confirmation email no longer says "Your appointment has been confirmed!" for a request. Staff bookings are unaffected. | `server/agents/front-desk-agent.js`, `server/routes/patient-portal.js`, `src/pages/PatientPortal.jsx` |
 | 10 | No automated accessibility coverage (axe, keyboard, focus-trap) and no browser journey tests. | `src/` |
+| 11 | **Dated dependency exception — 2026-10-08.** After all non-breaking npm audit fixes, 8 advisories remain in the development/builder dependency tree: 6 high and 2 moderate. The paths are rooted in Tailwind CSS 3.x and nodemon and include `braces` / `chokidar` / `fast-glob` / `micromatch` plus `postcss-nested` / `postcss-selector-parser`. npm's offered complete fix upgrades Tailwind to 4.x, a breaking frontend migration that requires deliberate visual and regression validation. The runtime Docker stage installs production dependencies with `--omit=dev`; production dependencies remain a blocking moderate-severity audit gate. **Owner:** repository maintainer. **Exit criterion:** migrate the build toolchain to a non-vulnerable supported Tailwind/nodemon dependency set and restore a clean full-tree audit. | `package-lock.json`, `.github/workflows/ci.yml`, `Dockerfile` |
 
 ## 8. Rollback
 
