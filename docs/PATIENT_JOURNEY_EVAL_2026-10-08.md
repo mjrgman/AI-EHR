@@ -5,100 +5,97 @@
 **Baseline:** `main@0bf7573d2bd29fcba6b3abec65e1d1d8edf88a0f`  
 **Scope:** Synthetic demo workflow and clinician-facing frontend from appointment/visit entry through terminal visit summary.
 
-## Evaluation path
+## Evaluated path
 
-The evaluated patient journey is:
-
-1. Schedule or start a new visit
+1. Schedule or start a visit
 2. Check-in
-3. MA rooming and intake
+3. MA rooming / medication-allergy review / vitals
 4. Provider encounter
-5. Documentation / Review & Sign
-6. Check-out / billing / follow-up
-7. Completed read-only visit summary
+5. Orders / documentation / decision close-out
+6. Review & Sign
+7. Checkout / billing / follow-up plan
+8. Completed read-only visit summary
 
-The evaluation traced route definitions, workflow state transitions, queue resume behavior, screen-to-screen navigation, and the existing UI verification screenshots.
+## High-impact defects fixed
 
-## High-impact findings
+### Workflow and state integrity
 
-### 1. Signed encounters bypassed checkout — fixed
+- `vitals-recorded` now resumes in the provider encounter rather than reopening the MA screen.
+- `signed` now routes to checkout; only terminal `checked-out` / completed encounters route to the visit summary.
+- Appointment UI and persistence use the same `checked-in` vocabulary.
+- Appointment check-in status is committed in the same transaction as the workflow transition.
+- A schedule row reuses an existing linked encounter instead of creating duplicates when check-in is reopened.
+- Scheduled provider identity is carried into encounter creation and workflow assignment.
+- Patient encounter history now includes the current workflow state so resume routing is stage-correct.
+- MA users opening `orders-pending` work are routed to the Decisions close-out queue.
+- MA decision close-out can legally hand `orders-pending -> documentation`.
+- Signing is blocked while a decided queue item is still awaiting MA close-out.
 
-The shared state router treated `signed` as terminal and routed directly to `/visit/:id`. `ReviewPage` also navigated directly to the visit summary immediately after signing.
+### Encounter persistence and timestamps
 
-That skipped the actual checkout screen where this application performs billing finalization, follow-up capture, patient instructions, and the `signed -> checked-out` transition.
+- Check-in edits to chief complaint and encounter type are now persisted.
+- Workflow assignments and timestamps are no longer silently dropped by the database update allowlist.
+- Review and Encounter screens consume the canonical workflow timeline shape, restoring check-in/exam timestamps and the provider timer after reload.
+- Existing databases receive idempotent migrations for `signed_by`, `signed_at`, `follow_up_date`, and `billing_notes`.
 
-**Fix:** `signed -> /checkout/:id`; only `checked-out -> /visit/:id`. Review & Sign now hands off to Check-Out.
+### Signing and checkout
 
-### 2. Provider handoff reopened in the MA screen — fixed
+- Signing moved to a server-authoritative, transactional endpoint.
+- Signature provenance and the workflow transition to `signed` commit or roll back together.
+- Generic encounter PATCH can no longer manufacture signed/completed states.
+- Signing is classified as a durable `SIGN` audit action.
+- Checkout requires an existing `signed` workflow state.
+- Charge finalization, `signed -> checked-out`, encounter completion, follow-up persistence, and linked appointment completion are one transactional operation.
+- Physician assistants are recognized consistently as provider-role users.
+- Front desk can perform checkout with a read-only coding preview but cannot alter E/M coding or capture a draft charge.
 
-After the MA records vitals, the workflow is at `vitals-recorded` and the MA navigates to the provider encounter. However, the shared resume router mapped `vitals-recorded` back to `/ma/:id`.
+## Frontend improvements
 
-A provider opening that encounter from the queue could therefore land in the wrong workspace.
+- Queue cards now show **Next required action** and the responsible role.
+- Completed checkout exposes a clear **View Completed Visit** action.
+- Patient identity remains visible on checkout completion and Visit Summary.
+- Visit Summary now loads encounter-specific vitals, orders, CDS decisions, charge information, signature metadata, workflow status, and follow-up due date from their actual data sources.
+- Visit Summary uses canonical vital and billing field names.
+- Follow-up text says **recommended/due**, not “scheduled,” unless an appointment actually exists.
+- Prescription instructions distinguish signed orders from prescriptions whose pharmacy transmission is actually confirmed.
+- Schedule cancellation preserves the appointment as `cancelled` rather than deleting history.
+- Patient Check-In explicitly loads the prior encounter instead of relying on a nonexistent embedded encounter list.
+- New encounters from the patient chart use the authenticated provider rather than a hard-coded provider name.
 
-**Fix:** `vitals-recorded -> /encounter/:id`. The provider workspace already exposes the explicit **Start Exam** action that advances to `provider-examining`.
+## Regression coverage
 
-### 3. Schedule status vocabulary did not match persisted state — fixed
+`test/unit/patient-journey-routing.test.js` now guards the major routing, persistence, authorization, sign, close-out, checkout, audit, and terminal-visit contracts. The full integration suite was also updated where older tests encoded superseded behavior, including direct checkout without a signed workflow and front-desk denial of the read-only checkout preview.
 
-The appointment schema and check-in handler use `checked-in`, while the Schedule UI expected an unsupported `arrived` status for its reopen action.
+## Dependency remediation
 
-**Fix:** Schedule now renders `checked-in` as **Checked In** and exposes **Open Encounter** for a checked-in appointment with an encounter id.
+All non-breaking `npm audit fix` changes were applied and verified with install, lint, build, and unit tests. The remaining 8 advisories (6 high, 2 moderate) are confined to the development/builder tree rooted in Tailwind CSS 3.x / nodemon and require a breaking Tailwind 4 migration for automatic remediation.
 
-### 4. Review signing used a brittle linear state chain — fixed
-
-The workflow permits `provider-examining -> documentation` directly or `provider-examining -> orders-pending -> documentation`. The previous sign code modeled one linear chain and could begin from an invalid index when the current state was `orders-pending`.
-
-**Fix:** Review & Sign now selects a legal path to `signed` for each supported current workflow state.
-
-## Frontend enhancements
-
-- Added a clear **View Completed Visit** primary action after successful checkout.
-- Preserved the patient banner on the checkout-complete screen.
-- Added the patient banner to the read-only Visit Summary for continuity across the full encounter.
-- Visit Summary now distinguishes **Completed** from merely **Signed**.
-- Aligned schedule status text and actions with the canonical workflow vocabulary.
-- Preserved existing WorkflowTracker, patient safety banner, global patient search, and responsive shell rather than duplicating navigation patterns.
-
-## Regression coverage added
-
-`test/unit/patient-journey-routing.test.js` asserts:
-
-- checked-in appointments can be reopened from Schedule;
-- `vitals-recorded` resumes in the provider encounter;
-- `signed` routes to checkout;
-- `checked-out` routes to the read-only visit summary;
-- Review & Sign does not bypass checkout;
-- the `orders-pending` sign path is supported;
-- checkout exposes the terminal visit summary;
-- completed visits retain patient context and completion status.
+The production Docker stage installs with `--omit=dev`. CI therefore keeps the production dependency tree as a blocking moderate-severity audit gate and reports the development-tree exception separately. The dated exception and exit criterion are recorded in `docs/SYNTHETIC_ONLY_BASELINE.md`.
 
 ## Entry-to-exit result
 
-| Stage | Route / state | Result after changes |
+| Stage | Canonical handoff | Result |
 |---|---|---|
-| Appointment / new visit | Schedule or Dashboard -> encounter | Coherent |
-| Check-in | `scheduled -> checked-in` | Coherent |
+| Appointment | scheduled/confirmed | Preserved and linked to encounter |
+| Check-in | `scheduled -> checked-in` | Transactionally synchronized |
 | MA intake | `checked-in -> roomed -> vitals-recorded` | Coherent |
-| Provider handoff | `vitals-recorded -> /encounter/:id` | Fixed |
-| Provider exam | `provider-examining` | Coherent |
-| Documentation | `documentation` or via `orders-pending` | Hardened |
-| Sign | `documentation -> signed` | Coherent |
-| Checkout | `signed -> checked-out` | Restored |
-| Terminal view | `checked-out -> /visit/:id` | Coherent |
+| Provider | `vitals-recorded -> provider-examining` | Correct workspace and timestamps |
+| Decisions/orders | `provider-examining -> orders-pending -> documentation` | MA close-out protected |
+| Documentation | `provider-examining -> documentation` | Supported |
+| Sign | `documentation -> signed` | Server-authoritative + provenance |
+| Checkout | `signed -> checked-out` | Transactional |
+| Appointment closure | linked appointment -> `completed` | Synchronized at checkout |
+| Terminal view | `checked-out/completed -> /visit/:id` | Read-only completed summary |
 
-## Verification status
+## Verification
 
-Static source and route/state evaluation is complete. The existing checked-in UI reference set was inspected for Dashboard, Check-In, MA, Encounter, Review, Check-Out, Patient, and Schedule.
+GitHub CI is the executable verification gate for this branch. During remediation, lint, production build, unit tests, full integration tests, coverage, CodeQL, Docker build, dependency review, private-artifact guard, and the synthetic-only boundary have been exercised repeatedly. The final PR merge decision must use the latest head's CI result, not an earlier intermediate run.
 
-A local repository checkout could not be established in the current execution environment because outbound DNS access to GitHub was unavailable, so `npm run test:unit`, `npm run build`, and `npm run lint` have **not** been claimed as run here. The branch includes regression tests intended for CI/local execution before merge.
+## Remaining follow-up
 
-## Recommended next frontend pass
+1. Add browser-level E2E coverage for Schedule → Check-In → MA → Encounter → Decisions (when applicable) → Review → Checkout → Visit Summary.
+2. Add automated accessibility coverage (axe, keyboard navigation, focus management).
+3. Plan the Tailwind 4 / builder-toolchain migration as a separate visually verified change.
+4. Consider moving durable audit intent behind authenticated identity resolution so the pre-handler audit row always carries authenticated clinician identity, while retaining fail-closed semantics.
 
-The next highest-value UI pass should be workflow-density rather than a visual rebrand:
-
-1. keep the patient identity / allergy context sticky throughout every encounter stage;
-2. add a compact “Next required action” treatment beside WorkflowTracker;
-3. make queue cards expose both current state and the next role/action;
-4. add browser-level E2E coverage for the synthetic path: Schedule -> Check-In -> MA -> Encounter -> Review -> Check-Out -> Visit Summary;
-5. verify responsive behavior at desktop, tablet, and mobile widths.
-
-The existing navy/gold design system is internally consistent; the larger opportunity is reducing ambiguity at handoffs rather than replacing the visual language.
+The existing navy/gold visual system remains coherent. The highest-value changes in this pass were state integrity, handoff clarity, and elimination of misleading completion states rather than a cosmetic rebrand.
