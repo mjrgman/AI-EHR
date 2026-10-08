@@ -3,8 +3,8 @@
  *
  * Route: /visit/:encounterId
  *
- * Terminal-state navigation (signed, checked-out) from QueueDashboard and
- * PatientPage both route here via the shared stateRoute() util. This screen
+ * Terminal checked-out navigation from QueueDashboard and PatientPage routes
+ * here via the shared stateRoute() util. Signed encounters go to Check-Out first. This screen
  * shows the signed SOAP note, vitals taken, orders placed, CDS decisions,
  * E/M code billed, and signature line — all read-only.
  */
@@ -143,7 +143,7 @@ export default function VisitSummaryPage() {
             </div>
             <div>
               <span className="label-clinical">Status</span>
-              <p className="font-medium text-navy-700 capitalize">{encounter.current_state || encounter.status || '—'}</p>
+              <p className="font-medium text-navy-700 capitalize">{encounter.current_state || encounter.workflow_state || encounter.status || '—'}</p>
             </div>
           </div>
         </CardBody>
