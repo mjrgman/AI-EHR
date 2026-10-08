@@ -161,11 +161,11 @@ export default function SchedulePage() {
   async function handleDelete(apptId) {
     if (!window.confirm('Cancel this appointment?')) return;
     try {
-      await api.deleteAppointment(apptId);
+      await api.updateAppointment(apptId, { status: 'cancelled' });
       await loadSchedule();
       toast.success('Appointment cancelled');
     } catch (err) {
-      toast.error('Delete failed: ' + err.message);
+      toast.error('Cancellation failed: ' + err.message);
     }
   }
 
