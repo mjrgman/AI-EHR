@@ -190,6 +190,11 @@ export default function SchedulePage() {
 
   async function handleCheckin(appt) {
     try {
+      if (appt.encounter_id) {
+        navigate('/checkin/' + appt.encounter_id);
+        return;
+      }
+
       const enc = await api.createEncounter({
         patient_id: appt.patient_id,
         chief_complaint: appt.chief_complaint || formatAppointmentType(appt.appointment_type) || 'Office Visit',
@@ -198,7 +203,11 @@ export default function SchedulePage() {
         provider: appt.provider_name || providerName || 'Dr. MJR',
       });
       const encId = enc.encounter_id || enc.id;
-      await api.updateAppointment(appt.id, { status: 'checked-in', encounter_id: encId });
+
+      // Link the appointment to the encounter, but do not mark the patient
+      // checked-in until the Check-In screen actually completes that workflow
+      // transition. Re-clicking Check In will reuse this encounter.
+      await api.updateAppointment(appt.id, { encounter_id: encId });
       navigate('/checkin/' + encId);
     } catch (err) {
       toast.error('Check-in failed: ' + err.message);
