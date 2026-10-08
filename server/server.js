@@ -729,6 +729,16 @@ app.post('/api/encounters/:id/sign',
           error: `Cannot sign encounter from workflow state '${wf.current_state}'. Complete the provider encounter first.`
         });
       }
+
+      if (wf.current_state === 'orders-pending') {
+        const decisionItem = await db.getDecisionQueueItemByEncounter(id);
+        if (decisionItem && decisionItem.status === 'decided' && decisionItem.ma_status === 'awaiting') {
+          return res.status(409).json({
+            error: 'Cannot sign while a provider decision is awaiting MA close-out. Complete the close-out first.'
+          });
+        }
+      }
+
       if (wf.current_state === 'signed' && encounter.status === 'signed' && encounter.signed_at) {
         return res.json({ encounter, workflow: wf });
       }
@@ -2183,7 +2193,7 @@ app.get('/api/encounters/:id/orders', requireAnyResourceAccess('lab_orders', 'im
 });
 
 // Get CPT code suggestions for an encounter
-app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
+app.get('/api/encounters/:id/cpt-suggestions', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2553,7 +2563,7 @@ app.delete('/api/appointments/:id', async (req, res) => {
 // ==========================================
 
 // Get charge for an encounter (or compute E/M suggestion without saving)
-app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
+app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2577,7 +2587,7 @@ app.get('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_pract
 });
 
 // Capture charge (creates/updates draft — does not finalize)
-app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
+app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
@@ -2604,7 +2614,7 @@ app.post('/api/encounters/:id/charge', rbac.requireRole('physician', 'nurse_prac
 });
 
 // Checkout — finalizes charge and marks encounter checked-out
-app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing'), async (req, res) => {
+app.post('/api/encounters/:id/checkout', rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant', 'billing', 'front_desk'), async (req, res) => {
   try {
     const encounterId = validateId(req.params.id);
     if (!encounterId) return res.status(400).json({ error: 'Invalid encounter ID' });
