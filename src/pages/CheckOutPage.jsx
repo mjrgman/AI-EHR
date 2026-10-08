@@ -487,7 +487,12 @@ export default function CheckOutPage() {
         <Card>
           <CardHeader><span className="mc-section-label mb-0">Billing &amp; E/M Coding</span></CardHeader>
           <CardBody className="space-y-4">
-            {chargeLoading ? (
+            {!canEditCoding ? (
+              <div className="rounded-xl border border-slate-100 bg-ivory-100 px-4 py-3">
+                <p className="text-sm font-semibold text-navy-700">Coding managed by provider / billing</p>
+                <p className="mt-1 text-xs text-slate-500">Diagnosis, procedure codes, and MDM detail are hidden from reception checkout.</p>
+              </div>
+            ) : chargeLoading ? (
               <p className="text-sm text-slate-500 animate-pulse">Computing E/M level...</p>
             ) : charge?.em_suggestion ? (
               <>
