@@ -701,6 +701,69 @@ app.patch('/api/encounters/:id', async (req, res) => {
   }
 });
 
+// Sign encounter atomically: workflow state + signature provenance must agree.
+app.post('/api/encounters/:id/sign',
+  rbac.requireRole('physician', 'nurse_practitioner', 'physician_assistant'),
+  async (req, res) => {
+    const id = validateId(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid encounter ID' });
+
+    try {
+      const encounter = await db.getEncounterById(id);
+      if (!encounter) return res.status(404).json({ error: 'Encounter not found' });
+
+      const wf = await workflow.getCurrentState(id);
+      const signPaths = {
+        'provider-examining': ['documentation', 'signed'],
+        'orders-pending': ['documentation', 'signed'],
+        'documentation': ['signed'],
+        'signed': [],
+      };
+      const pathToSigned = signPaths[wf.current_state];
+      if (!pathToSigned) {
+        return res.status(409).json({
+          error: `Cannot sign encounter from workflow state '${wf.current_state}'. Complete the provider encounter first.`
+        });
+      }
+
+      const signedBy = sanitizeString(
+        req.user?.name || req.user?.full_name || req.user?.username || encounter.provider || 'Provider',
+        200
+      );
+      const signedAt = new Date().toISOString();
+
+      await db.dbRun('BEGIN IMMEDIATE TRANSACTION');
+      try {
+        for (const targetState of pathToSigned) {
+          await workflow.transitionState(id, targetState, {}, req.user?.role || null);
+        }
+        await db.updateEncounter(id, {
+          status: 'signed',
+          signed_by: signedBy,
+          signed_at: signedAt,
+        });
+        await db.dbRun('COMMIT');
+      } catch (err) {
+        await db.dbRun('ROLLBACK').catch(() => {});
+        throw err;
+      }
+
+      req.auditPatientId = encounter.patient_id ?? null;
+      const updated = await db.getEncounterById(id);
+      res.json({ encounter: updated, workflow: await workflow.getCurrentState(id) });
+    } catch (error) {
+      if (error.message.includes('cannot transition')) {
+        return res.status(403).json({ error: error.message });
+      }
+      if (error.message.includes('Invalid transition')) {
+        return res.status(409).json({ error: error.message });
+      }
+      logger.error('Error signing encounter', { encounter_id: id, error: error.message });
+      res.status(500).json({ error: 'Failed to sign encounter' });
+    }
+  }
+);
+
 // ==========================================
 // AI/CLINICAL DATA ENDPOINTS
 // ==========================================
