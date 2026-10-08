@@ -39,5 +39,7 @@ export function useWorkflow(encounterId) {
     }
   }, [encounterId, refresh]);
 
-  return { workflow, timeline, loading, error, transition, refresh };
+  const timelineEntries = Array.isArray(timeline) ? timeline : (timeline?.timeline || []);
+
+  return { workflow, timeline, timelineEntries, loading, error, transition, refresh };
 }
