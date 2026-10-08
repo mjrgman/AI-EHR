@@ -96,9 +96,13 @@ export default function CheckOutPage() {
   const instructions = useMemo(() => {
     const items = [];
     orders?.prescriptions?.forEach((rx) => {
+      const status = String(rx.status || '').toLowerCase();
+      const disposition = status === 'transmitted' || status === 'dispensed'
+        ? `Pick up ${rx.medication_name} ${rx.dose || ''} at your pharmacy.`
+        : `${rx.medication_name} ${rx.dose || ''} is recorded as ${status || 'signed'}; pharmacy transmission is not confirmed in this demo.`;
       items.push({
         type: 'pharmacy',
-        text: `Pick up ${rx.medication_name} ${rx.dose || ''} at your pharmacy. Take ${rx.frequency || 'as directed'}.`,
+        text: `${disposition} Take ${rx.frequency || 'as directed'}.`,
       });
     });
     orders?.lab_orders?.forEach((lab) => {
@@ -145,16 +149,16 @@ export default function CheckOutPage() {
       // Finalize charge via billing engine (captures E/M code + ICD-10 codes + finalizes)
       const checkoutPayload = {};
       if (emOverride) checkoutPayload.em_level = emOverride;
-      if (billingNotes) checkoutPayload.notes = billingNotes;
+      if (billingNotes) {
+        checkoutPayload.notes = billingNotes;
+        checkoutPayload.billing_notes = billingNotes;
+      }
+      if (followUpDate) checkoutPayload.follow_up_date = followUpDate;
       await api.finalizeCheckout(encounterId, checkoutPayload);
 
-      // The checkout endpoint finalizes billing and moves the workflow to checked-out.
-      // Keep the client from issuing a duplicate workflow transition afterward.
-      // Mark encounter completed with follow-up date
-      const updateData = { status: 'completed' };
-      if (followUpDate) updateData.follow_up_date = followUpDate;
-      if (billingNotes) updateData.billing_notes = billingNotes;
-      await api.updateEncounter(encounterId, updateData);
+      // Checkout is server-authoritative: charge finalization, workflow
+      // transition, encounter completion, follow-up persistence, and linked
+      // appointment completion succeed or fail together.
 
       setCheckedOut(true);
       toast.success('Patient checked out successfully.');
@@ -385,8 +389,11 @@ export default function CheckOutPage() {
                   <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">Pharmacy Pickups</h4>
                   {orders.prescriptions.map((rx, i) => (
                     <div key={i} className="flex items-start gap-2 text-sm py-1">
-                      <Badge variant="success">Rx</Badge>
-                      <span>Pick up <span className="font-medium">{rx.medication_name}</span> {rx.dose || ''} - take {rx.frequency || 'as directed'}</span>
+                      <Badge variant={['transmitted', 'dispensed'].includes(String(rx.status || '').toLowerCase()) ? 'success' : 'warning'}>Rx</Badge>
+                      <span>
+                        <span className="font-medium">{rx.medication_name}</span> {rx.dose || ''} - take {rx.frequency || 'as directed'}.
+                        {!['transmitted', 'dispensed'].includes(String(rx.status || '').toLowerCase()) && ' Transmission to the pharmacy is not confirmed in this demo.'}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -437,7 +444,7 @@ export default function CheckOutPage() {
 
         {/* Follow-up Scheduling */}
         <Card>
-          <CardHeader><span className="mc-section-label mb-0">Follow-Up Scheduling</span></CardHeader>
+          <CardHeader><span className="mc-section-label mb-0">Follow-Up Plan</span></CardHeader>
           <CardBody>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -454,7 +461,7 @@ export default function CheckOutPage() {
                 </select>
               </div>
               <div>
-                <label className="label-clinical block mb-1">Follow-Up Date</label>
+                <label className="label-clinical block mb-1">Recommended Follow-Up Date</label>
                 <input
                   type="date"
                   className="input-clinical w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-offWhite-100 text-navy-700 transition-all duration-150 focus:ring-2 focus:ring-navy-500 focus:border-navy-500"
@@ -467,7 +474,7 @@ export default function CheckOutPage() {
             {followUpDate && (
               <p className="inline-flex items-center gap-1.5 text-sm text-slate-600 mt-2">
                 <CalendarClock className="w-4 h-4 text-slate-400" strokeWidth={2} aria-hidden="true" />
-                Follow-up scheduled for <span className="font-semibold text-navy-700">{formatDate(followUpDate)}</span>
+                Follow-up recommended for <span className="font-semibold text-navy-700">{formatDate(followUpDate)}</span>
               </p>
             )}
           </CardBody>
