@@ -181,6 +181,8 @@ function initializeDatabase() {
         transcript TEXT, soap_note TEXT,
         status TEXT CHECK(status IN ('in-progress','completed','signed')) DEFAULT 'in-progress',
         provider TEXT, duration_minutes INTEGER, completed_at DATETIME,
+        signed_by TEXT, signed_at DATETIME,
+        follow_up_date DATE, billing_notes TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
       )`);
@@ -1395,11 +1397,31 @@ const db_helpers = {
   },
 
   updateEncounter: (encounterId, updates) => {
-    const { transcript, soap_note, status, duration_minutes } = updates;
-    return dbRun(`UPDATE encounters SET transcript=COALESCE(?,transcript), soap_note=COALESCE(?,soap_note),
-                  status=COALESCE(?,status), duration_minutes=COALESCE(?,duration_minutes),
-                  completed_at=CASE WHEN ?='completed' THEN CURRENT_TIMESTAMP ELSE completed_at END WHERE id=?`,
-      [transcript, soap_note, status, duration_minutes, status, encounterId])
+    const {
+      transcript, soap_note, chief_complaint, encounter_type, status,
+      duration_minutes, signed_by, signed_at, follow_up_date, billing_notes
+    } = updates;
+    return dbRun(`UPDATE encounters SET
+                  transcript=COALESCE(?,transcript),
+                  soap_note=COALESCE(?,soap_note),
+                  chief_complaint=COALESCE(?,chief_complaint),
+                  encounter_type=COALESCE(?,encounter_type),
+                  status=COALESCE(?,status),
+                  duration_minutes=COALESCE(?,duration_minutes),
+                  signed_by=COALESCE(?,signed_by),
+                  signed_at=COALESCE(?,signed_at),
+                  follow_up_date=COALESCE(?,follow_up_date),
+                  billing_notes=COALESCE(?,billing_notes),
+                  completed_at=CASE
+                    WHEN ?='completed' THEN COALESCE(completed_at,CURRENT_TIMESTAMP)
+                    ELSE completed_at
+                  END
+                  WHERE id=?`,
+      [
+        transcript, soap_note, chief_complaint, encounter_type, status,
+        duration_minutes, signed_by, signed_at, follow_up_date, billing_notes,
+        status, encounterId
+      ])
       .then(r => ({ changes: r.changes }));
   },
 
@@ -1468,7 +1490,18 @@ const db_helpers = {
   getWorkflowState: (encounterId) => dbGet('SELECT * FROM workflow_state WHERE encounter_id = ?', [encounterId]),
 
   updateWorkflowState: (encounterId, updates) => {
-    const ALLOWED_WORKFLOW_COLUMNS = ['current_state', 'previous_state', 'transitioned_by', 'transition_reason', 'updated_at'];
+    const ALLOWED_WORKFLOW_COLUMNS = [
+      'current_state',
+      'assigned_ma',
+      'assigned_provider',
+      'check_in_time',
+      'roomed_time',
+      'vitals_time',
+      'provider_start_time',
+      'provider_end_time',
+      'signed_time',
+      'checkout_time',
+    ];
     const fields = [];
     const params = [];
     for (const [key, value] of Object.entries(updates)) {
