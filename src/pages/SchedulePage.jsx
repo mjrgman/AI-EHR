@@ -195,6 +195,7 @@ export default function SchedulePage() {
         chief_complaint: appt.chief_complaint || formatAppointmentType(appt.appointment_type) || 'Office Visit',
         encounter_date: selectedDate,
         encounter_type: appt.appointment_type === 'new_patient' ? 'new_patient' : 'office_visit',
+        provider: appt.provider_name || providerName || 'Dr. MJR',
       });
       const encId = enc.encounter_id || enc.id;
       await api.updateAppointment(appt.id, { status: 'checked-in', encounter_id: encId });
