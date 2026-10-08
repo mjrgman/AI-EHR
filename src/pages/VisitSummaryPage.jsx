@@ -270,7 +270,7 @@ export default function VisitSummaryPage() {
                 <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Rejected ({cdsRejected.length})</p>
                 <div className="space-y-1">
                   {cdsRejected.map((s, i) => (
-                    <div key={i} className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm text-slate-500 line-through">{s.suggestion_text || s.text}</div>
+                    <div key={i} className="rounded-lg bg-slate-50 px-3 py-1.5 text-sm text-slate-500 line-through">{s.title || s.description || 'Suggestion'}</div>
                   ))}
                 </div>
               </div>
