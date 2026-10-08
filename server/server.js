@@ -729,6 +729,9 @@ app.post('/api/encounters/:id/sign',
           error: `Cannot sign encounter from workflow state '${wf.current_state}'. Complete the provider encounter first.`
         });
       }
+      if (wf.current_state === 'signed' && encounter.status === 'signed' && encounter.signed_at) {
+        return res.json({ encounter, workflow: wf });
+      }
 
       const signedBy = sanitizeString(
         req.user?.name || req.user?.full_name || req.user?.username || encounter.provider || 'Provider',
