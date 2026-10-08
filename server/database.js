@@ -2,6 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
 
 // ==========================================
 // PHI ENCRYPTION HELPERS
@@ -85,10 +86,24 @@ dbRun('PRAGMA journal_mode = WAL').catch(err => console.error('PRAGMA WAL error:
 dbRun('PRAGMA foreign_keys = ON').catch(err => console.error('PRAGMA FK error:', err.message));
 
 // ==========================================
-// PROMISIFIED DB HELPERS
+// PROMISIFIED DB HELPERS + SHARED-CONNECTION TRANSACTION OWNERSHIP
 // ==========================================
 
-function dbRun(sql, params = []) {
+// sqlite3 uses one module-global connection. A transaction therefore owns the
+// whole connection, not merely the statements issued by one HTTP request.
+// Serialize public DB operations through one queue and let transaction-scoped
+// calls bypass that queue via AsyncLocalStorage. This prevents another request
+// from interleaving statements inside an open transaction or rolling it back.
+const transactionContext = new AsyncLocalStorage();
+let dbOperationTail = Promise.resolve();
+
+function enqueueDbOperation(operation) {
+  const run = dbOperationTail.then(operation, operation);
+  dbOperationTail = run.catch(() => {});
+  return run;
+}
+
+function rawDbRun(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) reject(err);
@@ -97,7 +112,7 @@ function dbRun(sql, params = []) {
   });
 }
 
-function dbGet(sql, params = []) {
+function rawDbGet(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) reject(err);
@@ -106,13 +121,46 @@ function dbGet(sql, params = []) {
   });
 }
 
-function dbAll(sql, params = []) {
+function rawDbAll(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
   });
+}
+
+function dbRun(sql, params = []) {
+  if (transactionContext.getStore()?.active) return rawDbRun(sql, params);
+  return enqueueDbOperation(() => rawDbRun(sql, params));
+}
+
+function dbGet(sql, params = []) {
+  if (transactionContext.getStore()?.active) return rawDbGet(sql, params);
+  return enqueueDbOperation(() => rawDbGet(sql, params));
+}
+
+function dbAll(sql, params = []) {
+  if (transactionContext.getStore()?.active) return rawDbAll(sql, params);
+  return enqueueDbOperation(() => rawDbAll(sql, params));
+}
+
+async function withTransaction(work) {
+  if (transactionContext.getStore()?.active) {
+    return work();
+  }
+
+  return enqueueDbOperation(() => transactionContext.run({ active: true }, async () => {
+    await rawDbRun('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      const result = await work();
+      await rawDbRun('COMMIT');
+      return result;
+    } catch (err) {
+      await rawDbRun('ROLLBACK').catch(() => {});
+      throw err;
+    }
+  }));
 }
 
 // ==========================================
@@ -1846,7 +1894,7 @@ const ready = initializeDatabase()
   .catch(err => console.error('Database initialization error:', err));
 
 module.exports = {
-  db, dbRun, dbGet, dbAll,
+  db, dbRun, dbGet, dbAll, withTransaction,
   ready, close,
   ...db_helpers,
   ...decision_helpers,
